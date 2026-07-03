@@ -7,9 +7,20 @@ import { Layout } from '@/components/layout/Layout'
 import { Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador } from '@/types'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, formatCPFCNPJ, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
+
+const CLIENT_STATUS_LABELS: Record<string, string> = { active: 'Ativo', inactive: 'Inativo', prospect: 'Prospect' }
+
+type ParceiroClientRow = {
+  id: string; name: string; type: string; cpf_cnpj: string | null
+  phone: string | null; email: string | null; cidade: string | null; status: string | null
+}
+type ParceiroProcessRow = {
+  id: string; number: string; title: string; client_name: string | null
+  modalidade: string | null; area: string | null; status: string | null; next_deadline: string | null
+}
 
 const EMPTY_FORM = {
   nome: '', email: '', telefone: '', cargo: 'parceiro', comissao_percent: '',
@@ -109,6 +120,7 @@ export function CollaboratorsPage() {
   const [expandAtivos, setExpandAtivos] = useState(false)
   const [expandEscritorio, setExpandEscritorio] = useState(false)
   const [expandParceiro, setExpandParceiro] = useState(false)
+  const [exportingId, setExportingId] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -213,6 +225,69 @@ export function CollaboratorsPage() {
         { text: String(indicacoesCounts[c.id] ?? 0), badge: (indicacoesCounts[c.id] ?? 0) > 0 ? 'amber' : 'gray' },
       ]),
       csvContent,
+    })
+  }
+
+  async function exportParceiro(col: Colaborador) {
+    setExportingId(col.id)
+    const [{ data: cli }, { data: proc }] = await Promise.all([
+      supabase.from('clients')
+        .select('id,name,type,cpf_cnpj,phone,email,cidade,status')
+        .eq('colaborador_id', col.id).is('deleted_at', null).order('name'),
+      supabase.from('processes')
+        .select('id,number,title,client_name,modalidade,area,status,next_deadline')
+        .eq('colaborador_id', col.id).is('deleted_at', null).order('created_at', { ascending: false }),
+    ])
+    setExportingId(null)
+
+    const clients = (cli || []) as ParceiroClientRow[]
+    const processes = (proc || []) as ParceiroProcessRow[]
+
+    const contatosRows = clients.map(c => [
+      { text: c.name, sub: formatCPFCNPJ(c.cpf_cnpj || '') || undefined, bold: true },
+      { text: c.type === 'pf' ? 'PF' : 'PJ', badge: (c.type === 'pf' ? 'purple' : 'cyan') as any },
+      { text: formatPhone(c.phone || '') || '—' },
+      { text: c.email || '—' },
+      { text: c.cidade || '—' },
+      { text: CLIENT_STATUS_LABELS[c.status || 'active'] || c.status || '—', badge: (c.status === 'active' ? 'green' : c.status === 'inactive' ? 'gray' : 'blue') as any },
+    ])
+
+    const processosRows = processes.map(p => [
+      { text: p.number, mono: true, bold: true },
+      { text: p.title },
+      { text: p.client_name || '—' },
+      { text: p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—', badge: (p.modalidade === 'judicial' ? 'purple' : 'cyan') as any },
+      { text: p.area || '—' },
+      { text: PROCESS_STATUS_LABELS[p.status || 'active'], badge: (p.status === 'active' ? 'green' : p.status === 'won' ? 'blue' : p.status === 'lost' ? 'red' : p.status === 'archived' ? 'gray' : 'amber') as any },
+      { text: formatDate(p.next_deadline) },
+    ])
+
+    const csvLines = [`Parceiro: ${col.nome}`, '', 'Contatos', 'Nome,Tipo,CPF/CNPJ,Telefone,Email,Cidade,Status']
+    for (const c of clients) {
+      csvLines.push(`"${c.name}","${c.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}","${formatCPFCNPJ(c.cpf_cnpj || '') || '—'}","${formatPhone(c.phone || '') || '—'}","${c.email || '—'}","${c.cidade || '—'}","${CLIENT_STATUS_LABELS[c.status || 'active'] || c.status || '—'}"`)
+    }
+    csvLines.push('', 'Processos', 'Número,Título,Cliente,Modalidade,Área,Status,Próximo Prazo')
+    for (const p of processes) {
+      csvLines.push(`"${p.number}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+    }
+
+    openExportWindow({
+      title: `Relatório do Parceiro — ${col.nome}`,
+      subtitle: 'Contatos e processos vinculados a este parceiro',
+      filename: `parceiro-${col.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
+      stats: [
+        { value: clients.length, label: 'Contatos', accent: '#2563eb' },
+        { value: processes.length, label: 'Processos', accent: '#7c3aed' },
+        { value: clients.filter(c => c.status === 'active').length, label: 'Contatos ativos', accent: '#16a34a' },
+        { value: processes.filter(p => p.status === 'active').length, label: 'Processos ativos', accent: '#0e7490' },
+      ],
+      columns: [],
+      rows: [],
+      sections: [
+        { title: 'Contatos', columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status'], rows: contatosRows },
+        { title: 'Processos', columns: ['Número', 'Título', 'Cliente', 'Modalidade', 'Área', 'Status', 'Próximo Prazo'], rows: processosRows },
+      ],
+      csvContent: csvLines.join('\n'),
     })
   }
 
@@ -540,6 +615,10 @@ export function CollaboratorsPage() {
                           {/* Actions */}
                           <td className="px-2 py-3.5">
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => exportParceiro(c)} disabled={exportingId === c.id}
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50" title="Exportar contatos e processos deste parceiro">
+                                {exportingId === c.id ? <Spinner className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
+                              </button>
                               <button onClick={() => openEdit(c)}
                                 className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors" title="Editar">
                                 <Edit3 className="w-3.5 h-3.5" />

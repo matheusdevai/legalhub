@@ -37,6 +37,15 @@ export interface ExportGroup {
   rows: ExportCell[][]
 }
 
+export interface ExportSection {
+  /** Título da seção (ex: "Contatos", "Processos") */
+  title: string
+  /** Cabeçalhos das colunas desta seção (independentes das demais) */
+  columns: string[]
+  /** Linhas desta seção */
+  rows: ExportCell[][]
+}
+
 export interface ExportOptions {
   /** Título exibido no header do relatório */
   title: string
@@ -54,6 +63,8 @@ export interface ExportOptions {
   csvContent: string
   /** Quando fornecido, gera o relatório agrupado por parceiro em vez de lista plana */
   groups?: ExportGroup[]
+  /** Quando fornecido, gera o relatório em seções independentes (ex: Contatos + Processos), cada uma com suas próprias colunas */
+  sections?: ExportSection[]
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -143,7 +154,7 @@ tbody tr:hover td{background:#f8fafc}
 
 // ─── Função principal ─────────────────────────────────────────────────────────
 export function openExportWindow(opts: ExportOptions): void {
-  const { title, subtitle, filename, stats, columns, rows, csvContent, groups } = opts
+  const { title, subtitle, filename, stats, columns, rows, csvContent, groups, sections } = opts
   const date = new Date().toLocaleString('pt-BR')
   const csvBase64 = btoa(unescape(encodeURIComponent(csvContent)))
   const logoUrl = window.location.origin + '/logomarca.png'
@@ -159,8 +170,18 @@ export function openExportWindow(opts: ExportOptions): void {
         </div>`).join('')}
     </div>`
 
-  // Agrupado por parceiro
-  const contentHtml = groups
+  // Seções independentes (ex: Contatos + Processos de um parceiro)
+  const contentHtml = sections
+    ? sections.map(s => `
+        <div class="group-block">
+          <div class="group-header">
+            <span class="group-title"><span class="group-dot"></span>${s.title}</span>
+            <span class="group-count">${s.rows.length} registro${s.rows.length !== 1 ? 's' : ''}</span>
+          </div>
+          ${renderTable(s.columns, s.rows)}
+        </div>`).join('')
+    // Agrupado por parceiro
+    : groups
     ? groups.map(g => `
         <div class="group-block">
           <div class="group-header">
