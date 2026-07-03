@@ -1674,6 +1674,21 @@ export function ClientsPage() {
             </select>
           </div>
           <div>
+            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Data de Entrada</label>
+            <div className="relative">
+              <input type="date"
+                className="w-full px-3 py-2.5 pr-8 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                value={form.entry_date} onChange={e => setForm({ ...form, entry_date: e.target.value })} />
+              {form.entry_date && (
+                <button type="button" onClick={() => setForm({ ...form, entry_date: '' })}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Deixe em branco se não souber a data</p>
+          </div>
+          <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Advogado Responsável</label>
             <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
               value={form.assigned_lawyer_uid}
