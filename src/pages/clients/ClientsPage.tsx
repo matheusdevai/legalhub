@@ -339,6 +339,7 @@ export function ClientsPage() {
     function handleClickOutside(e: MouseEvent) {
       if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
       if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false)
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -441,8 +442,10 @@ export function ClientsPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [filterOpen, setFilterOpen] = useState(false)
   const [sortOpen, setSortOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const filterRef = useRef<HTMLDivElement>(null)
   const sortRef = useRef<HTMLDivElement>(null)
+  const exportRef = useRef<HTMLDivElement>(null)
 
   const filtered = useMemo(() => {
     const result = clients.filter(c => {
@@ -647,10 +650,17 @@ export function ClientsPage() {
     })
   }
 
-  function exportAll() {
-    const activeCount = filtered.filter(c => c.status === 'active').length
-    const pfCount = filtered.filter(c => c.type === 'pf').length
-    const pjCount = filtered.filter(c => c.type === 'pj').length
+  /** scope: 'all' agrupa todos os parceiros; 'sem-parceiro' ou um colaborador_id exporta só aquele recorte */
+  function exportAll(scope: string = 'all') {
+    const scoped = scope === 'all'
+      ? filtered
+      : scope === 'sem-parceiro'
+      ? filtered.filter(c => !c.colaborador_id)
+      : filtered.filter(c => c.colaborador_id === scope)
+
+    const activeCount = scoped.filter(c => c.status === 'active').length
+    const pfCount = scoped.filter(c => c.type === 'pf').length
+    const pjCount = scoped.filter(c => c.type === 'pj').length
 
     function clientRow(c: typeof filtered[0]) {
       return [
@@ -663,6 +673,33 @@ export function ClientsPage() {
         { text: String(clientProcesses[c.id]?.length ?? 0), badge: ((clientProcesses[c.id]?.length ?? 0) > 0 ? 'blue' : 'gray') as any },
         { text: formatDate(c.created_at) },
       ]
+    }
+
+    const columns = ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status', 'Processos', 'Cadastro']
+
+    if (scope !== 'all') {
+      const parceiroNome = scope === 'sem-parceiro' ? 'Sem parceiro' : (colaboradores.find(c => c.id === scope)?.nome || 'Parceiro')
+      const csvLines = ['Nome,Tipo,CPF/CNPJ,Telefone,Email,Cidade,Status,Processos,Cadastro']
+      for (const c of scoped) {
+        const status = STATUS_LABELS[c.status || 'active'] ?? ''
+        const proc = clientProcesses[c.id]?.length ?? 0
+        csvLines.push(`"${c.name}","${c.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}","${formatCPFCNPJ(c.cpf_cnpj || '') || '—'}","${formatPhone(c.phone || '') || '—'}","${c.email || '—'}","${c.cidade || '—'}","${status}","${proc}","${formatDate(c.created_at)}"`)
+      }
+      openExportWindow({
+        title: 'Relatório de Contatos',
+        subtitle: `Parceiro: ${parceiroNome}`,
+        filename: `contatos-${parceiroNome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
+        stats: [
+          { value: scoped.length, label: 'Total de contatos', accent: '#2563eb' },
+          { value: activeCount, label: 'Ativos', accent: '#16a34a' },
+          { value: pfCount, label: 'Pessoa Física', accent: '#7c3aed' },
+          { value: pjCount, label: 'Pessoa Jurídica', accent: '#0e7490' },
+        ],
+        columns,
+        rows: scoped.map(clientRow),
+        csvContent: csvLines.join('\n'),
+      })
+      return
     }
 
     // Grupos por parceiro
@@ -700,7 +737,7 @@ export function ClientsPage() {
         { value: pfCount, label: 'Pessoa Física', accent: '#7c3aed' },
         { value: pjCount, label: 'Pessoa Jurídica', accent: '#0e7490' },
       ],
-      columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status', 'Processos', 'Cadastro'],
+      columns,
       rows: [],
       groups: parceiroGroups,
       csvContent: csvLines.join('\n'),
@@ -969,9 +1006,46 @@ export function ClientsPage() {
                 )}
               </div>
 
-              <button onClick={exportAll} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                <Download className="w-3.5 h-3.5" /> Exportar
-              </button>
+              <div className="relative" ref={exportRef}>
+                <button
+                  onClick={() => { setExportOpen(v => !v); setSortOpen(false); setFilterOpen(false) }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors',
+                    exportOpen
+                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
+                      : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-700'
+                  )}
+                >
+                  <Download className="w-3.5 h-3.5" /> Exportar
+                </button>
+                {exportOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-2 space-y-0.5">
+                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-2 py-1.5">Exportar contatos</p>
+                    <button
+                      onClick={() => { exportAll('all'); setExportOpen(false) }}
+                      className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700"
+                    >
+                      Todos os parceiros
+                    </button>
+                    <div className="pt-1 mt-1 border-t border-gray-100 dark:border-dark-700" />
+                    {colaboradores.map(col => (
+                      <button
+                        key={col.id}
+                        onClick={() => { exportAll(col.id); setExportOpen(false) }}
+                        className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700"
+                      >
+                        {col.nome}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => { exportAll('sem-parceiro'); setExportOpen(false) }}
+                      className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700"
+                    >
+                      Sem parceiro
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Toggle Lista / Por parceiro */}
               <div className="flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden ml-auto">

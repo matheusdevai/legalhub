@@ -90,6 +90,16 @@ export function ProcessesPage() {
   const [cpfSearch, setCpfSearch] = useState('')
   const [groupPages, setGroupPages] = useState<Record<string, number>>({})
   const [tablePage, setTablePage] = useState(0)
+  const [exportOpen, setExportOpen] = useState(false)
+  const exportRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   async function load() {
     setLoading(true)
@@ -271,10 +281,17 @@ export function ProcessesPage() {
     load()
   }
 
-  function exportAll() {
-    const judicial = filtered.filter(p => p.modalidade === 'judicial').length
-    const admin = filtered.filter(p => p.modalidade === 'administrativo').length
-    const active = filtered.filter(p => p.status === 'active').length
+  /** scope: 'all' agrupa todos os parceiros; 'sem-parceiro' ou um colaborador_id exporta só aquele recorte */
+  function exportAll(scope: string = 'all') {
+    const scoped = scope === 'all'
+      ? filtered
+      : scope === 'sem-parceiro'
+      ? filtered.filter(p => !p.colaborador_id)
+      : filtered.filter(p => p.colaborador_id === scope)
+
+    const judicial = scoped.filter(p => p.modalidade === 'judicial').length
+    const admin = scoped.filter(p => p.modalidade === 'administrativo').length
+    const active = scoped.filter(p => p.status === 'active').length
 
     function processRow(p: Process) {
       return [
@@ -287,6 +304,31 @@ export function ProcessesPage() {
         { text: PROCESS_STATUS_LABELS[p.status || 'active'], badge: (p.status === 'active' ? 'green' : p.status === 'won' ? 'blue' : p.status === 'lost' ? 'red' : p.status === 'archived' ? 'gray' : 'amber') as any },
         { text: formatDate(p.next_deadline) },
       ]
+    }
+
+    const columns = ['Número', 'Título', 'Cliente', 'Modalidade', 'Área', 'Vara', 'Status', 'Próximo Prazo']
+
+    if (scope !== 'all') {
+      const parceiroNome = scope === 'sem-parceiro' ? 'Sem parceiro' : (colaboradores.find(c => c.id === scope)?.nome || 'Parceiro')
+      const csvLines = ['Número,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
+      for (const p of scoped) {
+        csvLines.push(`"${p.number}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+      }
+      openExportWindow({
+        title: 'Relatório de Processos',
+        subtitle: `Parceiro: ${parceiroNome}`,
+        filename: `processos-${parceiroNome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
+        stats: [
+          { value: scoped.length, label: 'Total de processos', accent: '#2563eb' },
+          { value: judicial, label: 'Judiciais', accent: '#7c3aed' },
+          { value: admin, label: 'Administrativos', accent: '#0e7490' },
+          { value: active, label: 'Ativos', accent: '#16a34a' },
+        ],
+        columns,
+        rows: scoped.map(processRow),
+        csvContent: csvLines.join('\n'),
+      })
+      return
     }
 
     // Grupos por parceiro
@@ -322,7 +364,7 @@ export function ProcessesPage() {
         { value: admin, label: 'Administrativos', accent: '#0e7490' },
         { value: active, label: 'Ativos', accent: '#16a34a' },
       ],
-      columns: ['Número', 'Título', 'Cliente', 'Modalidade', 'Área', 'Vara', 'Status', 'Próximo Prazo'],
+      columns,
       rows: [],
       groups: parceiroGroups,
       csvContent: csvLines.join('\n'),
@@ -563,9 +605,46 @@ export function ProcessesPage() {
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M6 12h12M9 17h6" /></svg>
                 Ordenar
               </button>
-              <button onClick={exportAll} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                <Download className="w-3.5 h-3.5" /> Exportar
-              </button>
+              <div className="relative" ref={exportRef}>
+                <button
+                  onClick={() => setExportOpen(v => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors',
+                    exportOpen
+                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
+                      : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-700'
+                  )}
+                >
+                  <Download className="w-3.5 h-3.5" /> Exportar
+                </button>
+                {exportOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-2 space-y-0.5">
+                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-2 py-1.5">Exportar processos</p>
+                    <button
+                      onClick={() => { exportAll('all'); setExportOpen(false) }}
+                      className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700"
+                    >
+                      Todos os parceiros
+                    </button>
+                    <div className="pt-1 mt-1 border-t border-gray-100 dark:border-dark-700" />
+                    {colaboradores.map(col => (
+                      <button
+                        key={col.id}
+                        onClick={() => { exportAll(col.id); setExportOpen(false) }}
+                        className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700"
+                      >
+                        {col.nome}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => { exportAll('sem-parceiro'); setExportOpen(false) }}
+                      className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700"
+                    >
+                      Sem parceiro
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Toggle Lista / Por parceiro */}
               <div className="flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden ml-auto">
