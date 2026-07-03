@@ -1,0 +1,8 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["package-lock.json"],
+      "schema": { "type": "object" }
+    }
+  ]
+}
