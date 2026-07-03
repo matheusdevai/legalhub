@@ -210,16 +210,18 @@ export function ClientsPage() {
     setCpfError('')
     setCpfNote('')
 
-    if (digits.length === 11) {
-      if (!validateCPF(digits)) {
-        setCpfError('CPF inválido — verifique os dígitos')
-        return
-      }
-      const existing = clients.find(c => c.cpf_cnpj?.replace(/\D/g, '') === digits && !c.deleted_at)
+    if (digits.length === 11 && !validateCPF(digits)) {
+      setCpfError('CPF inválido — verifique os dígitos')
+      return
+    }
+
+    // Checa duplicidade (CPF ou CNPJ) contra contatos já cadastrados, ignorando o próprio registro em edição
+    if (digits.length === 11 || digits.length === 14) {
+      const existing = clients.find(c => c.cpf_cnpj?.replace(/\D/g, '') === digits && !c.deleted_at && c.id !== editId)
       if (existing) {
         setCpfSuggestion({
           label: existing.name,
-          sub: 'CPF já cadastrado no sistema — clique para usar os dados',
+          sub: `Já existe um contato cadastrado com este ${digits.length === 11 ? 'CPF' : 'CNPJ'} — clique para preencher com os dados existentes`,
           fields: {
             name: existing.name,
             email: existing.email || '',
@@ -242,9 +244,12 @@ export function ClientsPage() {
             origem: (existing as any).origem || '',
           },
         })
-      } else {
-        setCpfNote('CPF válido — a Receita Federal não disponibiliza dados pessoais via API pública (LGPD). Preencha os campos abaixo.')
+        return
       }
+    }
+
+    if (digits.length === 11) {
+      setCpfNote('CPF válido — a Receita Federal não disponibiliza dados pessoais via API pública (LGPD). Preencha os campos abaixo.')
       return
     }
 
@@ -1366,7 +1371,7 @@ export function ClientsPage() {
                     cpfError
                       ? 'border-red-300 dark:border-red-600 focus:ring-red-100 focus:border-red-500'
                       : cpfSuggestion
-                      ? 'border-emerald-300 dark:border-emerald-600 focus:ring-emerald-100 focus:border-emerald-500'
+                      ? 'border-amber-300 dark:border-amber-600 focus:ring-amber-100 focus:border-amber-500'
                       : 'border-gray-200 dark:border-dark-600 focus:ring-primary-100 focus:border-primary-500'
                   )}
                   placeholder={form.type === 'pf' ? '999.999.999-99' : '99.999.999/0001-99'}
@@ -1379,7 +1384,9 @@ export function ClientsPage() {
                     ? <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
                     : cpfError
                     ? <AlertCircle className="w-4 h-4 text-red-500" />
-                    : (cpfSuggestion || cpfNote)
+                    : cpfSuggestion
+                    ? <AlertCircle className="w-4 h-4 text-amber-500" />
+                    : cpfNote
                     ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     : null}
                 </div>
@@ -1392,16 +1399,16 @@ export function ClientsPage() {
                 </p>
               )}
               {cpfSuggestion && (
-                <div className="mt-2 flex items-start gap-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 flex-shrink-0" />
+                <div className="mt-2 flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-xl">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 truncate">{cpfSuggestion.label}</p>
-                    <p className="text-[11px] text-emerald-600/80 dark:text-emerald-500 mt-0.5">{cpfSuggestion.sub}</p>
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 truncate">Contato já cadastrado: {cpfSuggestion.label}</p>
+                    <p className="text-[11px] text-amber-700/80 dark:text-amber-500 mt-0.5">{cpfSuggestion.sub}</p>
                   </div>
                   <button
                     type="button"
                     onClick={() => { setForm(f => ({ ...f, ...cpfSuggestion.fields })); setCpfSuggestion(null) }}
-                    className="flex-shrink-0 px-2.5 py-1.5 text-[11px] font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                    className="flex-shrink-0 px-2.5 py-1.5 text-[11px] font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
                   >
                     Usar dados
                   </button>
