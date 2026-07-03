@@ -325,7 +325,7 @@ export function Dashboard() {
     const [{ data: pending }, { data: completed }] = await Promise.all([
       supabase.from('tasks').select('*').in('status', ['pending', 'in_progress'])
         .is('deleted_at', null).order('created_at', { ascending: false }).limit(200),
-      supabase.from('tasks').select('*').eq('status', 'completed')
+      supabase.from('tasks').select('*').eq('status', 'done')
         .gte('updated_at', todayStr).is('deleted_at', null)
         .order('updated_at', { ascending: false }).limit(50),
     ])
@@ -336,7 +336,7 @@ export function Dashboard() {
 
   async function markDoneFromQuadro(taskId: string) {
     const done = quadroTasks.find(t => t.id === taskId)
-    await supabase.from('tasks').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', taskId)
+    await supabase.from('tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', taskId)
     setQuadroTasks(prev => prev.filter(t => t.id !== taskId))
     if (done) setQuadroCompletedToday(prev => [{ ...done } as Task, ...prev])
     setStats(prev => ({ ...prev, pending: prev.pending - 1, completedMonth: prev.completedMonth + 1, completedToday: prev.completedToday + 1 }))
@@ -369,20 +369,20 @@ export function Dashboard() {
       { data: receivables },
     ] = await Promise.all([
       supabase.from('tasks').select('*', { count: 'exact', head: true })
-        .eq('status', 'completed').gte('updated_at', todayStr).is('deleted_at', null),
+        .eq('status', 'done').gte('updated_at', todayStr).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
-        .eq('status', 'completed').gte('updated_at', startOfMonth).is('deleted_at', null),
+        .eq('status', 'done').gte('updated_at', startOfMonth).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
-        .eq('status', 'completed').gte('updated_at', startOfPrevMonth).lte('updated_at', endOfPrevMonth).is('deleted_at', null),
+        .eq('status', 'done').gte('updated_at', startOfPrevMonth).lte('updated_at', endOfPrevMonth).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
         .in('status', ['pending', 'in_progress']).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
         .in('status', ['pending', 'in_progress']).lt('due_date', todayStr).is('deleted_at', null),
       supabase.from('tasks').select('*').in('status', ['pending', 'in_progress'])
         .is('deleted_at', null).order('due_date', { ascending: true }).limit(20),
-      supabase.from('tasks').select('updated_at').eq('status', 'completed')
+      supabase.from('tasks').select('updated_at').eq('status', 'done')
         .gte('updated_at', last6MonthsStart).is('deleted_at', null),
-      supabase.from('tasks').select('priority').eq('status', 'completed')
+      supabase.from('tasks').select('priority').eq('status', 'done')
         .gte('updated_at', startOfMonth).is('deleted_at', null),
       supabase.from('processes').select('*', { count: 'exact', head: true })
         .eq('status', 'active').is('deleted_at', null),
@@ -517,13 +517,13 @@ export function Dashboard() {
   }
 
   async function markDone(taskId: string) {
-    await supabase.from('tasks').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', taskId)
+    await supabase.from('tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', taskId)
     setTasks(prev => prev.filter(t => t.id !== taskId))
     setStats(prev => ({ ...prev, pending: prev.pending - 1, completedMonth: prev.completedMonth + 1 }))
   }
 
   async function markDoneFromLista(taskId: string) {
-    await supabase.from('tasks').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', taskId)
+    await supabase.from('tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', taskId)
     setListaTasks(prev => prev.filter(t => t.id !== taskId))
   }
 
