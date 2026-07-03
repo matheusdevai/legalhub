@@ -315,7 +315,9 @@ export function TasksPage() {
       client_name: selectedClient?.name || completionForm.client_name || '',
       colaborador_id: completionForm.colaborador_id || null,
       data_protocolo: completionForm.data_protocolo || completionForm.data_requerimento || null,
+      data_requerimento: completionForm.data_requerimento || null,
       next_deadline: completionForm.next_deadline || null,
+      modalidade: completionForm.modalidade || null,
     }
     if (!payload.client_id) delete payload.client_id
     const { error } = await supabase.from('processes').insert(payload)

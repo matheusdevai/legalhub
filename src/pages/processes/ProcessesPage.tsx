@@ -249,7 +249,9 @@ export function ProcessesPage() {
       client_name: selectedClient?.name || form.client_name || '',
       colaborador_id: form.colaborador_id || null,
       data_protocolo: form.data_protocolo || form.data_requerimento || null,
+      data_requerimento: form.data_requerimento || null,
       next_deadline: form.next_deadline || null,
+      modalidade: form.modalidade || null,
     }
     if (!payload.client_id) delete payload.client_id
     let error: any = null
@@ -1423,7 +1425,7 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
       next_deadline: form.next_deadline || null,
       colaborador_id: form.colaborador_id || null,
       status: form.status as any,
-      modalidade: form.modalidade as any,
+      modalidade: (form.modalidade || null) as any,
     }).eq('id', p.id)
     setSaving(false)
     onSaved()
