@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   ChevronDown, Filter, Printer, CheckCircle2, ChevronLeft, ChevronRight,
-  ChevronsLeft, ChevronsRight, RefreshCw, AlertCircle, Download,
+  ChevronsLeft, ChevronsRight, RefreshCw, AlertCircle, Download, Search, X,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Spinner, EmptyState } from '@/components/ui'
@@ -60,6 +60,7 @@ export function PublicacoesPage() {
   const [lastSync, setLastSync] = useState<string>('')
   const [hasCnjData, setHasCnjData] = useState(true)
 
+  const [search, setSearch] = useState('')
   const [periodoOpen, setPeriodoOpen] = useState(false)
   const [periodo, setPeriodo] = useState('Todos')
   const [responsavelOpen, setResponsavelOpen] = useState(false)
@@ -136,13 +137,23 @@ export function PublicacoesPage() {
 
     if (cutoff) list = list.filter(i => i.publicacao && new Date(i.publicacao) >= cutoff!)
     if (responsavelFilter) list = list.filter(i => i.responsavel === responsavelFilter)
+    if (search) {
+      const q = search.toLowerCase()
+      list = list.filter(i =>
+        i.numero_processo?.toLowerCase().includes(q) ||
+        i.partes?.toLowerCase().includes(q) ||
+        i.conteudo?.toLowerCase().includes(q) ||
+        i.tribunal?.toLowerCase().includes(q) ||
+        i.responsavel?.toLowerCase().includes(q)
+      )
+    }
 
     list.sort((a, b) => sortDir === 'desc'
       ? b.publicacao.localeCompare(a.publicacao)
       : a.publicacao.localeCompare(b.publicacao)
     )
     return list
-  }, [items, periodo, responsavelFilter, sortDir, statusMap])
+  }, [items, periodo, responsavelFilter, sortDir, statusMap, search])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paginated = filtered.slice(page * pageSize, (page + 1) * pageSize)
@@ -234,6 +245,22 @@ export function PublicacoesPage() {
 
         {/* Toolbar */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Busca */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              className="pl-9 pr-8 py-2 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 w-64"
+              placeholder="Buscar intimação..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(0) }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
           {/* Período */}
           <div className="relative">
             <button

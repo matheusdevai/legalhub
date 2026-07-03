@@ -1,6 +1,6 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
-import { Shield, Users, Building2, Megaphone, Ticket, Plus, Trash2 } from 'lucide-react'
+import { Shield, Users, Building2, Megaphone, Ticket, Plus, Trash2, Search, X } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, Badge, Button, Modal, Input, Select, Textarea, Spinner, StatsCard } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -17,6 +17,7 @@ export function AdminPage() {
   const [announcementModal, setAnnouncementModal] = useState(false)
   const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '', type: 'info' })
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
 
   async function load() {
     setLoading(true)
@@ -64,6 +65,12 @@ export function AdminPage() {
     { key: 'tickets', label: `Suporte (${tickets.filter(t => t.status === 'open').length} abertos)` },
   ]
 
+  const q = search.trim().toLowerCase()
+  const filteredTenants = q ? tenants.filter(t => t.name?.toLowerCase().includes(q) || t.slug?.toLowerCase().includes(q)) : tenants
+  const filteredUsers = q ? users.filter(u => (u.name || u.display_name || '').toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)) : users
+  const filteredAnnouncements = q ? announcements.filter(a => a.title?.toLowerCase().includes(q) || a.message?.toLowerCase().includes(q)) : announcements
+  const filteredTickets = q ? tickets.filter(t => t.user_name?.toLowerCase().includes(q) || t.user_email?.toLowerCase().includes(q) || t.subject?.toLowerCase().includes(q)) : tickets
+
   return (
     <Layout
       title="Painel Administrativo"
@@ -87,6 +94,23 @@ export function AdminPage() {
           </button>
         ))}
       </div>
+
+      {tab !== 'overview' && (
+        <div className="relative mb-4 max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+            placeholder="Buscar..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {!loading && (
         <>
@@ -114,7 +138,7 @@ export function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tenants.map(t => (
+                    {filteredTenants.map(t => (
                       <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="px-4 py-3 font-medium text-gray-900">{t.name}</td>
                         <td className="px-4 py-3 text-gray-500 font-mono text-xs">{t.slug}</td>
@@ -144,7 +168,7 @@ export function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users.map(u => (
+                    {filteredUsers.map(u => (
                       <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
@@ -176,9 +200,9 @@ export function AdminPage() {
 
           {tab === 'announcements' && (
             <div className="space-y-3">
-              {announcements.length === 0 ? (
-                <Card className="p-8 text-center text-gray-400">Nenhum aviso criado</Card>
-              ) : announcements.map(a => (
+              {filteredAnnouncements.length === 0 ? (
+                <Card className="p-8 text-center text-gray-400">{q ? 'Nenhum aviso encontrado' : 'Nenhum aviso criado'}</Card>
+              ) : filteredAnnouncements.map(a => (
                 <Card key={a.id} className="p-4">
                   <div className="flex items-start justify-between">
                     <div>
@@ -213,7 +237,7 @@ export function AdminPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {tickets.map(t => (
+                    {filteredTickets.map(t => (
                       <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <p className="font-medium text-gray-900">{t.user_name || '—'}</p>

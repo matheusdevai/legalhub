@@ -745,7 +745,6 @@ export function ClientsPage() {
   }
 
   const [tableCollapsed, setTableCollapsed] = useState(false)
-  const [showSearch, setShowSearch] = useState(false)
   const [viewMode, setViewMode] = useState<'table' | 'byColaborador'>('table')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
@@ -838,25 +837,20 @@ export function ClientsPage() {
                 <Plus className="w-3.5 h-3.5" /> Novo contato
               </Button>
 
-              {showSearch ? (
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                  <input
-                    autoFocus
-                    className="pl-8 pr-7 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 w-52"
-                    placeholder="Buscar contato..."
-                    value={search}
-                    onChange={e => { setSearch(e.target.value); setPage(0) }}
-                  />
-                  <button onClick={() => { setSearch(''); setShowSearch(false) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  className="pl-8 pr-7 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 w-52"
+                  placeholder="Buscar contato..."
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPage(0) }}
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                     <X className="w-3 h-3" />
                   </button>
-                </div>
-              ) : (
-                <button onClick={() => setShowSearch(true)} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                  <Search className="w-3.5 h-3.5" /> Buscar
-                </button>
-              )}
+                )}
+              </div>
 
               {/* Filtrar */}
               <div className="relative" ref={filterRef}>

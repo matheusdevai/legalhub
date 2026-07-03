@@ -4,7 +4,7 @@ import {
   RefreshCw, Link2Off, ExternalLink,
   CheckCircle, AlertCircle, Loader,
   Clock, MapPin, Scale, User, List, LayoutGrid,
-  CalendarDays, Target, Users, Gavel, Download, ArrowRight,
+  CalendarDays, Target, Users, Gavel, Download, ArrowRight, Search, X,
 } from 'lucide-react'
 import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
@@ -148,6 +148,7 @@ export function CalendarPage() {
 
   const [filterShowConcluded, setFilterShowConcluded] = useState(false)
   const [filterType, setFilterType]   = useState<string>('')
+  const [search, setSearch] = useState('')
   const [overflowDay, setOverflowDay] = useState<Date | null>(null)
 
   // Restore token
@@ -242,15 +243,29 @@ export function CalendarPage() {
     [events, today]
   )
 
+  function matchesSearch(e: CalendarEvent) {
+    if (!search) return true
+    const q = search.toLowerCase()
+    return Boolean(
+      e.title?.toLowerCase().includes(q) ||
+      e.location?.toLowerCase().includes(q) ||
+      e.client_name?.toLowerCase().includes(q) ||
+      e.description?.toLowerCase().includes(q)
+    )
+  }
+
   const applyFilters = (list: CalendarEvent[]) =>
     list.filter(e => {
       if (!filterShowConcluded && e.status === 'completed') return false
       if (filterType && e.type !== filterType) return false
+      if (!matchesSearch(e)) return false
       return true
     })
 
   function eventsOnDay(date: Date) {
-    return events.filter(e => { try { return isSameDay(parseISO(e.date), date) } catch { return false } })
+    return events
+      .filter(e => { try { return isSameDay(parseISO(e.date), date) } catch { return false } })
+      .filter(matchesSearch)
   }
 
   // Month data
@@ -268,7 +283,7 @@ export function CalendarPage() {
   const listEvents = useMemo(() =>
     applyFilters(events.filter(e => e.date >= format(monthStart, 'yyyy-MM-dd')))
       .sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')),
-    [events, filterShowConcluded, filterType, monthStart]
+    [events, filterShowConcluded, filterType, monthStart, search]
   )
 
   // ─── Navigation ───────────────────────────────────────────────────────────
@@ -946,6 +961,22 @@ export function CalendarPage() {
               <h2 className="text-base font-semibold text-gray-900 dark:text-white capitalize flex-1">
                 {periodLabel()}
               </h2>
+
+              {/* Busca */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                <input
+                  className="pl-8 pr-7 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 w-48"
+                  placeholder="Buscar evento..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
 
               {/* View toggle */}
               <div className="flex rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden bg-white dark:bg-dark-800">
