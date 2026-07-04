@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
+import { LandingPage } from '@/pages/landing/LandingPage'
 import { Login } from '@/pages/auth/Login'
 import { Dashboard } from '@/pages/dashboard/Dashboard'
 import { ClientsPage } from '@/pages/clients/ClientsPage'
@@ -54,7 +55,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/clientes" element={<PrivateRoute><ClientsPage /></PrivateRoute>} />
       <Route path="/processos" element={<PrivateRoute><ProcessesPage /></PrivateRoute>} />

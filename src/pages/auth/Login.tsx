@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { Eye, EyeOff, Mail, Check, Settings, ShieldCheck, X, Send, MessageCircle } from 'lucide-react'
@@ -30,7 +30,8 @@ type ChatStep = 'welcome' | 'form' | 'sent'
 
 export function Login() {
   const { session, signIn } = useAuth()
-  const [mode, setMode] = useState<Mode>('login')
+  const location = useLocation()
+  const [mode, setMode] = useState<Mode>((location.state as { mode?: Mode } | null)?.mode || 'login')
 
   const [chatOpen,    setChatOpen]    = useState(false)
   const [chatStep,    setChatStep]    = useState<ChatStep>('welcome')
