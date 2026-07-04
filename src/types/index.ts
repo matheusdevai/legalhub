@@ -154,6 +154,7 @@ export interface CalendarEvent {
   sync_google: boolean | null
   created_at: string | null
   deleted_at: string | null
+  task_id: string | null
 }
 
 export interface Lead {

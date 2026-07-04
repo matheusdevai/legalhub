@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { CalendarEvent, Process, Task } from '@/types'
+import { CalendarEvent, Process } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
@@ -119,7 +119,7 @@ function GIcon({ className = 'w-3 h-3' }) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-function isTaskEvent(ev: CalendarEvent) { return ev.id.startsWith('task_') }
+function isTaskEvent(ev: CalendarEvent) { return !!ev.task_id }
 
 export function CalendarPage() {
   const { profile } = useAuth()
@@ -186,51 +186,57 @@ export function CalendarPage() {
   }, [uid])
 
   // ─── Load ──────────────────────────────────────────────────────────────────
+  // Tarefas com data de vencimento viram eventos reais em calendar_events
+  // automaticamente (trigger no banco), então basta carregar a tabela normal.
   const load = useCallback(async () => {
     if (!uid) return
     setLoading(true)
-    const tenantId = profile?.tenant_id || ''
-    const [{ data: e }, { data: p }, { data: t }] = await Promise.all([
+    const [{ data: e }, { data: p }] = await Promise.all([
       supabase.from('calendar_events').select('*').is('deleted_at', null).eq('user_id', uid).order('date').order('time'),
       supabase.from('processes').select('id,number,title').is('deleted_at', null).order('number'),
-      supabase.from('tasks')
-        .select('id,title,due_date,status,description,assigned_name,process_id')
-        .eq('tenant_id', tenantId)
-        .eq('assigned_to', uid)
-        .not('due_date', 'is', null)
-        .neq('status', 'done')
-        .neq('status', 'cancelled')
-        .is('deleted_at', null),
     ])
-    const taskEvents: CalendarEvent[] = ((t || []) as Task[])
-      .filter(task => task.due_date)
-      .map(task => ({
-        id: `task_${task.id}`,
-        tenant_id: tenantId,
-        title: task.title,
-        type: 'task' as const,
-        date: task.due_date!,
-        time: null,
-        end_date: null,
-        end_time: null,
-        process_id: task.process_id || null,
-        process_number: null,
-        client_name: task.assigned_name || null,
-        location: null,
-        description: task.description || null,
-        status: 'scheduled' as const,
-        google_event_id: null,
-        user_id: uid,
-        sync_google: false,
-        created_at: null,
-        deleted_at: null,
-      }))
-    setEvents([...(e || []), ...taskEvents])
+    setEvents((e || []) as CalendarEvent[])
     setProcesses((p || []) as Process[])
     setLoading(false)
-  }, [uid, profile?.tenant_id])
+    return (e || []) as CalendarEvent[]
+  }, [uid])
 
   useEffect(() => { load() }, [load])
+
+  // ─── Sincronização automática: eventos de tarefa → Google Calendar ─────────
+  const syncTaskEventsToGoogle = useCallback(async (evts: CalendarEvent[], token: string) => {
+    const pending = evts.filter(ev => ev.task_id && !ev.sync_google)
+    for (const ev of pending) {
+      try {
+        const created = await gcalRequest('/calendars/primary/events', 'POST', token, {
+          summary: ev.title,
+          description: ev.description || undefined,
+          start: { date: ev.date },
+          end: { date: ev.date },
+        })
+        await supabase.from('calendar_events').update({ google_event_id: created.id, sync_google: true }).eq('id', ev.id)
+        setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, google_event_id: created.id, sync_google: true } : e))
+      } catch { /* tenta de novo no próximo carregamento */ }
+    }
+
+    // Remove do Google os eventos cuja tarefa foi concluída/excluída (calendar_events já foi soft-deleted pelo trigger)
+    const { data: orphaned } = await supabase.from('calendar_events')
+      .select('id, google_event_id')
+      .eq('user_id', uid)
+      .not('task_id', 'is', null)
+      .not('deleted_at', 'is', null)
+      .not('google_event_id', 'is', null)
+    for (const o of orphaned || []) {
+      try { await gcalRequest(`/calendars/primary/events/${o.google_event_id}`, 'DELETE', token) } catch { /* pode já ter sido removido */ }
+      await supabase.from('calendar_events').update({ google_event_id: null, sync_google: false }).eq('id', o.id)
+    }
+  }, [uid])
+
+  useEffect(() => {
+    const token = gToken || getStoredToken(uid)
+    if (!token || events.length === 0) return
+    syncTaskEventsToGoogle(events, token)
+  }, [events, gToken, uid, syncTaskEventsToGoogle])
 
   // ─── Derived data ──────────────────────────────────────────────────────────
   const today = format(new Date(), 'yyyy-MM-dd')
