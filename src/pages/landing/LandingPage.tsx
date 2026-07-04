@@ -5,7 +5,18 @@ import {
   ShieldCheck, Layers, LineChart, ArrowRight, Menu, X, CheckCircle2,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { LogoWhite } from '@/components/ui/Logo'
+
+function BrandMark({ size = 32 }: { size?: number }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: size, height: size }}>
+        <img src="/logomarca.png" alt="LegalHub"
+          style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
+      </div>
+      <span className="font-bold text-lg text-white tracking-tight">LegalHub</span>
+    </div>
+  )
+}
 
 const NAV_LINKS = [
   { href: '#recursos', label: 'Recursos' },
@@ -118,7 +129,7 @@ export function LandingPage() {
         }}
       >
         <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-          <LogoWhite size={30} />
+          <BrandMark size={34} />
 
           <nav className="hidden md:flex items-center gap-8">
             {NAV_LINKS.map(l => (
@@ -363,7 +374,7 @@ export function LandingPage() {
       {/* ══ FOOTER ══ */}
       <footer className="border-t border-white/5 px-5 sm:px-8 py-10">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <LogoWhite size={26} />
+          <BrandMark size={30} />
           <p className="text-xs text-slate-500">© 2026 LegalHub · Todos os direitos reservados</p>
         </div>
       </footer>
