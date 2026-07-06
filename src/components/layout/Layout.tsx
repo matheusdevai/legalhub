@@ -1,5 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback } from 'react'
 import { SupportChatWidget } from '@/components/support/SupportChatWidget'
+import { AiAssistantWidget } from '@/components/ai/AiAssistantWidget'
 import { DailyAgendaModal } from '@/components/agenda/DailyAgendaModal'
 import { useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
@@ -505,6 +506,9 @@ export function Layout({ children }: LayoutProps) {
 
       {/* Support chat widget */}
       <SupportChatWidget />
+
+      {/* AI assistant widget */}
+      <AiAssistantWidget />
     </div>
   )
 }

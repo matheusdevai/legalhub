@@ -48,6 +48,7 @@ export interface Client {
   colaborador_id: string | null
   modalidade: 'judicial' | 'administrativo' | null
   area_direito: string | null
+  beneficio_previdenciario: string | null
   colaborador_pago: boolean | null
   colaborador_pago_data: string | null
   colaborador_pago_valor: number | null

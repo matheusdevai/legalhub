@@ -23,11 +23,26 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = { active: 'Ativo', inactive: 'Inativo', prospect: 'Prospect' }
 const STATUS_DOT: Record<string, string> = { active: 'bg-green-500', inactive: 'bg-gray-400', prospect: 'bg-blue-500' }
 
+const BENEFICIO_PREVIDENCIARIO_OPTIONS = [
+  'Aposentadoria por Idade',
+  'Aposentadoria por Tempo de Contribuição',
+  'Aposentadoria por Invalidez',
+  'Aposentadoria Especial',
+  'Aposentadoria da Pessoa com Deficiência',
+  'Auxílio-Doença',
+  'Auxílio-Acidente',
+  'BPC/LOAS',
+  'Pensão por Morte',
+  'Auxílio-Reclusão',
+  'Salário-Maternidade',
+  'Revisão de Benefício',
+]
+
 type ClientForm = {
   type: 'pf' | 'pj'; name: string; cpf_cnpj: string; email: string; phone: string;
   address: string; status: string; notes: string; assunto: string; cidade: string;
   colaborador_id: string; assigned_lawyer: string; assigned_lawyer_uid: string;
-  entry_date: string; modalidade: string; area_direito: string;
+  entry_date: string; modalidade: string; area_direito: string; beneficio_previdenciario: string;
   colaborador_pago: boolean; colaborador_pago_data: string; colaborador_pago_valor: string;
   processo_pago: boolean; processo_pago_valor: string; processo_pago_data: string; processo_categoria: string;
   // extra fields
@@ -39,7 +54,7 @@ type ClientForm = {
 const EMPTY_CLIENT: ClientForm = {
   type: 'pf', name: '', cpf_cnpj: '', email: '', phone: '',
   address: '', status: 'active', notes: '', assunto: '', cidade: '', colaborador_id: '',
-  assigned_lawyer: '', assigned_lawyer_uid: '', entry_date: '', modalidade: '', area_direito: '',
+  assigned_lawyer: '', assigned_lawyer_uid: '', entry_date: '', modalidade: '', area_direito: '', beneficio_previdenciario: '',
   colaborador_pago: false, colaborador_pago_data: '', colaborador_pago_valor: '',
   processo_pago: false, processo_pago_valor: '', processo_pago_data: '', processo_categoria: 'fees',
   origem: '', pais: 'BRASIL', rg: '', birth_date: '', marital_status: '',
@@ -235,6 +250,7 @@ export function ClientsPage() {
             notes: existing.notes || '',
             type: existing.type,
             area_direito: existing.area_direito || '',
+            beneficio_previdenciario: (existing as any).beneficio_previdenciario || '',
             modalidade: existing.modalidade || '',
             birth_date: (existing as any).birth_date || '',
             gender: (existing as any).gender || '',
@@ -508,6 +524,7 @@ export function ClientsPage() {
       colaborador_id: c.colaborador_id || '', assigned_lawyer: c.assigned_lawyer || '',
       assigned_lawyer_uid: matchedUser?.user_id || '', entry_date: c.entry_date || '',
       modalidade: c.modalidade || '', area_direito: c.area_direito || '',
+      beneficio_previdenciario: (c as any).beneficio_previdenciario || '',
       colaborador_pago: c.colaborador_pago ?? false,
       colaborador_pago_data: c.colaborador_pago_data || '',
       colaborador_pago_valor: c.colaborador_pago_valor != null ? String(c.colaborador_pago_valor) : '',
@@ -1671,6 +1688,18 @@ export function ClientsPage() {
               placeholder="Selecione ou digite" value={form.area_direito} onChange={e => setForm({ ...form, area_direito: e.target.value })} />
             <datalist id="area-options">{areaOptions.map(a => <option key={a} value={a} />)}</datalist>
           </div>
+          {form.area_direito.trim().toLowerCase() === 'previdenciário' && (
+            <div>
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Benefício Previdenciário</label>
+              <input list="beneficio-options"
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                placeholder="Selecione ou digite" value={form.beneficio_previdenciario}
+                onChange={e => setForm({ ...form, beneficio_previdenciario: e.target.value })} />
+              <datalist id="beneficio-options">
+                {BENEFICIO_PREVIDENCIARIO_OPTIONS.map(b => <option key={b} value={b} />)}
+              </datalist>
+            </div>
+          )}
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Modalidade</label>
             <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
@@ -1822,6 +1851,9 @@ export function ClientsPage() {
                   <DetailField icon={Mail} label="Email" value={viewClient.email ? <a href={`mailto:${viewClient.email}`} className="text-primary-600 hover:underline">{viewClient.email}</a> : null} />
                   <DetailField icon={MapPin} label="Cidade" value={viewClient.cidade} />
                   <DetailField icon={Scale} label="Área do Direito" value={viewClient.area_direito} />
+                  {viewClient.area_direito?.trim().toLowerCase() === 'previdenciário' && (
+                    <DetailField icon={Scale} label="Benefício Previdenciário" value={(viewClient as any).beneficio_previdenciario} />
+                  )}
                   <DetailField icon={Calendar} label="Data de Entrada" value={viewClient.entry_date ? formatDate(viewClient.entry_date) : null} />
                   <DetailField icon={Calendar} label="Cadastrado em" value={formatDate(viewClient.created_at)} />
                   <DetailField icon={FileText} label="Total Faturado" value={<span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(viewClient.total_billed ?? 0)}</span>} />
