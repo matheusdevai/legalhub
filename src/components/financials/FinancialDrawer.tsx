@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, ArrowUpRight, ArrowDownRight, DollarSign, CalendarDays, FileText, User, Briefcase, Tag, CheckCircle2, Clock } from 'lucide-react'
+import { X, ArrowUpRight, ArrowDownRight, DollarSign, CalendarDays, FileText, User, Briefcase, Tag, CheckCircle2, Clock, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
+
+export type InstallmentPlanForm = {
+  enabled: boolean
+  downPayment: string
+  downPaymentPaid: boolean
+  installmentsCount: string
+  firstDueDate: string
+}
 
 export type FinancialDrawerForm = {
   type: 'receivable' | 'payable'
@@ -15,6 +23,7 @@ export type FinancialDrawerForm = {
   paid_date: string
   status: 'pending' | 'paid' | 'overdue' | 'cancelled'
   notes: string
+  installmentPlan: InstallmentPlanForm
 }
 
 export const DRAWER_EMPTY_FORM: FinancialDrawerForm = {
@@ -30,6 +39,24 @@ export const DRAWER_EMPTY_FORM: FinancialDrawerForm = {
   paid_date: '',
   status: 'pending',
   notes: '',
+  installmentPlan: {
+    enabled: false,
+    downPayment: '',
+    downPaymentPaid: true,
+    installmentsCount: '3',
+    firstDueDate: '',
+  },
+}
+
+export function computeInstallmentAmounts(totalAmount: number, downPayment: number, count: number): number[] {
+  const remaining = Math.max(totalAmount - downPayment, 0)
+  if (count <= 0) return []
+  const base = Math.floor((remaining / count) * 100) / 100
+  const amounts = Array(count).fill(base)
+  const distributed = base * count
+  const remainder = Math.round((remaining - distributed) * 100) / 100
+  amounts[count - 1] = Math.round((base + remainder) * 100) / 100
+  return amounts
 }
 
 const CATEGORIES = [
@@ -88,8 +115,25 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
     setForm(f => ({ ...f, [key]: value }))
   }
 
+  function setPlan<K extends keyof InstallmentPlanForm>(key: K, value: InstallmentPlanForm[K]) {
+    setForm(f => ({ ...f, installmentPlan: { ...f.installmentPlan, [key]: value } }))
+  }
+
   const isReceita = form.type === 'receivable'
-  const isValid = form.description.trim() !== '' && form.amount !== '' && parseFloat(form.amount) > 0
+  const canInstallment = isReceita && !editId
+  const plan = form.installmentPlan
+  const totalAmount = parseFloat(form.amount) || 0
+  const downPayment = parseFloat(plan.downPayment) || 0
+  const installmentsCount = parseInt(plan.installmentsCount, 10) || 0
+  const installmentAmounts = canInstallment && plan.enabled
+    ? computeInstallmentAmounts(totalAmount, downPayment, installmentsCount)
+    : []
+
+  const baseValid = form.description.trim() !== '' && form.amount !== '' && parseFloat(form.amount) > 0
+  const planValid = !canInstallment || !plan.enabled || (
+    installmentsCount > 0 && plan.firstDueDate !== '' && downPayment < totalAmount
+  )
+  const isValid = baseValid && planValid
 
   const headerBg = isReceita
     ? 'from-emerald-500 to-emerald-600'
@@ -161,7 +205,9 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             {formatAmountDisplay(form.amount)}
           </p>
           <p className="text-xs text-white/60 mt-1">
-            {form.status === 'paid' ? '● Pago' : form.status === 'pending' ? '○ Pendente' : form.status === 'overdue' ? '⚠ Vencido' : '✕ Cancelado'}
+            {canInstallment && plan.enabled
+              ? `Parcelado em ${installmentsCount || 0}x${downPayment > 0 ? ' + entrada' : ''}`
+              : form.status === 'paid' ? '● Pago' : form.status === 'pending' ? '○ Pendente' : form.status === 'overdue' ? '⚠ Vencido' : '✕ Cancelado'}
           </p>
         </div>
 
@@ -243,65 +289,179 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             </div>
           </div>
 
+          {/* Parcelamento de honorários */}
+          {canInstallment && (
+            <div className="rounded-xl border border-slate-200 dark:border-dark-600 overflow-hidden">
+              <button
+                type="button"
+                data-testid="toggle-installment-plan"
+                onClick={() => setPlan('enabled', !plan.enabled)}
+                className={cn(
+                  'w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold transition-colors',
+                  plan.enabled
+                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
+                    : 'bg-slate-50 dark:bg-dark-800 text-slate-600 dark:text-slate-300'
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" /> Parcelar honorários
+                </span>
+                <span className={cn('relative w-9 h-5 rounded-full transition-colors flex-shrink-0', plan.enabled ? 'bg-primary-600' : 'bg-slate-300 dark:bg-dark-500')}>
+                  <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', plan.enabled && 'translate-x-4')} />
+                </span>
+              </button>
+
+              {plan.enabled && (
+                <div className="p-3 space-y-3 bg-white dark:bg-dark-900">
+                  <p className="text-[11px] text-slate-400">
+                    O campo "Valor" acima é o valor total do contrato. Informe a entrada e o número de parcelas — o restante será dividido automaticamente.
+                  </p>
+
+                  {/* Entrada */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="drawer-down-payment" className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">
+                        Entrada
+                      </label>
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">R$</span>
+                        <input
+                          id="drawer-down-payment"
+                          data-testid="field-down-payment"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="0,00"
+                          value={plan.downPayment}
+                          onChange={e => setPlan('downPayment', e.target.value)}
+                          className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="drawer-installments-count" className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">
+                        Nº de parcelas
+                      </label>
+                      <input
+                        id="drawer-installments-count"
+                        data-testid="field-installments-count"
+                        type="number"
+                        step="1"
+                        min="1"
+                        value={plan.installmentsCount}
+                        onChange={e => setPlan('installmentsCount', e.target.value)}
+                        className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                      />
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <input
+                      type="checkbox"
+                      data-testid="field-down-payment-paid"
+                      checked={plan.downPaymentPaid}
+                      onChange={e => setPlan('downPaymentPaid', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-primary-600"
+                    />
+                    Entrada já recebida
+                  </label>
+
+                  <div>
+                    <label htmlFor="drawer-first-due" className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">
+                      Vencimento da 1ª parcela
+                    </label>
+                    <input
+                      id="drawer-first-due"
+                      data-testid="field-first-due-date"
+                      type="date"
+                      value={plan.firstDueDate}
+                      onChange={e => setPlan('firstDueDate', e.target.value)}
+                      className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">As demais parcelas vencem mensalmente a partir desta data.</p>
+                  </div>
+
+                  {installmentAmounts.length > 0 && (
+                    <div className="rounded-lg bg-slate-50 dark:bg-dark-800 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300">
+                      {downPayment > 0 && (
+                        <p>Entrada: <strong>{formatAmountDisplay(String(downPayment))}</strong></p>
+                      )}
+                      <p>
+                        {installmentsCount}x de <strong>{formatAmountDisplay(String(installmentAmounts[0]))}</strong>
+                        {installmentAmounts[installmentAmounts.length - 1] !== installmentAmounts[0] && (
+                          <> (última de {formatAmountDisplay(String(installmentAmounts[installmentAmounts.length - 1]))})</>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Datas */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="drawer-due" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                <CalendarDays className="w-3.5 h-3.5" /> Vencimento
-              </label>
-              <input
-                id="drawer-due"
-                data-testid="field-due-date"
-                type="date"
-                value={form.due_date}
-                onChange={e => set('due_date', e.target.value)}
-                className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
-              />
+          {!(canInstallment && plan.enabled) && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="drawer-due" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  <CalendarDays className="w-3.5 h-3.5" /> Vencimento
+                </label>
+                <input
+                  id="drawer-due"
+                  data-testid="field-due-date"
+                  type="date"
+                  value={form.due_date}
+                  onChange={e => set('due_date', e.target.value)}
+                  className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                />
+              </div>
+              <div>
+                <label htmlFor="drawer-paid" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Pagamento
+                </label>
+                <input
+                  id="drawer-paid"
+                  data-testid="field-paid-date"
+                  type="date"
+                  value={form.paid_date}
+                  onChange={e => set('paid_date', e.target.value)}
+                  className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                />
+              </div>
             </div>
-            <div>
-              <label htmlFor="drawer-paid" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Pagamento
-              </label>
-              <input
-                id="drawer-paid"
-                data-testid="field-paid-date"
-                type="date"
-                value={form.paid_date}
-                onChange={e => set('paid_date', e.target.value)}
-                className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
-              />
-            </div>
-          </div>
+          )}
 
           {/* Status */}
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-              <Clock className="w-3.5 h-3.5" /> Status
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              {([
-                { value: 'pending',   label: 'Pendente',  cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' },
-                { value: 'paid',      label: 'Pago',      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800' },
-                { value: 'overdue',   label: 'Vencido',   cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800' },
-                { value: 'cancelled', label: 'Cancelado', cls: 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-dark-700 dark:text-slate-400 dark:border-dark-600' },
-              ] as const).map(s => (
-                <button
-                  key={s.value}
-                  type="button"
-                  data-testid={`status-${s.value}`}
-                  onClick={() => set('status', s.value)}
-                  className={cn(
-                    'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
-                    form.status === s.value
-                      ? s.cls + ' ring-2 ring-offset-1 ring-current'
-                      : 'bg-white dark:bg-dark-800 text-slate-400 border-slate-200 dark:border-dark-600 hover:border-slate-300'
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
+          {!(canInstallment && plan.enabled) && (
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                <Clock className="w-3.5 h-3.5" /> Status
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { value: 'pending',   label: 'Pendente',  cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800' },
+                  { value: 'paid',      label: 'Pago',      cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800' },
+                  { value: 'overdue',   label: 'Vencido',   cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800' },
+                  { value: 'cancelled', label: 'Cancelado', cls: 'bg-slate-50 text-slate-500 border-slate-200 dark:bg-dark-700 dark:text-slate-400 dark:border-dark-600' },
+                ] as const).map(s => (
+                  <button
+                    key={s.value}
+                    type="button"
+                    data-testid={`status-${s.value}`}
+                    onClick={() => set('status', s.value)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-full text-xs font-semibold border transition-all',
+                      form.status === s.value
+                        ? s.cls + ' ring-2 ring-offset-1 ring-current'
+                        : 'bg-white dark:bg-dark-800 text-slate-400 border-slate-200 dark:border-dark-600 hover:border-slate-300'
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Cliente */}
           {clients.length > 0 && (
@@ -377,7 +537,7 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
               (!isValid || saving) && 'opacity-50 cursor-not-allowed'
             )}
           >
-            {saving ? 'Salvando...' : 'Salvar dados'}
+            {saving ? 'Salvando...' : canInstallment && plan.enabled ? 'Salvar parcelamento' : 'Salvar dados'}
           </button>
           <button
             type="button"

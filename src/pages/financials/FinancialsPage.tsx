@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
-import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM } from '@/components/financials/FinancialDrawer'
+import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM, computeInstallmentAmounts } from '@/components/financials/FinancialDrawer'
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
@@ -273,12 +273,65 @@ export function FinancialsPage() {
     setSaving(true)
     const selectedClient = clients.find(c => c.id === form.client_id)
     const selectedProcess = processes.find(p => p.id === form.process_id)
+    const clientName = selectedClient?.name || form.client_name
+    const processNumber = selectedProcess?.number || form.process_number
+    const clientId = form.client_id || null
+    const processId = form.process_id || null
+
+    if (!editId && form.installmentPlan.enabled) {
+      const totalAmount = parseFloat(form.amount) || 0
+      const downPayment = parseFloat(form.installmentPlan.downPayment) || 0
+      const count = parseInt(form.installmentPlan.installmentsCount, 10) || 0
+      const amounts = computeInstallmentAmounts(totalAmount, downPayment, count)
+      const groupId = crypto.randomUUID()
+      const rows: Record<string, unknown>[] = []
+
+      if (downPayment > 0) {
+        rows.push({
+          type: form.type, category: form.category,
+          description: `${form.description} — Entrada`,
+          amount: downPayment,
+          client_id: clientId, client_name: clientName,
+          process_id: processId, process_number: processNumber,
+          due_date: form.installmentPlan.firstDueDate || null,
+          paid_date: form.installmentPlan.downPaymentPaid ? (form.installmentPlan.firstDueDate || null) : null,
+          status: form.installmentPlan.downPaymentPaid ? 'paid' : 'pending',
+          notes: form.notes || null,
+          installment_group_id: groupId, installment_number: 0, installment_total: count,
+        })
+      }
+
+      const firstDue = new Date(`${form.installmentPlan.firstDueDate}T00:00:00`)
+      amounts.forEach((installmentAmount, i) => {
+        const dueDate = new Date(firstDue.getFullYear(), firstDue.getMonth() + i, firstDue.getDate())
+        rows.push({
+          type: form.type, category: form.category,
+          description: `${form.description} — Parcela ${i + 1}/${count}`,
+          amount: installmentAmount,
+          client_id: clientId, client_name: clientName,
+          process_id: processId, process_number: processNumber,
+          due_date: dueDate.toISOString().slice(0, 10),
+          paid_date: null,
+          status: 'pending',
+          notes: form.notes || null,
+          installment_group_id: groupId, installment_number: i + 1, installment_total: count,
+        })
+      })
+
+      await supabase.from('financials').insert(rows)
+      setSaving(false)
+      setDrawerOpen(false)
+      load()
+      return
+    }
+
     const payload = {
-      ...form, amount: parseFloat(form.amount),
-      client_name: selectedClient?.name || form.client_name,
-      process_number: selectedProcess?.number || form.process_number,
-      client_id: form.client_id || null, process_id: form.process_id || null,
+      type: form.type, category: form.category, description: form.description,
+      amount: parseFloat(form.amount) || 0,
+      client_name: clientName, process_number: processNumber,
+      client_id: clientId, process_id: processId,
       due_date: form.due_date || null, paid_date: form.paid_date || null,
+      status: form.status, notes: form.notes || null,
     }
     if (editId) await supabase.from('financials').update(payload).eq('id', editId)
     else await supabase.from('financials').insert(payload)
@@ -290,6 +343,14 @@ export function FinancialsPage() {
     if (!confirm('Deseja excluir este lançamento?')) return
     await supabase.from('financials').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
+  }
+  async function toggleFinancialPaid(f: Financial) {
+    const nowPaid = f.status !== 'paid'
+    const payload = nowPaid
+      ? { status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }
+      : { status: 'pending', paid_date: null }
+    setFinancials(prev => prev.map(x => x.id === f.id ? { ...x, ...payload } as Financial : x))
+    await supabase.from('financials').update(payload).eq('id', f.id)
   }
 
   function openNewExpense() {
@@ -642,7 +703,7 @@ export function FinancialsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-dark-700/50 bg-slate-50 dark:bg-dark-700/30">
-                    {['Vencimento', 'Pagamento', 'Competência', 'Lançamento', 'Categoria', 'Valor'].map(h => (
+                    {['Vencimento', 'Pagamento', 'Competência', 'Lançamento', 'Categoria', 'Status', 'Valor'].map(h => (
                       <th key={h} className={cn(
                         'px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400',
                         h === 'Valor' ? 'text-right' : 'text-left'
@@ -665,13 +726,32 @@ export function FinancialsPage() {
                           <div className="flex items-center gap-2">
                             <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isReceita ? 'bg-emerald-500' : 'bg-red-400')} />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{f.description}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{f.description}</p>
+                                {f.installment_group_id && (
+                                  <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
+                                    {f.installment_number === 0 ? 'Entrada' : `Parcela ${f.installment_number}/${f.installment_total}`}
+                                  </span>
+                                )}
+                              </div>
                               {f.client_name && <p className="text-[11px] text-slate-400 truncate">{f.client_name}</p>}
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs text-slate-500 dark:text-slate-400">{catLabel}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => toggleFinancialPaid(f)}
+                            title={f.status === 'paid' ? 'Marcar como pendente' : 'Marcar como pago'}
+                            className={cn(
+                              'text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors',
+                              FINANCIAL_STATUS_COLORS[f.status || 'pending']
+                            )}
+                          >
+                            {FINANCIAL_STATUS_LABELS[f.status || 'pending']}
+                          </button>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <span className={cn('text-sm font-bold', isReceita ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>

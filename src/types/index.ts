@@ -112,6 +112,9 @@ export interface Financial {
   process_id: string | null
   process_number: string | null
   notes: string | null
+  installment_group_id: string | null
+  installment_number: number | null
+  installment_total: number | null
   created_at: string | null
   deleted_at: string | null
 }
