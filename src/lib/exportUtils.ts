@@ -203,6 +203,239 @@ tbody tr:hover td{background:#f8fafc}
 @media print{.actions{display:none!important}body{background:#fff}.container{padding:16px 20px}.header{padding:20px}.group-block{break-inside:avoid}}
 `
 
+// ─── Exportação para o Google Drive ─────────────────────────────────────────────
+// Roda inteiramente na janela principal do app (não no popup do relatório, que é
+// aberto via window.open('', ...) e por isso nunca navega para uma URL real — sua
+// origem efetiva não é a origem registrada no Google Cloud Console, então o GIS
+// rejeitaria o token com "origin_mismatch" se a autenticação rodasse lá dentro).
+// O popup só recebe, via `win.exportToSheets`/`win.exportToDocs`, closures já
+// prontas para atualizar seu próprio DOM (status, botões).
+const BADGE_COLORS: Record<string, { bg: string; fg: string }> = {
+  green:  { bg: '#dcfce7', fg: '#15803d' },
+  gray:   { bg: '#f1f5f9', fg: '#64748b' },
+  blue:   { bg: '#dbeafe', fg: '#1d4ed8' },
+  red:    { bg: '#fee2e2', fg: '#dc2626' },
+  amber:  { bg: '#fef3c7', fg: '#d97706' },
+  purple: { bg: '#f3e8ff', fg: '#7c3aed' },
+  cyan:   { bg: '#cffafe', fg: '#0e7490' },
+  rose:   { bg: '#ffe4e6', fg: '#e11d48' },
+  orange: { bg: '#ffedd5', fg: '#c2410c' },
+}
+
+function hexToRgb(hex: string) {
+  const h = hex.replace('#', '')
+  return { red: parseInt(h.substr(0, 2), 16) / 255, green: parseInt(h.substr(2, 2), 16) / 255, blue: parseInt(h.substr(4, 2), 16) / 255 }
+}
+const THIN_BORDER = { style: 'SOLID', color: hexToRgb('#e2e8f0') }
+const ALL_BORDERS = { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, right: THIN_BORDER }
+
+interface SheetCellOpts { bold?: boolean; fontSize?: number; bg?: string; fg?: string; align?: string; border?: boolean }
+
+function sheetCell(text: string | number, opts: SheetCellOpts = {}): any {
+  const fmt: any = {
+    wrapStrategy: 'WRAP',
+    verticalAlignment: 'MIDDLE',
+    textFormat: { bold: !!opts.bold, fontSize: opts.fontSize || 10 },
+  }
+  if (opts.border !== false) fmt.borders = ALL_BORDERS
+  if (opts.bg) fmt.backgroundColor = hexToRgb(opts.bg)
+  if (opts.fg) fmt.textFormat.foregroundColor = hexToRgb(opts.fg)
+  if (opts.align) fmt.horizontalAlignment = opts.align
+  return { userEnteredValue: { stringValue: String(text ?? '') }, userEnteredFormat: fmt }
+}
+
+function sheetDataCell(cell: ExportCell, zebraBg?: string) {
+  const text = cell.text + (cell.sub ? `\n${cell.sub}` : '')
+  const badge = cell.badge ? BADGE_COLORS[cell.badge] : undefined
+  return sheetCell(text, {
+    bold: !!cell.bold,
+    align: cell.right ? 'RIGHT' : 'LEFT',
+    bg: badge ? badge.bg : zebraBg,
+    fg: cell.danger ? '#dc2626' : badge?.fg,
+  })
+}
+
+function sheetHeaderRow(cols: string[]) {
+  return { values: [sheetCell('#', { bold: true, bg: '#1e40af', fg: '#ffffff', align: 'CENTER' }), ...cols.map(c => sheetCell(c, { bold: true, bg: '#1e40af', fg: '#ffffff' }))] }
+}
+
+function sheetDataRow(idx: number, row: ExportCell[], zebraBg?: string) {
+  return { values: [sheetCell(idx, { align: 'CENTER', fg: '#94a3b8', fontSize: 9, bg: zebraBg }), ...row.map(c => sheetDataCell(c, zebraBg))] }
+}
+
+function sheetTableRows(cols: string[], rows: ExportCell[][]) {
+  const out = [sheetHeaderRow(cols)]
+  if (!rows.length) out.push({ values: [sheetCell('Nenhum registro encontrado', { fg: '#94a3b8', align: 'CENTER' })] })
+  else rows.forEach((r, i) => out.push(sheetDataRow(i + 1, r, i % 2 === 1 ? '#f8fafc' : '#ffffff')))
+  return out
+}
+
+function buildSheetBody(opts: ExportOptions, fileName: string, date: string) {
+  const { title, subtitle, stats, columns, rows, groups, sections } = opts
+  const maxCols = sections ? Math.max(...sections.map(s => s.columns.length + 1)) : columns.length + 1
+
+  const rowData: any[] = []
+  const merges: any[] = []
+  let frozenRowCount = 0
+  let firstTable = true
+
+  function pushMergedRow(text: string, size: number, bg: string, fg: string) {
+    const values = [sheetCell(text, { bold: true, fontSize: size, bg, fg, border: false })]
+    for (let i = 1; i < maxCols; i++) values.push(sheetCell('', { bg, border: false }))
+    rowData.push({ values })
+    merges.push({ startRowIndex: rowData.length - 1, endRowIndex: rowData.length, startColumnIndex: 0, endColumnIndex: maxCols })
+  }
+
+  function emitTable(cols: string[], rowsIn: ExportCell[][]) {
+    if (firstTable) { frozenRowCount = rowData.length + 1; firstTable = false }
+    sheetTableRows(cols, rowsIn).forEach(r => rowData.push(r))
+  }
+
+  pushMergedRow(title, 14, '#0f2550', '#ffffff')
+  pushMergedRow(`${subtitle ? subtitle + '  ·  ' : ''}Gerado em ${date}`, 9, '#f1f5f9', '#64748b')
+  if (stats.length) pushMergedRow(stats.map(s => `${s.value} ${s.label}`).join('   ·   '), 10, '#eff6ff', '#1e40af')
+  rowData.push({ values: [] })
+
+  if (sections) {
+    sections.forEach(sec => {
+      pushMergedRow(`${sec.title} (${sec.rows.length})`, 11, '#eff6ff', '#1e40af')
+      emitTable(sec.columns, sec.rows)
+      rowData.push({ values: [] })
+    })
+  } else if (groups) {
+    groups.forEach(g => {
+      pushMergedRow(`${g.label} (${g.rows.length})`, 11, '#eff6ff', '#1e40af')
+      emitTable(columns, g.rows)
+      rowData.push({ values: [] })
+    })
+  } else {
+    emitTable(columns, rows)
+  }
+
+  return {
+    maxCols,
+    body: {
+      properties: { title: fileName },
+      sheets: [{
+        properties: { title: 'Relatório', gridProperties: { frozenRowCount, hideGridlines: true } },
+        data: [{ startRow: 0, startColumn: 0, rowData }],
+        merges,
+      }],
+    },
+  }
+}
+
+function loadGis(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ready = () => !!(window as any).google?.accounts?.oauth2
+    if (ready()) { resolve(); return }
+    if (!document.getElementById('gis-script')) {
+      const s = document.createElement('script')
+      s.id = 'gis-script'; s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true
+      document.body.appendChild(s)
+    }
+    const interval = setInterval(() => { if (ready()) { clearInterval(interval); resolve() } }, 100)
+    setTimeout(() => { clearInterval(interval); if (!ready()) reject(new Error('Falha ao carregar biblioteca do Google')) }, 10_000)
+  })
+}
+
+function getGoogleToken(): Promise<string> {
+  return loadGis().then(() => new Promise<string>((resolve, reject) => {
+    const g = (window as any).google
+    const client = g.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: (resp: any) => {
+        if (resp.error) { reject(new Error(resp.error)); return }
+        resolve(resp.access_token)
+      },
+    })
+    client.requestAccessToken()
+  }))
+}
+
+async function driveUpload(token: string, fileName: string, mimeType: string, contentType: string, content: string) {
+  const boundary = `lawfy-export-${Date.now()}`
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name: fileName, mimeType }) + `\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: ${contentType}; charset=UTF-8\r\n\r\n` +
+    content + `\r\n` +
+    `--${boundary}--`
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary="${boundary}"` },
+    body,
+  })
+  if (!res.ok) throw new Error(`Falha ao enviar (HTTP ${res.status})`)
+  return res.json()
+}
+
+async function createFormattedSheet(token: string, opts: ExportOptions, fileName: string, date: string) {
+  const built = buildSheetBody(opts, fileName, date)
+  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(built.body),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${res.status}`) }
+  const sheet = await res.json()
+  const sheetId = sheet.sheets[0].properties.sheetId
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheet.spreadsheetId}:batchUpdate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: built.maxCols } } }] }),
+  }).catch(() => {})
+  return sheet
+}
+
+function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, date: string) {
+  loadGis().catch(() => {}) // pré-carrega para o clique não esperar o script
+
+  function setStatus(text: string, isError = false) {
+    const el = win.document.getElementById('gStatus')
+    if (!el) return
+    el.textContent = text
+    ;(el as HTMLElement).style.color = isError ? '#dc2626' : '#64748b'
+  }
+
+  ;(win as any).exportToSheets = async () => {
+    const btn = win.document.getElementById('btnSheets') as HTMLButtonElement | null
+    if (btn) btn.disabled = true
+    setStatus('Conectando ao Google...')
+    try {
+      const token = await getGoogleToken()
+      setStatus('Criando planilha formatada...')
+      const sheet = await createFormattedSheet(token, opts, fileName, date)
+      setStatus('✓ Planilha criada no Google Drive')
+      window.open(sheet.spreadsheetUrl, '_blank')
+    } catch (err: any) {
+      setStatus(`Erro: ${err.message}`, true)
+    } finally {
+      if (btn) btn.disabled = false
+    }
+  }
+
+  ;(win as any).exportToDocs = async () => {
+    const btn = win.document.getElementById('btnDocs') as HTMLButtonElement | null
+    if (btn) btn.disabled = true
+    setStatus('Conectando ao Google...')
+    try {
+      const token = await getGoogleToken()
+      setStatus('Enviando para o Google Drive...')
+      const file = await driveUpload(token, fileName, 'application/vnd.google-apps.document', 'text/html', buildDocsHtml(opts, date))
+      setStatus('✓ Documento criado no Google Drive')
+      window.open(file.webViewLink, '_blank')
+    } catch (err: any) {
+      setStatus(`Erro: ${err.message}`, true)
+    } finally {
+      if (btn) btn.disabled = false
+    }
+  }
+}
+
 // ─── Função principal ─────────────────────────────────────────────────────────
 export function openExportWindow(opts: ExportOptions): void {
   const { title, subtitle, filename, stats, columns, rows, csvContent, groups, sections } = opts
@@ -210,10 +443,6 @@ export function openExportWindow(opts: ExportOptions): void {
   const csvBase64 = btoa(unescape(encodeURIComponent(csvContent)))
   const logoUrl = window.location.origin + '/logomarca.png'
   const driveFileName = `${filename}-${new Date().toISOString().slice(0, 10)}`
-  const docsEncoded = encodeURIComponent(buildDocsHtml(opts, date))
-  const sheetDataEncoded = encodeURIComponent(JSON.stringify({
-    title, subtitle, date, filename: driveFileName, stats, columns, rows, groups, sections,
-  }))
 
   const statsCols = Math.min(stats.length, 4)
   const statsHtml = `
@@ -273,11 +502,9 @@ export function openExportWindow(opts: ExportOptions): void {
   <button class="btn btn-blue" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
   <a class="btn btn-gray" href="data:text/csv;charset=utf-8;base64,${csvBase64}" download="${filename}-${new Date().toISOString().slice(0, 10)}.csv">⬇️ Baixar CSV</a>
   ${CLIENT_ID ? `
-  <button class="btn btn-green" id="btnSheets" onclick="window.exportToSheets()">📊 Planilha Google</button>
-  <button class="btn btn-docs" id="btnDocs" onclick="window.exportToDocs()">📄 Docs Google</button>
+  <button class="btn btn-green" id="btnSheets" onclick="exportToSheets()">📊 Planilha Google</button>
+  <button class="btn btn-docs" id="btnDocs" onclick="exportToDocs()">📄 Docs Google</button>
   <span class="g-status" id="gStatus"></span>
-  <input type="hidden" id="gExportSheetData" value="${sheetDataEncoded}">
-  <input type="hidden" id="gExportDocs" value="${docsEncoded}">
   ` : ''}
 </div>
 <div class="container">
@@ -285,249 +512,13 @@ export function openExportWindow(opts: ExportOptions): void {
   ${contentHtml}
 </div>
 <div class="footer">LegalHub — Sistema de Gestão Jurídica &middot; Relatório gerado automaticamente</div>
-${CLIENT_ID ? `<script>
-(function(){
-  var CLIENT_ID = ${JSON.stringify(CLIENT_ID)};
-  var DRIVE_SCOPE = ${JSON.stringify(DRIVE_SCOPE)};
-  var fileName = ${JSON.stringify(driveFileName)};
-  var docsHtml = decodeURIComponent(document.getElementById('gExportDocs').value);
-  var SHEET = JSON.parse(decodeURIComponent(document.getElementById('gExportSheetData').value));
-
-  function loadGis() {
-    return new Promise(function(resolve, reject) {
-      if (window.google && window.google.accounts && window.google.accounts.oauth2) { resolve(); return }
-      var s = document.createElement('script');
-      s.src = 'https://accounts.google.com/gsi/client';
-      s.onload = function(){ resolve() };
-      s.onerror = function(){ reject(new Error('Falha ao carregar biblioteca do Google')) };
-      document.head.appendChild(s);
-    });
-  }
-
-  function getToken() {
-    return loadGis().then(function() {
-      return new Promise(function(resolve, reject) {
-        var client = window.google.accounts.oauth2.initTokenClient({
-          client_id: CLIENT_ID,
-          scope: DRIVE_SCOPE,
-          callback: function(resp) {
-            if (resp.error) { reject(new Error(resp.error)); return }
-            resolve(resp.access_token);
-          },
-        });
-        client.requestAccessToken();
-      });
-    });
-  }
-
-  function driveUpload(token, mimeType, contentType, content) {
-    var boundary = 'lawfy-export-' + Date.now();
-    var body =
-      '--' + boundary + '\\r\\n' +
-      'Content-Type: application/json; charset=UTF-8\\r\\n\\r\\n' +
-      JSON.stringify({ name: fileName, mimeType: mimeType }) + '\\r\\n' +
-      '--' + boundary + '\\r\\n' +
-      'Content-Type: ' + contentType + '; charset=UTF-8\\r\\n\\r\\n' +
-      content + '\\r\\n' +
-      '--' + boundary + '--';
-    return fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + token,
-        'Content-Type': 'multipart/related; boundary="' + boundary + '"',
-      },
-      body: body,
-    }).then(function(res) {
-      if (!res.ok) throw new Error('Falha ao enviar (HTTP ' + res.status + ')');
-      return res.json();
-    });
-  }
-
-  function setStatus(text, isError) {
-    var el = document.getElementById('gStatus');
-    el.textContent = text;
-    el.style.color = isError ? '#dc2626' : '#64748b';
-  }
-
-  // ─── Planilha formatada (Sheets API) ────────────────────────────────────────
-  var BADGE_COLORS = {
-    green:  { bg: '#dcfce7', fg: '#15803d' },
-    gray:   { bg: '#f1f5f9', fg: '#64748b' },
-    blue:   { bg: '#dbeafe', fg: '#1d4ed8' },
-    red:    { bg: '#fee2e2', fg: '#dc2626' },
-    amber:  { bg: '#fef3c7', fg: '#d97706' },
-    purple: { bg: '#f3e8ff', fg: '#7c3aed' },
-    cyan:   { bg: '#cffafe', fg: '#0e7490' },
-    rose:   { bg: '#ffe4e6', fg: '#e11d48' },
-    orange: { bg: '#ffedd5', fg: '#c2410c' },
-  };
-
-  function hexToRgb(hex) {
-    var h = hex.replace('#', '');
-    return { red: parseInt(h.substr(0, 2), 16) / 255, green: parseInt(h.substr(2, 2), 16) / 255, blue: parseInt(h.substr(4, 2), 16) / 255 };
-  }
-  var THIN_BORDER = { style: 'SOLID', color: hexToRgb('#e2e8f0') };
-  function allBorders() { return { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, right: THIN_BORDER }; }
-
-  function textCell(text, opts) {
-    opts = opts || {};
-    var fmt = {
-      wrapStrategy: 'WRAP',
-      verticalAlignment: 'MIDDLE',
-      textFormat: { bold: !!opts.bold, fontSize: opts.fontSize || 10 },
-    };
-    if (opts.border !== false) fmt.borders = allBorders();
-    if (opts.bg) fmt.backgroundColor = hexToRgb(opts.bg);
-    if (opts.fg) fmt.textFormat.foregroundColor = hexToRgb(opts.fg);
-    if (opts.align) fmt.horizontalAlignment = opts.align;
-    return { userEnteredValue: { stringValue: String(text == null ? '' : text) }, userEnteredFormat: fmt };
-  }
-
-  function dataCell(cell, zebraBg) {
-    var text = cell.text + (cell.sub ? '\\n' + cell.sub : '');
-    var badge = cell.badge && BADGE_COLORS[cell.badge];
-    return textCell(text, {
-      bold: !!cell.bold,
-      align: cell.right ? 'RIGHT' : 'LEFT',
-      bg: badge ? badge.bg : zebraBg,
-      fg: cell.danger ? '#dc2626' : (badge ? badge.fg : undefined),
-    });
-  }
-
-  function headerRow(cols) {
-    var values = [textCell('#', { bold: true, bg: '#1e40af', fg: '#ffffff', align: 'CENTER' })];
-    cols.forEach(function(c) { values.push(textCell(c, { bold: true, bg: '#1e40af', fg: '#ffffff' })); });
-    return { values: values };
-  }
-
-  function dataRow(idx, row, zebraBg) {
-    var values = [textCell(idx, { align: 'CENTER', fg: '#94a3b8', fontSize: 9, bg: zebraBg })];
-    row.forEach(function(c) { values.push(dataCell(c, zebraBg)); });
-    return { values: values };
-  }
-
-  function tableRows(cols, rows) {
-    var out = [headerRow(cols)];
-    if (!rows.length) {
-      out.push({ values: [textCell('Nenhum registro encontrado', { fg: '#94a3b8', align: 'CENTER' })] });
-    } else {
-      rows.forEach(function(r, i) { out.push(dataRow(i + 1, r, i % 2 === 1 ? '#f8fafc' : '#ffffff')); });
-    }
-    return out;
-  }
-
-  function buildSheetBody() {
-    var maxCols = SHEET.sections
-      ? Math.max.apply(null, SHEET.sections.map(function(s) { return s.columns.length + 1; }))
-      : SHEET.columns.length + 1;
-
-    var rowData = [];
-    var merges = [];
-    var frozenRowCount = 0;
-    var firstTable = true;
-
-    function pushMergedRow(text, size, bg, fg) {
-      var values = [textCell(text, { bold: true, fontSize: size, bg: bg, fg: fg, border: false })];
-      for (var i = 1; i < maxCols; i++) values.push(textCell('', { bg: bg, border: false }));
-      rowData.push({ values: values });
-      merges.push({ startRowIndex: rowData.length - 1, endRowIndex: rowData.length, startColumnIndex: 0, endColumnIndex: maxCols });
-    }
-
-    function emitTable(cols, rows) {
-      if (firstTable) { frozenRowCount = rowData.length + 1; firstTable = false; }
-      tableRows(cols, rows).forEach(function(r) { rowData.push(r); });
-    }
-
-    pushMergedRow(SHEET.title, 14, '#0f2550', '#ffffff');
-    pushMergedRow((SHEET.subtitle ? SHEET.subtitle + '  ·  ' : '') + 'Gerado em ' + SHEET.date, 9, '#f1f5f9', '#64748b');
-    if (SHEET.stats && SHEET.stats.length) {
-      var statsText = SHEET.stats.map(function(s) { return s.value + ' ' + s.label; }).join('   ·   ');
-      pushMergedRow(statsText, 10, '#eff6ff', '#1e40af');
-    }
-    rowData.push({ values: [] });
-
-    if (SHEET.sections) {
-      SHEET.sections.forEach(function(sec) {
-        pushMergedRow(sec.title + ' (' + sec.rows.length + ')', 11, '#eff6ff', '#1e40af');
-        emitTable(sec.columns, sec.rows);
-        rowData.push({ values: [] });
-      });
-    } else if (SHEET.groups) {
-      SHEET.groups.forEach(function(g) {
-        pushMergedRow(g.label + ' (' + g.rows.length + ')', 11, '#eff6ff', '#1e40af');
-        emitTable(SHEET.columns, g.rows);
-        rowData.push({ values: [] });
-      });
-    } else {
-      emitTable(SHEET.columns, SHEET.rows);
-    }
-
-    return {
-      maxCols: maxCols,
-      body: {
-        properties: { title: fileName },
-        sheets: [{
-          properties: { title: 'Relatório', gridProperties: { frozenRowCount: frozenRowCount, hideGridlines: true } },
-          data: [{ startRow: 0, startColumn: 0, rowData: rowData }],
-          merges: merges,
-        }],
-      },
-    };
-  }
-
-  function createFormattedSheet(token) {
-    var built = buildSheetBody();
-    return fetch('https://sheets.googleapis.com/v4/spreadsheets', {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(built.body),
-    }).then(function(res) {
-      if (!res.ok) return res.json().then(function(e) { throw new Error((e && e.error && e.error.message) || ('HTTP ' + res.status)) });
-      return res.json();
-    }).then(function(sheet) {
-      var sheetId = sheet.sheets[0].properties.sheetId;
-      return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheet.spreadsheetId + ':batchUpdate', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requests: [{ autoResizeDimensions: { dimensions: { sheetId: sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: built.maxCols } } }] }),
-      }).catch(function() {}).then(function() { return sheet; });
-    });
-  }
-
-  window.exportToSheets = function() {
-    var btn = document.getElementById('btnSheets');
-    btn.disabled = true;
-    setStatus('Conectando ao Google...');
-    getToken().then(function(token) {
-      setStatus('Criando planilha formatada...');
-      return createFormattedSheet(token);
-    }).then(function(sheet) {
-      setStatus('✓ Planilha criada no Google Drive');
-      window.open(sheet.spreadsheetUrl, '_blank');
-    }).catch(function(err) {
-      setStatus('Erro: ' + err.message, true);
-    }).finally(function() { btn.disabled = false; });
-  };
-
-  window.exportToDocs = function() {
-    var btn = document.getElementById('btnDocs');
-    btn.disabled = true;
-    setStatus('Conectando ao Google...');
-    getToken().then(function(token) {
-      setStatus('Enviando para o Google Drive...');
-      return driveUpload(token, 'application/vnd.google-apps.document', 'text/html', docsHtml);
-    }).then(function(file) {
-      setStatus('✓ Documento criado no Google Drive');
-      window.open(file.webViewLink, '_blank');
-    }).catch(function(err) {
-      setStatus('Erro: ' + err.message, true);
-    }).finally(function() { btn.disabled = false; });
-  };
-})();
-</script>` : ''}
 </body>
 </html>`
 
   const win = window.open('', '_blank')
-  if (win) { win.document.write(html); win.document.close() }
+  if (win) {
+    win.document.write(html)
+    win.document.close()
+    if (CLIENT_ID) attachGoogleExport(win, opts, driveFileName, date)
+  }
 }
