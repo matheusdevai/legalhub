@@ -210,8 +210,10 @@ export function openExportWindow(opts: ExportOptions): void {
   const csvBase64 = btoa(unescape(encodeURIComponent(csvContent)))
   const logoUrl = window.location.origin + '/logomarca.png'
   const driveFileName = `${filename}-${new Date().toISOString().slice(0, 10)}`
-  const csvEncoded = encodeURIComponent(csvContent)
   const docsEncoded = encodeURIComponent(buildDocsHtml(opts, date))
+  const sheetDataEncoded = encodeURIComponent(JSON.stringify({
+    title, subtitle, date, filename: driveFileName, stats, columns, rows, groups, sections,
+  }))
 
   const statsCols = Math.min(stats.length, 4)
   const statsHtml = `
@@ -274,7 +276,7 @@ export function openExportWindow(opts: ExportOptions): void {
   <button class="btn btn-green" id="btnSheets" onclick="window.exportToSheets()">📊 Planilha Google</button>
   <button class="btn btn-docs" id="btnDocs" onclick="window.exportToDocs()">📄 Docs Google</button>
   <span class="g-status" id="gStatus"></span>
-  <input type="hidden" id="gExportCsv" value="${csvEncoded}">
+  <input type="hidden" id="gExportSheetData" value="${sheetDataEncoded}">
   <input type="hidden" id="gExportDocs" value="${docsEncoded}">
   ` : ''}
 </div>
@@ -288,8 +290,8 @@ ${CLIENT_ID ? `<script>
   var CLIENT_ID = ${JSON.stringify(CLIENT_ID)};
   var DRIVE_SCOPE = ${JSON.stringify(DRIVE_SCOPE)};
   var fileName = ${JSON.stringify(driveFileName)};
-  var csvContent = decodeURIComponent(document.getElementById('gExportCsv').value);
   var docsHtml = decodeURIComponent(document.getElementById('gExportDocs').value);
+  var SHEET = JSON.parse(decodeURIComponent(document.getElementById('gExportSheetData').value));
 
   function loadGis() {
     return new Promise(function(resolve, reject) {
@@ -347,26 +349,179 @@ ${CLIENT_ID ? `<script>
     el.style.color = isError ? '#dc2626' : '#64748b';
   }
 
-  function runExport(btnId, mimeType, contentType, content, successMsg) {
-    var btn = document.getElementById(btnId);
+  // ─── Planilha formatada (Sheets API) ────────────────────────────────────────
+  var BADGE_COLORS = {
+    green:  { bg: '#dcfce7', fg: '#15803d' },
+    gray:   { bg: '#f1f5f9', fg: '#64748b' },
+    blue:   { bg: '#dbeafe', fg: '#1d4ed8' },
+    red:    { bg: '#fee2e2', fg: '#dc2626' },
+    amber:  { bg: '#fef3c7', fg: '#d97706' },
+    purple: { bg: '#f3e8ff', fg: '#7c3aed' },
+    cyan:   { bg: '#cffafe', fg: '#0e7490' },
+    rose:   { bg: '#ffe4e6', fg: '#e11d48' },
+    orange: { bg: '#ffedd5', fg: '#c2410c' },
+  };
+
+  function hexToRgb(hex) {
+    var h = hex.replace('#', '');
+    return { red: parseInt(h.substr(0, 2), 16) / 255, green: parseInt(h.substr(2, 2), 16) / 255, blue: parseInt(h.substr(4, 2), 16) / 255 };
+  }
+  var THIN_BORDER = { style: 'SOLID', color: hexToRgb('#e2e8f0') };
+  function allBorders() { return { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, right: THIN_BORDER }; }
+
+  function textCell(text, opts) {
+    opts = opts || {};
+    var fmt = {
+      wrapStrategy: 'WRAP',
+      verticalAlignment: 'MIDDLE',
+      textFormat: { bold: !!opts.bold, fontSize: opts.fontSize || 10 },
+    };
+    if (opts.border !== false) fmt.borders = allBorders();
+    if (opts.bg) fmt.backgroundColor = hexToRgb(opts.bg);
+    if (opts.fg) fmt.textFormat.foregroundColor = hexToRgb(opts.fg);
+    if (opts.align) fmt.horizontalAlignment = opts.align;
+    return { userEnteredValue: { stringValue: String(text == null ? '' : text) }, userEnteredFormat: fmt };
+  }
+
+  function dataCell(cell, zebraBg) {
+    var text = cell.text + (cell.sub ? '\\n' + cell.sub : '');
+    var badge = cell.badge && BADGE_COLORS[cell.badge];
+    return textCell(text, {
+      bold: !!cell.bold,
+      align: cell.right ? 'RIGHT' : 'LEFT',
+      bg: badge ? badge.bg : zebraBg,
+      fg: cell.danger ? '#dc2626' : (badge ? badge.fg : undefined),
+    });
+  }
+
+  function headerRow(cols) {
+    var values = [textCell('#', { bold: true, bg: '#1e40af', fg: '#ffffff', align: 'CENTER' })];
+    cols.forEach(function(c) { values.push(textCell(c, { bold: true, bg: '#1e40af', fg: '#ffffff' })); });
+    return { values: values };
+  }
+
+  function dataRow(idx, row, zebraBg) {
+    var values = [textCell(idx, { align: 'CENTER', fg: '#94a3b8', fontSize: 9, bg: zebraBg })];
+    row.forEach(function(c) { values.push(dataCell(c, zebraBg)); });
+    return { values: values };
+  }
+
+  function tableRows(cols, rows) {
+    var out = [headerRow(cols)];
+    if (!rows.length) {
+      out.push({ values: [textCell('Nenhum registro encontrado', { fg: '#94a3b8', align: 'CENTER' })] });
+    } else {
+      rows.forEach(function(r, i) { out.push(dataRow(i + 1, r, i % 2 === 1 ? '#f8fafc' : '#ffffff')); });
+    }
+    return out;
+  }
+
+  function buildSheetBody() {
+    var maxCols = SHEET.sections
+      ? Math.max.apply(null, SHEET.sections.map(function(s) { return s.columns.length + 1; }))
+      : SHEET.columns.length + 1;
+
+    var rowData = [];
+    var merges = [];
+    var frozenRowCount = 0;
+    var firstTable = true;
+
+    function pushMergedRow(text, size, bg, fg) {
+      var values = [textCell(text, { bold: true, fontSize: size, bg: bg, fg: fg, border: false })];
+      for (var i = 1; i < maxCols; i++) values.push(textCell('', { bg: bg, border: false }));
+      rowData.push({ values: values });
+      merges.push({ startRowIndex: rowData.length - 1, endRowIndex: rowData.length, startColumnIndex: 0, endColumnIndex: maxCols });
+    }
+
+    function emitTable(cols, rows) {
+      if (firstTable) { frozenRowCount = rowData.length + 1; firstTable = false; }
+      tableRows(cols, rows).forEach(function(r) { rowData.push(r); });
+    }
+
+    pushMergedRow(SHEET.title, 14, '#0f2550', '#ffffff');
+    pushMergedRow((SHEET.subtitle ? SHEET.subtitle + '  ·  ' : '') + 'Gerado em ' + SHEET.date, 9, '#f1f5f9', '#64748b');
+    if (SHEET.stats && SHEET.stats.length) {
+      var statsText = SHEET.stats.map(function(s) { return s.value + ' ' + s.label; }).join('   ·   ');
+      pushMergedRow(statsText, 10, '#eff6ff', '#1e40af');
+    }
+    rowData.push({ values: [] });
+
+    if (SHEET.sections) {
+      SHEET.sections.forEach(function(sec) {
+        pushMergedRow(sec.title + ' (' + sec.rows.length + ')', 11, '#eff6ff', '#1e40af');
+        emitTable(sec.columns, sec.rows);
+        rowData.push({ values: [] });
+      });
+    } else if (SHEET.groups) {
+      SHEET.groups.forEach(function(g) {
+        pushMergedRow(g.label + ' (' + g.rows.length + ')', 11, '#eff6ff', '#1e40af');
+        emitTable(SHEET.columns, g.rows);
+        rowData.push({ values: [] });
+      });
+    } else {
+      emitTable(SHEET.columns, SHEET.rows);
+    }
+
+    return {
+      maxCols: maxCols,
+      body: {
+        properties: { title: fileName },
+        sheets: [{
+          properties: { title: 'Relatório', gridProperties: { frozenRowCount: frozenRowCount, hideGridlines: true } },
+          data: [{ startRow: 0, startColumn: 0, rowData: rowData }],
+          merges: merges,
+        }],
+      },
+    };
+  }
+
+  function createFormattedSheet(token) {
+    var built = buildSheetBody();
+    return fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(built.body),
+    }).then(function(res) {
+      if (!res.ok) return res.json().then(function(e) { throw new Error((e && e.error && e.error.message) || ('HTTP ' + res.status)) });
+      return res.json();
+    }).then(function(sheet) {
+      var sheetId = sheet.sheets[0].properties.sheetId;
+      return fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheet.spreadsheetId + ':batchUpdate', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requests: [{ autoResizeDimensions: { dimensions: { sheetId: sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: built.maxCols } } }] }),
+      }).catch(function() {}).then(function() { return sheet; });
+    });
+  }
+
+  window.exportToSheets = function() {
+    var btn = document.getElementById('btnSheets');
+    btn.disabled = true;
+    setStatus('Conectando ao Google...');
+    getToken().then(function(token) {
+      setStatus('Criando planilha formatada...');
+      return createFormattedSheet(token);
+    }).then(function(sheet) {
+      setStatus('✓ Planilha criada no Google Drive');
+      window.open(sheet.spreadsheetUrl, '_blank');
+    }).catch(function(err) {
+      setStatus('Erro: ' + err.message, true);
+    }).finally(function() { btn.disabled = false; });
+  };
+
+  window.exportToDocs = function() {
+    var btn = document.getElementById('btnDocs');
     btn.disabled = true;
     setStatus('Conectando ao Google...');
     getToken().then(function(token) {
       setStatus('Enviando para o Google Drive...');
-      return driveUpload(token, mimeType, contentType, content);
+      return driveUpload(token, 'application/vnd.google-apps.document', 'text/html', docsHtml);
     }).then(function(file) {
-      setStatus(successMsg);
+      setStatus('✓ Documento criado no Google Drive');
       window.open(file.webViewLink, '_blank');
     }).catch(function(err) {
       setStatus('Erro: ' + err.message, true);
-    }).finally(function() { btn.disabled = false });
-  }
-
-  window.exportToSheets = function() {
-    runExport('btnSheets', 'application/vnd.google-apps.spreadsheet', 'text/csv', csvContent, '✓ Planilha criada no Google Drive');
-  };
-  window.exportToDocs = function() {
-    runExport('btnDocs', 'application/vnd.google-apps.document', 'text/html', docsHtml, '✓ Documento criado no Google Drive');
+    }).finally(function() { btn.disabled = false; });
   };
 })();
 </script>` : ''}
