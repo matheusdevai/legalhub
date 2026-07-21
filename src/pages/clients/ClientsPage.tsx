@@ -14,6 +14,7 @@ import { Client, Colaborador, Process, Profile } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
+import { notifyTaskAssignment } from '@/lib/taskActions'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -194,9 +195,11 @@ export function ClientsPage() {
       priority: taskForm.priority || 'medium',
       type: taskForm.type || 'custom',
       status: 'pending',
+      client_id: savedClientId,
       assigned_to: taskForm.assigned_to || null,
       assigned_name: taskForm.assigned_name || null,
     })
+    if (taskForm.assigned_to) await notifyTaskAssignment(taskForm.assigned_to, taskForm.title)
     setSaving(false)
     closeTaskModal()
   }

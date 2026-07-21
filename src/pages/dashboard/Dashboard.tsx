@@ -19,6 +19,7 @@ import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STAT
 import { Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
+import { markTaskDone } from '@/lib/taskActions'
 
 type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'ia' | 'configuracoes'
 
@@ -338,9 +339,10 @@ export function Dashboard() {
 
   async function markDoneFromQuadro(taskId: string) {
     const done = quadroTasks.find(t => t.id === taskId)
-    await supabase.from('tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', taskId)
+    if (!done) return
+    const { completed_at } = await markTaskDone(done)
     setQuadroTasks(prev => prev.filter(t => t.id !== taskId))
-    if (done) setQuadroCompletedToday(prev => [{ ...done } as Task, ...prev])
+    setQuadroCompletedToday(prev => [{ ...done, status: 'done', completed_at } as Task, ...prev])
     setStats(prev => ({ ...prev, pending: prev.pending - 1, completedMonth: prev.completedMonth + 1, completedToday: prev.completedToday + 1 }))
   }
 
@@ -507,6 +509,7 @@ export function Dashboard() {
       assigned_to: profile?.user_id || null,
       assigned_name: profile?.name || profile?.display_name || null,
     })
+    // Tarefa rápida sempre é atribuída ao próprio usuário, então não precisa notificar.
     setQuickTaskSaving(false)
     setQuickTaskOpen(false)
     setQuickTaskForm(EMPTY_QUICK_TASK)
@@ -519,13 +522,17 @@ export function Dashboard() {
   }
 
   async function markDone(taskId: string) {
-    await supabase.from('tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', taskId)
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    await markTaskDone(task)
     setTasks(prev => prev.filter(t => t.id !== taskId))
     setStats(prev => ({ ...prev, pending: prev.pending - 1, completedMonth: prev.completedMonth + 1 }))
   }
 
   async function markDoneFromLista(taskId: string) {
-    await supabase.from('tasks').update({ status: 'done', updated_at: new Date().toISOString() }).eq('id', taskId)
+    const task = listaTasks.find(t => t.id === taskId)
+    if (!task) return
+    await markTaskDone(task)
     setListaTasks(prev => prev.filter(t => t.id !== taskId))
   }
 

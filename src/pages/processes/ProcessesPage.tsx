@@ -15,6 +15,7 @@ import { formatDate, formatCurrency, PROCESS_STATUS_COLORS, PROCESS_STATUS_LABEL
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
+import { ensureProcessDeadlineTask, markTaskDone } from '@/lib/taskActions'
 
 type ProcessForm = {
   number: string; title: string; client_id: string; client_name: string; area: string;
@@ -131,6 +132,14 @@ export function ProcessesPage() {
   useEffect(() => {
     if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
   }, [location.state])
+  useEffect(() => {
+    const openProcessId = (location.state as any)?.openProcessId
+    if (openProcessId && processes.length) {
+      const p = processes.find(pr => pr.id === openProcessId)
+      if (p) setViewProcess(p)
+      window.history.replaceState({}, '')
+    }
+  }, [location.state, processes])
 
   const filtered = processes.filter(p => {
     const matchSearch = !search ||
@@ -256,8 +265,16 @@ export function ProcessesPage() {
     if (!payload.client_id) delete payload.client_id
     let error: any = null
     if (editId) {
+      const previous = processes.find(p => p.id === editId)
       const res = await supabase.from('processes').update(payload).eq('id', editId)
       error = res.error
+      if (!error) {
+        await ensureProcessDeadlineTask(
+          { id: editId, number: payload.number, assigned_lawyer: form.assigned_lawyer || null, client_id: payload.client_id || null },
+          previous?.next_deadline || null,
+          payload.next_deadline
+        )
+      }
     } else {
       const res = await supabase.from('processes').insert(payload)
       error = res.error
@@ -1402,9 +1419,15 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
   }
 
   async function toggleTaskStatus(taskId: string, current: string) {
-    const next = current === 'done' ? 'pending' : 'done'
-    await supabase.from('tasks').update({ status: next, completed_at: next === 'done' ? new Date().toISOString() : null }).eq('id', taskId)
-    setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: next as any, completed_at: next === 'done' ? new Date().toISOString() : null } : t))
+    if (current === 'done') {
+      await supabase.from('tasks').update({ status: 'pending', completed_at: null }).eq('id', taskId)
+      setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'pending', completed_at: null } : t))
+      return
+    }
+    const task = tabTasks.find(t => t.id === taskId)
+    if (!task) return
+    const { completed_at } = await markTaskDone(task)
+    setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', completed_at } : t))
   }
 
   const f = (k: keyof PanelForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -1412,6 +1435,7 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
 
   async function handleSave() {
     setSaving(true)
+    const newDeadline = form.next_deadline || null
     await supabase.from('processes').update({
       number: form.number,
       court: form.court || form.vara,
@@ -1422,11 +1446,16 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
       area: form.area,
       type: form.type,
       data_protocolo: form.data_protocolo || form.data_requerimento || null,
-      next_deadline: form.next_deadline || null,
+      next_deadline: newDeadline,
       colaborador_id: form.colaborador_id || null,
       status: form.status as any,
       modalidade: (form.modalidade || null) as any,
     }).eq('id', p.id)
+    await ensureProcessDeadlineTask(
+      { id: p.id, number: form.number, assigned_lawyer: form.assigned_lawyer || null, client_id: p.client_id },
+      p.next_deadline,
+      newDeadline
+    )
     setSaving(false)
     onSaved()
   }

@@ -86,13 +86,20 @@ export interface Task {
   title: string
   description: string | null
   process_id: string | null
+  client_id: string | null
   assigned_to: string | null
   assigned_name: string | null
   due_date: string | null
   priority: 'low' | 'medium' | 'high' | 'urgent' | null
   status: 'pending' | 'in_progress' | 'done' | 'cancelled' | null
   type: 'deadline' | 'hearing' | 'document' | 'meeting' | 'custom' | null
+  location: string | null
+  all_day: boolean | null
+  deadline_date: string | null
+  recurring: boolean | null
+  recurrence_interval: 'weekly' | 'monthly' | null
   created_at: string | null
+  updated_at: string | null
   completed_at: string | null
   deleted_at: string | null
 }
