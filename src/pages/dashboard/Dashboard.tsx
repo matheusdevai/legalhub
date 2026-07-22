@@ -7,10 +7,11 @@ import {
   BarChart2, List, LayoutGrid, Activity, Settings,
   Circle, CheckCircle2, ChevronDown, Search, Filter,
   ArrowUpDown, Download, Bell, Calendar, Crosshair, SlidersHorizontal, Trash2,
-  Briefcase, Users, DollarSign,
+  Briefcase, Users, DollarSign, Sparkles,
 } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Layout } from '@/components/layout/Layout'
+import { AiCopilotoTab } from '@/components/ai/AiCopilotoTab'
 import { Spinner, Modal, Button, Input, Select } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -19,13 +20,14 @@ import { Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 
-type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'configuracoes'
+type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'ia' | 'configuracoes'
 
 const TABS: { id: DashTab; label: string; icon: React.ElementType }[] = [
   { id: 'visao',         label: 'Visão Geral',   icon: BarChart2 },
   { id: 'lista',         label: 'Lista',         icon: List },
   { id: 'quadro',        label: 'Quadro',        icon: LayoutGrid },
   { id: 'desempenho',    label: 'Desempenho',    icon: Activity },
+  { id: 'ia',            label: 'Inteligência Artificial', icon: Sparkles },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ]
 
@@ -1652,6 +1654,8 @@ export function Dashboard() {
             </div>
           )
         })()}
+
+        {tab === 'ia' && <AiCopilotoTab />}
 
         {tab === 'configuracoes' && <DashConfiguracoes />}
 

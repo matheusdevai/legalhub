@@ -1,0 +1,166 @@
+import { useEffect, useRef, useState } from 'react'
+import { Sparkles, Send, Trash2 } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { cn } from '@/lib/utils'
+
+type ChatMessage = { role: 'user' | 'assistant'; content: string }
+
+const SUGESTOES = [
+  'Como está o desempenho do escritório hoje?',
+  'Quais processos vencem essa semana?',
+  'Tem alguma tarefa atrasada?',
+  'Como está o financeiro?',
+  'Quais clientes têm processos parados?',
+  'Resuma a agenda dos próximos 7 dias',
+]
+
+export function AiCopilotoTab() {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, loading])
+
+  async function send(text: string) {
+    const content = text.trim()
+    if (!content || loading) return
+    setError('')
+    const next = [...messages, { role: 'user' as const, content }]
+    setMessages(next)
+    setInput('')
+    setLoading(true)
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
+        body: { messages: next },
+      })
+      if (fnErr) throw fnErr
+      if (data?.error) throw new Error(data.error)
+      setMessages([...next, { role: 'assistant', content: data.reply || '...' }])
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Erro ao consultar o assistente. Tente novamente.'
+      setError(msg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function clearChat() {
+    setMessages([])
+    setError('')
+  }
+
+  return (
+    <div className="bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 260px)', minHeight: 520 }}>
+      {/* Header */}
+      <div className="bg-gradient-to-r from-indigo-700 via-violet-600 to-purple-600 px-5 py-4 flex items-center gap-3 flex-shrink-0">
+        <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+          <Sparkles className="text-white" style={{ width: 20, height: 20 }} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-white leading-tight">Copiloto Lawfy</p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+            <p className="text-[11px] text-indigo-100 leading-none">IA premium · dados em tempo real</p>
+          </div>
+        </div>
+        {messages.length > 0 && (
+          <button
+            onClick={clearChat}
+            className="flex items-center gap-1.5 text-white/70 hover:text-white transition-colors text-xs px-2.5 py-1.5 rounded-lg hover:bg-white/10"
+            title="Limpar conversa"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Limpar
+          </button>
+        )}
+      </div>
+
+      {/* Body */}
+      <div ref={scrollRef} className="flex-1 flex flex-col p-6 gap-4 overflow-y-auto">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center flex-1 text-center px-4">
+            <div className="w-14 h-14 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center mb-4">
+              <Sparkles className="text-indigo-600 dark:text-indigo-400" style={{ width: 26, height: 26 }} />
+            </div>
+            <p className="text-base font-bold text-slate-800 dark:text-white mb-1.5">Olá! Sou o Copiloto Lawfy.</p>
+            <p className="text-sm text-slate-400 max-w-md mb-6">
+              Posso analisar clientes, processos, tarefas, agenda e financeiro do escritório para ajudar você a render mais. O que você quer saber?
+            </p>
+            <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+              {SUGESTOES.map(s => (
+                <button
+                  key={s}
+                  onClick={() => send(s)}
+                  className="text-xs px-3 py-2 rounded-full border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {messages.map((m, i) => (
+          <div key={i} className={cn('flex gap-3', m.role === 'user' && 'justify-end')}>
+            {m.role === 'assistant' && (
+              <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Sparkles className="text-indigo-600 dark:text-indigo-400" style={{ width: 15, height: 15 }} />
+              </div>
+            )}
+            <div
+              className={cn(
+                'rounded-2xl px-4 py-2.5 text-sm max-w-[70%] whitespace-pre-wrap leading-relaxed',
+                m.role === 'user'
+                  ? 'bg-indigo-600 text-white rounded-tr-sm'
+                  : 'bg-slate-100 dark:bg-dark-700 text-gray-700 dark:text-gray-300 rounded-tl-sm',
+              )}
+            >
+              {m.content}
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Sparkles className="text-indigo-600 dark:text-indigo-400" style={{ width: 15, height: 15 }} />
+            </div>
+            <div className="bg-slate-100 dark:bg-dark-700 rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.3s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:-0.15s]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce" />
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-xl border border-red-100 dark:border-red-900/30">
+            {error}
+          </p>
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="flex-shrink-0 border-t border-gray-100 dark:border-dark-700 p-4 flex items-center gap-2">
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') send(input) }}
+          placeholder="Pergunte sobre o escritório..."
+          disabled={loading}
+          className="flex-1 px-4 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-white dark:bg-dark-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800 focus:border-indigo-400 transition-all disabled:opacity-50"
+        />
+        <button
+          onClick={() => send(input)}
+          disabled={loading || !input.trim()}
+          className="w-10 h-10 flex items-center justify-center rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 transition-colors flex-shrink-0"
+        >
+          <Send style={{ width: 16, height: 16 }} />
+        </button>
+      </div>
+    </div>
+  )
+}
