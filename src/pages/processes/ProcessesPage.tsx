@@ -1,26 +1,62 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Briefcase, Trash2, Download, ChevronDown, ChevronRight,
   ArrowRight, Scale, Edit3, Gavel, FileText, Calendar,
   User, Building2, Hash, AlertCircle, Printer, CheckCircle2, TrendingUp, X,
   FolderOpen, Globe, DollarSign, RotateCcw, Upload, CheckSquare,
+  MessageCircle, Sparkles, Zap, SlidersHorizontal, ArrowUpDown,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner, StatsCard } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { Process, Client, Colaborador, Task, Financial, ProcessUpdate } from '@/types'
+import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, Tenant } from '@/types'
 import { formatDate, formatCurrency, PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
+import { OabSyncModal } from '@/components/cnj/OabSyncModal'
+
+/** Cria/atualiza/remove os eventos de Agenda vinculados a um processo (prazo e audiência) */
+async function syncProcessCalendarEvents(opts: {
+  processId: string; title: string; clientName: string | null; processNumber: string
+  nextDeadline: string | null; nextHearing: string | null
+}) {
+  const { processId, title, clientName, processNumber, nextDeadline, nextHearing } = opts
+  const { data: existing } = await supabase
+    .from('calendar_events').select('id,type').eq('process_id', processId).is('deleted_at', null).in('type', ['deadline', 'hearing'])
+  const existingByType: Record<string, string> = {}
+  for (const e of existing || []) existingByType[e.type as string] = e.id
+
+  async function upsertOrRemove(type: 'deadline' | 'hearing', value: string | null) {
+    const existingId = existingByType[type]
+    if (!value) {
+      if (existingId) await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', existingId)
+      return
+    }
+    const date = value.slice(0, 10)
+    const time = value.length > 10 ? value.slice(11, 16) : null
+    const payload = {
+      title: `${type === 'deadline' ? 'Prazo' : 'Audiência'} — ${title}`,
+      type, date, time, process_id: processId, process_number: processNumber || null,
+      client_name: clientName || null, status: 'scheduled',
+    }
+    if (existingId) await supabase.from('calendar_events').update(payload).eq('id', existingId)
+    else await supabase.from('calendar_events').insert(payload)
+  }
+
+  await Promise.all([
+    upsertOrRemove('deadline', nextDeadline),
+    upsertOrRemove('hearing', nextHearing),
+  ])
+}
 
 type ProcessForm = {
   number: string; title: string; client_id: string; client_name: string; area: string;
   type: string; status: string; priority: string; assigned_lawyer: string; court: string;
   judge: string; counterparty: string; description: string; modalidade: string;
-  data_protocolo: string; next_deadline: string; colaborador_id: string;
+  data_protocolo: string; next_deadline: string; next_hearing: string; colaborador_id: string;
   // ADVBOX fields
   grupo_acao: string; fase: string; etapa: string;
   numero_protocolo: string; processo_originario: string; pasta_caso: string;
@@ -32,7 +68,7 @@ const EMPTY_FORM: ProcessForm = {
   number: '', title: '', client_id: '', client_name: '', area: '', type: '',
   status: 'active', priority: 'medium', assigned_lawyer: '',
   court: '', judge: '', counterparty: '', description: '', modalidade: '',
-  data_protocolo: '', next_deadline: '', colaborador_id: '',
+  data_protocolo: '', next_deadline: '', next_hearing: '', colaborador_id: '',
   grupo_acao: '', fase: 'NEGOCIAÇÃO', etapa: 'ANÁLISE DO CASO',
   numero_protocolo: '', processo_originario: '', pasta_caso: '',
   data_requerimento: '', valor_causa: '', valor_honorarios: '',
@@ -71,13 +107,24 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 export function ProcessesPage() {
+  const navigate = useNavigate()
+  const { profile } = useAuth()
   const [processes, setProcesses] = useState<Process[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
+  const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = usePageLoadingState()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [modalidadeFilter, setModalidadeFilter] = useState('')
+  const [areaFilter, setAreaFilter] = useState('')
+  const [colaboradorFilter, setColaboradorFilter] = useState('')
+  const [sortField, setSortField] = useState<'created_at' | 'next_deadline' | 'client_name' | 'number'>('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [sortOpen, setSortOpen] = useState(false)
+  const filterRef = useRef<HTMLDivElement>(null)
+  const sortRef = useRef<HTMLDivElement>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('table')
   const [modalOpen, setModalOpen] = useState(false)
   const [viewProcess, setViewProcess] = useState<Process | null>(null)
@@ -91,11 +138,19 @@ export function ProcessesPage() {
   const [groupPages, setGroupPages] = useState<Record<string, number>>({})
   const [tablePage, setTablePage] = useState(0)
   const [exportOpen, setExportOpen] = useState(false)
+  const [oabSyncOpen, setOabSyncOpen] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkWorking, setBulkWorking] = useState(false)
+  const [editingMeta, setEditingMeta] = useState(false)
+  const [metaInput, setMetaInput] = useState('')
+  const [savingMeta, setSavingMeta] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false)
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -125,22 +180,42 @@ export function ProcessesPage() {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { setTablePage(0) }, [search, statusFilter, modalidadeFilter, viewMode])
+  useEffect(() => { setTablePage(0) }, [search, statusFilter, modalidadeFilter, areaFilter, colaboradorFilter, viewMode])
+
+  useEffect(() => {
+    if (!profile?.tenant_id) return
+    supabase.from('tenants').select('*').eq('id', profile.tenant_id).single()
+      .then(({ data }) => setTenant(data as Tenant))
+  }, [profile?.tenant_id])
 
   const location = useLocation()
   useEffect(() => {
     if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
   }, [location.state])
 
-  const filtered = processes.filter(p => {
-    const matchSearch = !search ||
-      p.title.toLowerCase().includes(search.toLowerCase()) ||
-      p.number.toLowerCase().includes(search.toLowerCase()) ||
-      p.client_name?.toLowerCase().includes(search.toLowerCase())
-    const matchStatus = !statusFilter || p.status === statusFilter
-    const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
-    return matchSearch && matchStatus && matchModalidade
-  })
+  const filtered = useMemo(() => {
+    const result = processes.filter(p => {
+      const matchSearch = !search ||
+        p.title.toLowerCase().includes(search.toLowerCase()) ||
+        p.number.toLowerCase().includes(search.toLowerCase()) ||
+        p.client_name?.toLowerCase().includes(search.toLowerCase())
+      const matchStatus = !statusFilter || p.status === statusFilter
+      const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
+      const matchArea = !areaFilter || p.area === areaFilter
+      const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
+      return matchSearch && matchStatus && matchModalidade && matchArea && matchColaborador
+    })
+    return [...result].sort((a, b) => {
+      let va = '', vb = ''
+      if (sortField === 'client_name') { va = (a.client_name || '').toLowerCase(); vb = (b.client_name || '').toLowerCase() }
+      else if (sortField === 'number') { va = a.number || ''; vb = b.number || '' }
+      else if (sortField === 'next_deadline') { va = a.next_deadline || ''; vb = b.next_deadline || '' }
+      else { va = a.created_at || ''; vb = b.created_at || '' }
+      if (va < vb) return sortDir === 'asc' ? -1 : 1
+      if (va > vb) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [processes, search, statusFilter, modalidadeFilter, areaFilter, colaboradorFilter, sortField, sortDir])
 
   // Stats — calculated from full processes list (not filtered)
   const stats = useMemo(() => {
@@ -192,7 +267,9 @@ export function ProcessesPage() {
         p.number.toLowerCase().includes(search.toLowerCase()) ||
         p.client_name?.toLowerCase().includes(search.toLowerCase())
       const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
-      return matchSearch && matchModalidade
+      const matchArea = !areaFilter || p.area === areaFilter
+      const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
+      return matchSearch && matchModalidade && matchArea && matchColaborador
     })
     return {
       all: base.length,
@@ -204,7 +281,7 @@ export function ProcessesPage() {
       archived: base.filter(p => p.status === 'archived').length,
       suspended: base.filter(p => p.status === 'suspended').length,
     }
-  }, [processes, search, modalidadeFilter])
+  }, [processes, search, modalidadeFilter, areaFilter, colaboradorFilter])
 
   function toggleGroup(id: string) {
     setExpandedGroups(prev => {
@@ -213,6 +290,52 @@ export function ProcessesPage() {
       else next.add(id)
       return next
     })
+  }
+
+  // ─── Seleção em massa ────────────────────────────────────────────────────────
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
+  function togglePageSelection() {
+    setSelectedIds(prev => {
+      const allSelected = pageProcesses.every(p => prev.has(p.id))
+      const next = new Set(prev)
+      if (allSelected) pageProcesses.forEach(p => next.delete(p.id))
+      else pageProcesses.forEach(p => next.add(p.id))
+      return next
+    })
+  }
+  async function bulkSetStatus(status: string) {
+    setBulkWorking(true)
+    await supabase.from('processes').update({ status }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  async function bulkAssignColaborador(colaboradorId: string) {
+    setBulkWorking(true)
+    await supabase.from('processes').update({ colaborador_id: colaboradorId === '__none__' ? null : colaboradorId }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  async function bulkDelete() {
+    if (!confirm(`Excluir ${selectedIds.size} processo(s) selecionado(s)?`)) return
+    setBulkWorking(true)
+    await supabase.from('processes').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+
+  async function saveMeta() {
+    const value = parseInt(metaInput, 10)
+    if (!tenant || !value || value <= 0) return
+    setSavingMeta(true)
+    const { error } = await supabase.from('tenants').update({ meta_fechamentos_mensal: value }).eq('id', tenant.id)
+    setSavingMeta(false)
+    if (!error) { setTenant({ ...tenant, meta_fechamentos_mensal: value }); setEditingMeta(false) }
   }
 
   function openNew() { setEditId(null); setForm(EMPTY_FORM); setCpfSearch(''); setModalOpen(true) }
@@ -226,6 +349,7 @@ export function ProcessesPage() {
       judge: p.judge || '', counterparty: p.counterparty || '',
       description: p.description || '', modalidade: p.modalidade || '',
       data_protocolo: p.data_protocolo || '', next_deadline: p.next_deadline || '',
+      next_hearing: p.next_hearing ? p.next_hearing.slice(0, 16) : '',
       colaborador_id: p.colaborador_id || '',
       grupo_acao: p.area || '',
       fase: 'NEGOCIAÇÃO', etapa: 'ANÁLISE DO CASO',
@@ -251,21 +375,30 @@ export function ProcessesPage() {
       data_protocolo: form.data_protocolo || form.data_requerimento || null,
       data_requerimento: form.data_requerimento || null,
       next_deadline: form.next_deadline || null,
+      next_hearing: form.next_hearing || null,
       modalidade: form.modalidade || null,
     }
     if (!payload.client_id) delete payload.client_id
     let error: any = null
+    let processId = editId
     if (editId) {
       const res = await supabase.from('processes').update(payload).eq('id', editId)
       error = res.error
     } else {
-      const res = await supabase.from('processes').insert(payload)
+      const res = await supabase.from('processes').insert(payload).select('id').single()
       error = res.error
+      processId = res.data?.id || null
     }
     setSaving(false)
     if (error) {
       alert(`Erro ao salvar processo: ${error.message}`)
       return
+    }
+    if (processId) {
+      syncProcessCalendarEvents({
+        processId, title: payload.title, clientName: payload.client_name,
+        processNumber: payload.number, nextDeadline: payload.next_deadline, nextHearing: payload.next_hearing,
+      })
     }
     setModalOpen(false)
     load()
@@ -410,7 +543,9 @@ export function ProcessesPage() {
           p.number.toLowerCase().includes(search.toLowerCase()) ||
           p.client_name?.toLowerCase().includes(search.toLowerCase())
         const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
-        return matchSearch && matchModalidade && p.data_protocolo
+        const matchArea = !areaFilter || p.area === areaFilter
+        const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
+        return matchSearch && matchModalidade && matchArea && matchColaborador && p.data_protocolo
       })
     : filtered
 
@@ -518,19 +653,57 @@ export function ProcessesPage() {
             <p className="text-sm font-semibold text-gray-800 dark:text-white">Meta de fechamentos</p>
             <div className="flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-gray-400" />
-              <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-              </button>
+              {tenant?.meta_fechamentos_mensal && !editingMeta && (
+                <button
+                  onClick={() => { setMetaInput(String(tenant.meta_fechamentos_mensal)); setEditingMeta(true) }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  title="Editar meta"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                </button>
+              )}
             </div>
           </div>
           <div className="flex-1 flex items-center justify-center">
-            <div className="bg-gray-50 dark:bg-dark-700/50 rounded-xl p-5 text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                Você ainda não configurou as metas do seu escritório.{' '}
-                <button className="text-primary-600 dark:text-primary-400 hover:underline font-medium">Clique aqui</button>{' '}
-                para configurar.
-              </p>
-            </div>
+            {editingMeta ? (
+              <div className="w-full space-y-3">
+                <label className="block text-xs text-gray-500 dark:text-gray-400">Quantos fechamentos (ganhos + perdidos) por mês é a meta do escritório?</label>
+                <input
+                  type="number" min={1} value={metaInput} onChange={e => setMetaInput(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                  placeholder="Ex: 10" autoFocus
+                />
+                <div className="flex gap-2">
+                  <button onClick={saveMeta} disabled={savingMeta || !metaInput} className="flex-1 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+                    {savingMeta ? 'Salvando...' : 'Salvar meta'}
+                  </button>
+                  <button onClick={() => setEditingMeta(false)} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-dark-600 text-xs text-gray-500 hover:bg-gray-50 dark:hover:bg-dark-700">Cancelar</button>
+                </div>
+              </div>
+            ) : tenant?.meta_fechamentos_mensal ? (() => {
+              const meta = tenant.meta_fechamentos_mensal
+              const pct = Math.min(Math.round((stats.fechamentosThisMonth / meta) * 100), 100)
+              return (
+                <div className="w-full">
+                  <div className="flex items-end justify-between mb-2">
+                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.fechamentosThisMonth}<span className="text-sm font-medium text-gray-400"> / {meta}</span></p>
+                    <span className={cn('text-xs font-semibold', pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary-600 dark:text-primary-400')}>{pct}%</span>
+                  </div>
+                  <div className="w-full h-2.5 rounded-full bg-gray-100 dark:bg-dark-700 overflow-hidden">
+                    <div className={cn('h-full rounded-full transition-all', pct >= 100 ? 'bg-emerald-500' : 'bg-primary-500')} style={{ width: `${pct}%` }} />
+                  </div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Fechamentos deste mês vs. meta mensal</p>
+                </div>
+              )
+            })() : (
+              <div className="bg-gray-50 dark:bg-dark-700/50 rounded-xl p-5 text-center">
+                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+                  Você ainda não configurou as metas do seu escritório.{' '}
+                  <button onClick={() => { setMetaInput(''); setEditingMeta(true) }} className="text-primary-600 dark:text-primary-400 hover:underline font-medium">Clique aqui</button>{' '}
+                  para configurar.
+                </p>
+              </div>
+            )}
           </div>
         </Card>
       </div>
@@ -556,6 +729,12 @@ export function ProcessesPage() {
               <Button onClick={openNew} className="h-8 text-xs px-3">
                 Novo processo
               </Button>
+              <button
+                onClick={() => setOabSyncOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 dark:text-primary-400 border border-primary-200 dark:border-primary-800 bg-primary-50 dark:bg-primary-900/20 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+              >
+                <Zap className="w-3.5 h-3.5" /> Sincronizar via OAB
+              </button>
 
               {/* Status dropdown */}
               <div className="relative">
@@ -594,14 +773,108 @@ export function ProcessesPage() {
                 )}
               </div>
 
-              <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z" /></svg>
-                Filtrar
-              </button>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M6 12h12M9 17h6" /></svg>
-                Ordenar
-              </button>
+              {/* Filtrar */}
+              <div className="relative" ref={filterRef}>
+                <button
+                  onClick={() => { setFilterOpen(v => !v); setSortOpen(false) }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors',
+                    filterOpen || modalidadeFilter || areaFilter || colaboradorFilter
+                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
+                      : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-700'
+                  )}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  Filtrar
+                  {[modalidadeFilter, areaFilter, colaboradorFilter].filter(Boolean).length > 0 && (
+                    <span className="ml-0.5 w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">
+                      {[modalidadeFilter, areaFilter, colaboradorFilter].filter(Boolean).length}
+                    </span>
+                  )}
+                </button>
+                {filterOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 w-72 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-4 space-y-4">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Filtros</p>
+                      {(modalidadeFilter || areaFilter || colaboradorFilter) && (
+                        <button
+                          onClick={() => { setModalidadeFilter(''); setAreaFilter(''); setColaboradorFilter('') }}
+                          className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium"
+                        >Limpar tudo</button>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Modalidade</label>
+                      <div className="flex gap-1.5">
+                        {[{ v: '', l: 'Todas' }, { v: 'judicial', l: 'Judicial' }, { v: 'administrativo', l: 'Administrativo' }].map(opt => (
+                          <button key={opt.v} onClick={() => setModalidadeFilter(opt.v)}
+                            className={cn('px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors',
+                              modalidadeFilter === opt.v ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:border-primary-400 hover:text-primary-600')}>
+                            {opt.l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Área do Direito</label>
+                      <select value={areaFilter} onChange={e => setAreaFilter(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500">
+                        <option value="">Todas</option>
+                        {areaOptions.map(a => <option key={a} value={a}>{a}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Parceiro</label>
+                      <select value={colaboradorFilter} onChange={e => setColaboradorFilter(e.target.value)}
+                        className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500">
+                        <option value="">Todos</option>
+                        {colaboradores.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                        <option value="__sem__">Sem parceiro</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Ordenar */}
+              <div className="relative" ref={sortRef}>
+                <button
+                  onClick={() => { setSortOpen(v => !v); setFilterOpen(false) }}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors',
+                    sortOpen
+                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
+                      : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-700'
+                  )}
+                >
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  Ordenar
+                  {(sortField !== 'created_at' || sortDir !== 'desc') && <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-primary-600" />}
+                </button>
+                {sortOpen && (
+                  <div className="absolute left-0 top-full mt-1.5 w-56 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-2 space-y-0.5">
+                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-2 py-1.5">Ordenar por</p>
+                    {([
+                      { field: 'created_at' as const, dir: 'desc' as const, label: 'Mais recentes primeiro' },
+                      { field: 'created_at' as const, dir: 'asc' as const, label: 'Mais antigos primeiro' },
+                      { field: 'next_deadline' as const, dir: 'asc' as const, label: 'Prazo mais próximo' },
+                      { field: 'client_name' as const, dir: 'asc' as const, label: 'Cliente A → Z' },
+                      { field: 'number' as const, dir: 'asc' as const, label: 'Número do processo' },
+                    ]).map(opt => (
+                      <button key={`${opt.field}-${opt.dir}`} onClick={() => { setSortField(opt.field); setSortDir(opt.dir); setSortOpen(false) }}
+                        className={cn('w-full text-left px-3 py-2 text-xs rounded-lg transition-colors flex items-center justify-between',
+                          sortField === opt.field && sortDir === opt.dir
+                            ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold'
+                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700')}>
+                        {opt.label}
+                        {sortField === opt.field && sortDir === opt.dir && (
+                          <svg className="w-3.5 h-3.5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="relative" ref={exportRef}>
                 <button
                   onClick={() => setExportOpen(v => !v)}
@@ -668,6 +941,35 @@ export function ProcessesPage() {
               </div>
             </div>
 
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-primary-100 dark:border-primary-800/40 bg-primary-50/60 dark:bg-primary-900/10 flex-wrap">
+                <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">{selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}</span>
+                <select
+                  disabled={bulkWorking} defaultValue=""
+                  onChange={e => { if (e.target.value) bulkSetStatus(e.target.value); e.target.value = '' }}
+                  className="text-xs border border-gray-200 dark:border-dark-600 rounded-lg px-2 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300"
+                >
+                  <option value="" disabled>Alterar status...</option>
+                  {['active', 'suspended', 'archived', 'won', 'lost', 'returned'].map(s => (
+                    <option key={s} value={s}>{PROCESS_STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+                <select
+                  disabled={bulkWorking} defaultValue=""
+                  onChange={e => { if (e.target.value) bulkAssignColaborador(e.target.value); e.target.value = '' }}
+                  className="text-xs border border-gray-200 dark:border-dark-600 rounded-lg px-2 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 max-w-[180px]"
+                >
+                  <option value="" disabled>Atribuir parceiro...</option>
+                  {colaboradores.map(c => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  <option value="__none__">Sem parceiro</option>
+                </select>
+                <button onClick={bulkDelete} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Limpar seleção</button>
+              </div>
+            )}
+
             {/* Table */}
             {!loading && (effectiveFiltered.length === 0 ? (
               <EmptyState icon={Briefcase} title="Nenhum processo encontrado" />
@@ -676,6 +978,11 @@ export function ProcessesPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
+                      <th className="w-9 px-3 py-2.5">
+                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                          checked={pageProcesses.length > 0 && pageProcesses.every(p => selectedIds.has(p.id))}
+                          onChange={togglePageSelection} />
+                      </th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                         <span className="flex items-center gap-1 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">
                           Partes
@@ -687,17 +994,32 @@ export function ProcessesPage() {
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Cadastro</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Último Andamento</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Andamento</th>
-                      <th className="w-16 px-4 py-2.5" />
+                      <th className="w-20 px-4 py-2.5" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
-                    {pageProcesses.map(p => (
+                    {pageProcesses.map(p => {
+                      const lastMov = Array.isArray(p.movimentos) && p.movimentos.length > 0
+                        ? [...p.movimentos].sort((a, b) => (b.dataHora || b.data || '').localeCompare(a.dataHora || a.data || ''))[0]
+                        : null
+                      return (
                       <tr key={p.id}
                         className="hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors cursor-pointer group"
                         onClick={() => setViewProcess(p)}
                       >
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                            checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e as any)} />
+                        </td>
                         <td className="px-4 py-3">
-                          <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug">{p.client_name || '—'}</p>
+                          <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
+                            {p.client_name || '—'}
+                            {p.cnj_source && (
+                              <span title={`Sincronizado automaticamente${p.cnj_synced_at ? ' — ' + formatDate(p.cnj_synced_at) : ''}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                <Zap className="w-2.5 h-2.5" />CNJ
+                              </span>
+                            )}
+                          </p>
                           {p.counterparty && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">x {p.counterparty}</p>}
                           {p.assigned_lawyer && <p className="text-xs text-gray-400 dark:text-gray-500">x {p.assigned_lawyer}</p>}
                         </td>
@@ -710,8 +1032,8 @@ export function ProcessesPage() {
                         <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
                           {formatDate(p.created_at)}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-400">N/A</td>
-                        <td className="px-4 py-3 text-xs text-gray-400">N/A</td>
+                        <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[220px] truncate">{lastMov?.nome || 'N/A'}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400">{lastMov ? formatDate((lastMov.dataHora || lastMov.data || '').slice(0, 10)) : 'N/A'}</td>
                         <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
@@ -723,7 +1045,8 @@ export function ProcessesPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
                 {totalTablePages > 1 && (
@@ -848,6 +1171,7 @@ export function ProcessesPage() {
           <ViewPanel
             process={viewProcess}
             colaboradores={colaboradores}
+            clients={clients}
             onClose={() => setViewProcess(null)}
             onSaved={() => { setViewProcess(null); load() }}
             onDelete={() => { deleteProcess(viewProcess.id); setViewProcess(null) }}
@@ -1043,6 +1367,29 @@ export function ProcessesPage() {
                 </div>
               </div>
 
+              {/* Próximo prazo */}
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Próximo prazo</label>
+                <input
+                  type="date"
+                  value={form.next_deadline}
+                  onChange={e => setForm({ ...form, next_deadline: e.target.value })}
+                  className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
+                />
+              </div>
+
+              {/* Próxima audiência */}
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Próxima audiência</label>
+                <input
+                  type="datetime-local"
+                  value={form.next_hearing}
+                  onChange={e => setForm({ ...form, next_hearing: e.target.value })}
+                  className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
+                />
+                <p className="text-xs text-gray-400 mt-1">Cria automaticamente um evento na Agenda</p>
+              </div>
+
               {/* Valor da causa */}
               <div>
                 <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Valor da causa</label>
@@ -1140,6 +1487,8 @@ export function ProcessesPage() {
         </Modal>
       )}
 
+      {oabSyncOpen && <OabSyncModal onDone={() => { setOabSyncOpen(false); load() }} />}
+
     </Layout>
   )
 }
@@ -1185,7 +1534,7 @@ const PANEL_TABS: { id: PanelTab; icon: React.ElementType; label: string }[] = [
 type PanelForm = {
   number: string; court: string; judge: string; counterparty: string
   assigned_lawyer: string; description: string; area: string; type: string
-  data_protocolo: string; next_deadline: string; colaborador_id: string
+  data_protocolo: string; next_deadline: string; next_hearing: string; colaborador_id: string
   status: string; modalidade: string
   // ADVBOX extra
   ano_ajuizamento: string; segmento: string; comarca: string; vara: string
@@ -1269,13 +1618,16 @@ function DatePair({ label1, value1, onChange1, label2, value2, onChange2 }: {
   )
 }
 
-function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
+function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDelete }: {
   process: Process
   colaboradores: Colaborador[]
+  clients: Client[]
   onClose: () => void
   onSaved: () => void
   onDelete: () => void
 }) {
+  const navigate = useNavigate()
+  const linkedClient = clients.find(c => c.id === p.client_id)
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<PanelTab>('dados')
   const [form, setForm] = useState<PanelForm>({
@@ -1289,6 +1641,7 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
     type: p.type || '',
     data_protocolo: p.data_protocolo || '',
     next_deadline: p.next_deadline || '',
+    next_hearing: p.next_hearing ? p.next_hearing.slice(0, 16) : '',
     colaborador_id: p.colaborador_id || '',
     status: p.status || 'active',
     modalidade: p.modalidade || '',
@@ -1321,6 +1674,30 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
   // Documentos upload
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Financeiro — lançamento rápido
+  const [showFinForm, setShowFinForm] = useState(false)
+  const [finForm, setFinForm] = useState({ type: 'receivable', category: 'fees', description: '', amount: '', due_date: '' })
+  const [savingFin, setSavingFin] = useState(false)
+
+  // Tarefas — tarefa rápida
+  const [showTaskForm, setShowTaskForm] = useState(false)
+  const [taskForm, setTaskForm] = useState({ title: '', due_date: '', priority: 'medium' })
+  const [savingTask, setSavingTask] = useState(false)
+
+  // Mescla movimentações manuais (process_updates) com as importadas automaticamente (CNJ/PJe)
+  const combinedMovs = useMemo(() => {
+    const manual = tabUpdates.map(u => ({
+      id: u.id, title: u.title, description: u.description, date: u.date || u.created_at,
+      typeLabel: UPDATE_TYPE_LABELS[u.type || ''] || u.type || 'Andamento', author: u.author, automated: false,
+    }))
+    const auto = (p.movimentos || []).map((m, i) => ({
+      id: `auto-${i}`, title: m.nome || 'Movimentação', description: m.teor || null,
+      date: (m.dataHora || m.data || '').slice(0, 10) || null,
+      typeLabel: m.fonte === 'pje' ? 'PJe (automático)' : 'CNJ (automático)', author: null, automated: true,
+    }))
+    return [...manual, ...auto].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+  }, [tabUpdates, p.movimentos])
 
   async function loadTab(tab: PanelTab) {
     if (tabsLoaded.has(tab)) return
@@ -1368,6 +1745,36 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
     setNewUpdate({ title: '', description: '', date: new Date().toISOString().slice(0, 10), type: 'andamento' })
     setShowUpdateForm(false)
     setSavingUpdate(false)
+  }
+
+  async function addFinancial() {
+    const amount = parseFloat(finForm.amount)
+    if (!finForm.description.trim() || !amount || amount <= 0) return
+    setSavingFin(true)
+    await supabase.from('financials').insert({
+      type: finForm.type, category: finForm.category, description: finForm.description.trim(),
+      amount, due_date: finForm.due_date || null, status: 'pending',
+      process_id: p.id, process_number: p.number, client_id: p.client_id || null, client_name: p.client_name || null,
+    })
+    const { data } = await supabase.from('financials').select('*').eq('process_id', p.id).is('deleted_at', null).order('due_date')
+    setTabFinancials(data || [])
+    setFinForm({ type: 'receivable', category: 'fees', description: '', amount: '', due_date: '' })
+    setShowFinForm(false)
+    setSavingFin(false)
+  }
+
+  async function addTask() {
+    if (!taskForm.title.trim()) return
+    setSavingTask(true)
+    await supabase.from('tasks').insert({
+      title: taskForm.title.trim(), due_date: taskForm.due_date || null, priority: taskForm.priority,
+      status: 'pending', type: 'custom', process_id: p.id,
+    })
+    const { data } = await supabase.from('tasks').select('*').eq('process_id', p.id).is('deleted_at', null).order('due_date')
+    setTabTasks(data || [])
+    setTaskForm({ title: '', due_date: '', priority: 'medium' })
+    setShowTaskForm(false)
+    setSavingTask(false)
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1423,10 +1830,16 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
       type: form.type,
       data_protocolo: form.data_protocolo || form.data_requerimento || null,
       next_deadline: form.next_deadline || null,
+      next_hearing: form.next_hearing || null,
       colaborador_id: form.colaborador_id || null,
       status: form.status as any,
       modalidade: (form.modalidade || null) as any,
     }).eq('id', p.id)
+    await syncProcessCalendarEvents({
+      processId: p.id, title: [p.client_name, form.counterparty].filter(Boolean).join(' x ') || p.title,
+      clientName: p.client_name, processNumber: form.number,
+      nextDeadline: form.next_deadline || null, nextHearing: form.next_hearing || null,
+    })
     setSaving(false)
     onSaved()
   }
@@ -1467,12 +1880,38 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
 
       {/* Process title subheader */}
       <div className="px-4 py-3 border-b border-gray-100 dark:border-dark-700 flex-shrink-0 bg-gray-50 dark:bg-dark-700/40">
-        <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug line-clamp-2">{panelTitle}</p>
-        {p.number && (
-          <p className="text-[11px] text-gray-400 dark:text-gray-500 font-mono mt-0.5 flex items-center gap-1">
-            <Hash className="w-3 h-3" />{p.number}
-          </p>
-        )}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-gray-900 dark:text-white leading-snug line-clamp-2 flex items-center gap-1.5">
+              {panelTitle}
+              {p.cnj_source && (
+                <span title={`Sincronizado automaticamente${p.cnj_synced_at ? ' — ' + formatDate(p.cnj_synced_at) : ''}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 flex-shrink-0">
+                  <Zap className="w-2.5 h-2.5" />CNJ
+                </span>
+              )}
+            </p>
+            {p.number && (
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 font-mono mt-0.5 flex items-center gap-1">
+                <Hash className="w-3 h-3" />{p.number}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {linkedClient?.phone && (
+              <a
+                href={`https://wa.me/55${linkedClient.phone.replace(/\D/g, '')}`} target="_blank" rel="noreferrer" title="WhatsApp"
+                className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+              ><MessageCircle className="w-4 h-4" /></a>
+            )}
+            <button
+              title="Perguntar ao Copiloto"
+              onClick={() => navigate('/dashboard', {
+                state: { openTab: 'ia', prefillQuestion: `Me dê um resumo sobre o processo ${p.number || p.title}: andamento, financeiro e tarefas pendentes.` },
+              })}
+              className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+            ><Sparkles className="w-4 h-4" /></button>
+          </div>
+        </div>
       </div>
 
       {/* Loading state for tabs */}
@@ -1580,7 +2019,7 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
             </div>
           )}
 
-          {tabUpdates.length === 0 && !showUpdateForm ? (
+          {combinedMovs.length === 0 && !showUpdateForm ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
               <RotateCcw className="w-8 h-8 text-gray-300 dark:text-gray-600" />
               <p className="text-sm text-gray-500 dark:text-gray-400">Nenhuma movimentação registrada</p>
@@ -1589,20 +2028,20 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
             <div className="relative ml-2">
               <div className="absolute left-2.5 top-0 bottom-0 w-px bg-gray-200 dark:bg-dark-600" />
               <div className="space-y-3">
-                {tabUpdates.map(u => (
+                {combinedMovs.map(u => (
                   <div key={u.id} className="flex gap-3 relative pl-7">
-                    <div className="absolute left-0 top-1.5 w-5 h-5 rounded-full bg-white dark:bg-dark-800 border-2 border-primary-400 flex items-center justify-center z-10">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary-500" />
+                    <div className={cn('absolute left-0 top-1.5 w-5 h-5 rounded-full bg-white dark:bg-dark-800 border-2 flex items-center justify-center z-10', u.automated ? 'border-indigo-400' : 'border-primary-400')}>
+                      <div className={cn('w-1.5 h-1.5 rounded-full', u.automated ? 'bg-indigo-500' : 'bg-primary-500')} />
                     </div>
                     <div className="flex-1 bg-gray-50 dark:bg-dark-700/50 rounded-xl border border-gray-100 dark:border-dark-600 p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="text-[10px] font-semibold uppercase tracking-wide text-primary-600 dark:text-primary-400">
-                            {UPDATE_TYPE_LABELS[u.type || ''] || u.type || 'Andamento'}
+                          <span className={cn('text-[10px] font-semibold uppercase tracking-wide', u.automated ? 'text-indigo-600 dark:text-indigo-400' : 'text-primary-600 dark:text-primary-400')}>
+                            {u.typeLabel}
                           </span>
                           <p className="text-xs font-medium text-gray-800 dark:text-gray-200 mt-0.5">{u.title}</p>
                         </div>
-                        <p className="text-[10px] text-gray-400 dark:text-gray-600 flex-shrink-0">{formatDate(u.date || u.created_at)}</p>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-600 flex-shrink-0">{formatDate(u.date)}</p>
                       </div>
                       {u.description && <p className="text-[11px] text-gray-500 dark:text-gray-500 mt-1 leading-relaxed">{u.description}</p>}
                       {u.author && <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">{u.author}</p>}
@@ -1618,7 +2057,48 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
       {/* ── Financeiro tab ── */}
       {activeTab === 'financeiro' && !tabLoading && (
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Financeiro do processo</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Financeiro do processo</p>
+            <button onClick={() => setShowFinForm(v => !v)} className="flex items-center gap-1.5 text-xs bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+              <Plus className="w-3 h-3" /> Novo
+            </button>
+          </div>
+          {showFinForm && (
+            <div className="bg-gray-50 dark:bg-dark-700/60 rounded-xl border border-gray-200 dark:border-dark-600 p-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Tipo</label>
+                  <select value={finForm.type} onChange={e => setFinForm(prev => ({ ...prev, type: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400 appearance-none">
+                    <option value="receivable">A receber</option>
+                    <option value="payable">A pagar</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Vencimento</label>
+                  <input type="date" value={finForm.due_date} onChange={e => setFinForm(prev => ({ ...prev, due_date: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Descrição *</label>
+                <input value={finForm.description} onChange={e => setFinForm(prev => ({ ...prev, description: e.target.value }))} placeholder="Ex: Honorários iniciais"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Valor (R$) *</label>
+                <input type="number" step="0.01" min="0" value={finForm.amount} onChange={e => setFinForm(prev => ({ ...prev, amount: e.target.value }))} placeholder="0,00"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowFinForm(false)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-600 transition-colors">Cancelar</button>
+                <button onClick={addFinancial} disabled={savingFin || !finForm.description.trim() || !finForm.amount}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-50 transition-colors">
+                  {savingFin ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
           {(() => {
             const receitas = tabFinancials.filter(f => f.type === 'receivable')
             const despesas = tabFinancials.filter(f => f.type === 'payable')
@@ -1702,7 +2182,40 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
               Tarefas vinculadas · {tabTasks.filter(t => t.status !== 'done' && t.status !== 'cancelled').length} pendentes
             </p>
+            <button onClick={() => setShowTaskForm(v => !v)} className="flex items-center gap-1.5 text-xs bg-primary-600 hover:bg-primary-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+              <Plus className="w-3 h-3" /> Nova
+            </button>
           </div>
+          {showTaskForm && (
+            <div className="bg-gray-50 dark:bg-dark-700/60 rounded-xl border border-gray-200 dark:border-dark-600 p-3 space-y-2">
+              <div>
+                <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Título *</label>
+                <input value={taskForm.title} onChange={e => setTaskForm(prev => ({ ...prev, title: e.target.value }))} placeholder="Ex: Protocolar petição"
+                  className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Prazo</label>
+                  <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(prev => ({ ...prev, due_date: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 dark:text-gray-400 mb-1">Prioridade</label>
+                  <select value={taskForm.priority} onChange={e => setTaskForm(prev => ({ ...prev, priority: e.target.value }))}
+                    className="w-full px-2 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-primary-400 appearance-none">
+                    {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setShowTaskForm(false)} className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-500 hover:bg-gray-100 dark:hover:bg-dark-600 transition-colors">Cancelar</button>
+                <button onClick={addTask} disabled={savingTask || !taskForm.title.trim()}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white disabled:opacity-50 transition-colors">
+                  {savingTask ? 'Salvando…' : 'Salvar'}
+                </button>
+              </div>
+            </div>
+          )}
           {tabTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
               <CheckSquare className="w-8 h-8 text-gray-300 dark:text-gray-600" />
@@ -1896,6 +2409,14 @@ function ViewPanel({ process: p, colaboradores, onClose, onSaved, onDelete }: {
           <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Próximo prazo</label>
           <input type="date" value={form.next_deadline} onChange={f('next_deadline')}
             className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400" />
+        </div>
+
+        {/* Próxima audiência */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Próxima audiência</label>
+          <input type="datetime-local" value={form.next_hearing} onChange={f('next_hearing')}
+            className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400" />
+          <p className="text-[11px] text-gray-400 mt-1">Sincroniza automaticamente com a Agenda</p>
         </div>
 
         {/* Responsável */}

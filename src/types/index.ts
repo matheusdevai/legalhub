@@ -24,6 +24,7 @@ export interface Tenant {
   plan: 'starter' | 'professional' | 'enterprise' | null
   logo: string | null
   created_at: string | null
+  meta_fechamentos_mensal: number | null
 }
 
 export interface Client {
@@ -81,6 +82,22 @@ export interface Process {
   data_protocolo: string | null
   modalidade: 'judicial' | 'administrativo' | null
   colaborador_id: string | null
+  cnj_source: boolean | null
+  cnj_synced_at: string | null
+  movimentos: ProcessMovimentoAuto[] | null
+}
+
+/** Movimentação importada automaticamente via CNJ/DataJud ou PJe (formato varia por fonte) */
+export interface ProcessMovimentoAuto {
+  nome?: string
+  dataHora?: string
+  data?: string
+  teor?: string
+  orgao?: string
+  fonte?: string
+  parteAdversa?: string
+  prazo?: string
+  [key: string]: unknown
 }
 
 export interface Task {
