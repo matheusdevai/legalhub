@@ -1,6 +1,6 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CheckSquare, TrendingUp, Target, RefreshCw,
   Plus, Star, AlertCircle, ChevronLeft, ChevronRight,
@@ -242,7 +242,19 @@ function taskTime(task: Task): { label: string; isOverdue: boolean } {
 export function Dashboard() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [tab, setTab] = useState<DashTab>('visao')
+  const [copilotoPrefill, setCopilotoPrefill] = useState('')
+
+  useEffect(() => {
+    const state = location.state as { openTab?: DashTab; prefillQuestion?: string } | null
+    if (state?.openTab) {
+      setTab(state.openTab)
+      if (state.prefillQuestion) setCopilotoPrefill(state.prefillQuestion)
+      window.history.replaceState({}, '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state])
   const [loading, setLoading] = usePageLoadingState()
   const [tasks, setTasks] = useState<Task[]>([])
   const [listaTasks, setListaTasks] = useState<Task[]>([])
@@ -1655,7 +1667,7 @@ export function Dashboard() {
           )
         })()}
 
-        {tab === 'ia' && <AiCopilotoTab />}
+        {tab === 'ia' && <AiCopilotoTab initialQuestion={copilotoPrefill} onInitialQuestionConsumed={() => setCopilotoPrefill('')} />}
 
         {tab === 'configuracoes' && <DashConfiguracoes />}
 

@@ -13,7 +13,7 @@ import {
   isWithinInterval, addMonths, subMonths,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -124,6 +124,7 @@ function isTaskEvent(ev: CalendarEvent) { return !!ev.task_id }
 export function CalendarPage() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const uid = profile?.user_id || profile?.id || ''
 
   const [events,    setEvents]    = useState<CalendarEvent[]>([])
@@ -312,11 +313,27 @@ export function CalendarPage() {
   }
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
-  function openNew(date?: Date, type?: typeof EMPTY_FORM['type']) {
+  function openNew(date?: Date, type?: typeof EMPTY_FORM['type'], clientName?: string) {
     setEditId(null)
-    setForm({ ...EMPTY_FORM, date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'), type: type || 'meeting', sync_google: !!gToken })
+    setForm({
+      ...EMPTY_FORM,
+      date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
+      type: type || 'meeting',
+      sync_google: !!gToken,
+      client_name: clientName || '',
+      title: clientName ? `Reunião com ${clientName}` : '',
+    })
     setModalOpen(true)
   }
+
+  useEffect(() => {
+    const state = location.state as { openNew?: boolean; clientName?: string } | null
+    if (state?.openNew) {
+      openNew(new Date(), 'meeting', state.clientName)
+      window.history.replaceState({}, '')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state])
 
   function openEdit(ev: CalendarEvent) {
     setEditId(ev.id)

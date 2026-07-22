@@ -1,11 +1,12 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, Users, Phone, Mail, Trash2, Download,
+  Plus, Search, Users, Phone, Mail, Trash2, Download, Upload,
   UserCheck, Briefcase, MapPin, Scale, Calendar, Edit3,
   FileText, X, CheckCircle2, Clock, CheckSquare, ChevronDown,
-  AlertCircle, Info,
+  AlertCircle, Info, MessageCircle, Sparkles, Tag, ShieldCheck,
+  CalendarPlus, IdCard,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
@@ -13,7 +14,7 @@ import { supabase } from '@/lib/supabase'
 import { Client, Colaborador, Process, Profile } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { openExportWindow } from '@/lib/exportUtils'
+import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -50,6 +51,7 @@ type ClientForm = {
   profession: string; gender: string; nationality: string; celular: string;
   cep: string; state: string; bairro: string; pis_pasep: string; ctps: string;
   cid: string; nome_mae: string; avatar_url: string;
+  tags: string; lgpd_consent: boolean; lgpd_consent_date: string;
 }
 const EMPTY_CLIENT: ClientForm = {
   type: 'pf', name: '', cpf_cnpj: '', email: '', phone: '',
@@ -60,6 +62,19 @@ const EMPTY_CLIENT: ClientForm = {
   origem: '', pais: 'BRASIL', rg: '', birth_date: '', marital_status: '',
   profession: '', gender: '', nationality: '', celular: '',
   cep: '', state: '', bairro: '', pis_pasep: '', ctps: '', cid: '', nome_mae: '', avatar_url: '',
+  tags: '', lgpd_consent: false, lgpd_consent_date: '',
+}
+
+/** Normaliza telefone BR para link do WhatsApp (wa.me), assumindo DDI 55 quando ausente */
+function waLink(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 10) return null
+  const withDdi = digits.length <= 11 ? `55${digits}` : digits
+  return `https://wa.me/${withDdi}`
+}
+
+function normalizeForCompare(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
 function validateCPF(digits: string): boolean {
@@ -142,6 +157,7 @@ function VerticalBarChart({ title, data }: { title: string; data: { label: strin
 }
 
 export function ClientsPage() {
+  const navigate = useNavigate()
   const [clients, setClients] = useState<Client[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [systemUsers, setSystemUsers] = useState<Profile[]>([])
@@ -302,6 +318,37 @@ export function ClientsPage() {
     }
   }
 
+  /** Duplicidade "fuzzy": telefone com mesmos dígitos ou nome igual (ignorando acentos/caixa), quando o CPF/CNPJ não achou nada */
+  function checkContactDuplicate(nextForm: ClientForm) {
+    if (cpfSuggestion) return
+    const phoneDigits = (nextForm.celular || nextForm.phone || '').replace(/\D/g, '')
+    const nameNorm = normalizeForCompare(nextForm.name)
+    if (phoneDigits.length < 10 && nameNorm.length < 4) return
+
+    const existing = clients.find(c => {
+      if (c.deleted_at || c.id === editId) return false
+      const cPhoneDigits = (c.phone || '').replace(/\D/g, '')
+      const phoneMatch = phoneDigits.length >= 10 && cPhoneDigits.length >= 10 && cPhoneDigits.slice(-9) === phoneDigits.slice(-9)
+      const nameMatch = nameNorm.length >= 4 && normalizeForCompare(c.name) === nameNorm
+      return phoneMatch || nameMatch
+    })
+
+    if (existing) {
+      setCpfSuggestion({
+        label: existing.name,
+        sub: `Possível contato duplicado (mesmo ${normalizeForCompare(existing.name) === nameNorm ? 'nome' : 'telefone'}) — clique para preencher com os dados existentes`,
+        fields: {
+          name: existing.name, email: existing.email || '', phone: existing.phone || '',
+          celular: (existing as any).celular || '', address: existing.address || '',
+          bairro: (existing as any).bairro || '', cidade: existing.cidade || '',
+          state: (existing as any).state || '', cep: (existing as any).cep || '',
+          notes: existing.notes || '', type: existing.type, area_direito: existing.area_direito || '',
+          cpf_cnpj: existing.cpf_cnpj || '',
+        },
+      })
+    }
+  }
+
   async function lookupCep(raw: string) {
     const digits = raw.replace(/\D/g, '')
     const formatted = digits.length > 5 ? digits.slice(0, 5) + '-' + digits.slice(5, 8) : digits
@@ -459,6 +506,7 @@ export function ClientsPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [areaFilter, setAreaFilter] = useState('')
   const [cidadeFilter, setCidadeFilter] = useState('')
+  const [tagFilter, setTagFilter] = useState('')
   const [sortField, setSortField] = useState<'name' | 'created_at' | 'cidade'>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [filterOpen, setFilterOpen] = useState(false)
@@ -478,9 +526,10 @@ export function ClientsPage() {
       const matchType = !typeFilter || c.type === typeFilter
       const matchArea = !areaFilter || c.area_direito === areaFilter
       const matchCidade = !cidadeFilter || c.cidade === cidadeFilter
+      const matchTag = !tagFilter || ((c as any).tags || []).includes(tagFilter)
       const hasProc = (clientProcesses[c.id]?.length || 0) > 0
       const matchProc = activeProcessFilter === 'all' || (activeProcessFilter === 'with' ? hasProc : !hasProc)
-      return matchSearch && matchStatus && matchType && matchArea && matchCidade && matchProc
+      return matchSearch && matchStatus && matchType && matchArea && matchCidade && matchTag && matchProc
     })
     return [...result].sort((a, b) => {
       let va = '', vb = ''
@@ -491,7 +540,7 @@ export function ClientsPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [clients, search, statusFilter, typeFilter, areaFilter, cidadeFilter, activeProcessFilter, clientProcesses, sortField, sortDir])
+  }, [clients, search, statusFilter, typeFilter, areaFilter, cidadeFilter, tagFilter, activeProcessFilter, clientProcesses, sortField, sortDir])
 
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
   const pageClients = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -538,6 +587,9 @@ export function ClientsPage() {
       state: (c as any).state || '', bairro: (c as any).bairro || '',
       pis_pasep: (c as any).pis_pasep || '', ctps: (c as any).ctps || '',
       cid: (c as any).cid || '', nome_mae: (c as any).nome_mae || '',
+      tags: ((c as any).tags || []).join(', '),
+      lgpd_consent: (c as any).lgpd_consent ?? false,
+      lgpd_consent_date: (c as any).lgpd_consent_date || '',
     })
     setAvatarPreview((c as any).avatar_url || '')
     setModalOpen(true)
@@ -550,11 +602,13 @@ export function ClientsPage() {
       assigned_lawyer_uid, celular: _cel,
       processo_pago: _pp, processo_pago_valor: _ppv,
       processo_pago_data: _ppd, processo_categoria: _pc,
+      tags: tagsStr, lgpd_consent, lgpd_consent_date,
       ...rest
     } = form
     // merge celular into phone if phone is empty
     const phoneFinal = form.phone || form.celular || null
     const valorNum = form.colaborador_pago && form.colaborador_pago_valor ? parseFloat(form.colaborador_pago_valor) : null
+    const tagsArray = tagsStr.split(',').map(t => t.trim()).filter(Boolean)
     const payload = {
       ...rest,
       phone: phoneFinal,
@@ -568,6 +622,9 @@ export function ClientsPage() {
       colaborador_pago: form.colaborador_pago,
       colaborador_pago_data: form.colaborador_pago && form.colaborador_pago_data ? form.colaborador_pago_data : null,
       colaborador_pago_valor: valorNum,
+      tags: tagsArray,
+      lgpd_consent,
+      lgpd_consent_date: lgpd_consent ? (lgpd_consent_date || new Date().toISOString().slice(0, 10)) : null,
     }
 
     let clientId = editId
@@ -775,8 +832,180 @@ export function ClientsPage() {
     setExpandedRows(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
 
+  // ─── Seleção em massa ────────────────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkWorking, setBulkWorking] = useState(false)
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
+  function togglePageSelection() {
+    setSelectedIds(prev => {
+      const allSelected = pageClients.every(c => prev.has(c.id))
+      const next = new Set(prev)
+      if (allSelected) pageClients.forEach(c => next.delete(c.id))
+      else pageClients.forEach(c => next.add(c.id))
+      return next
+    })
+  }
+  async function bulkSetStatus(status: string) {
+    setBulkWorking(true)
+    await supabase.from('clients').update({ status }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  async function bulkAssignLawyer(userId: string) {
+    setBulkWorking(true)
+    const user = systemUsers.find(u => u.user_id === userId)
+    await supabase.from('clients').update({ assigned_lawyer: user ? (user.name || user.display_name || null) : null }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  async function bulkDelete() {
+    if (!confirm(`Excluir ${selectedIds.size} contato(s) selecionado(s)?`)) return
+    setBulkWorking(true)
+    await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  function bulkExport() {
+    const scoped = clients.filter(c => selectedIds.has(c.id))
+    const csvLines = ['Nome,Tipo,CPF/CNPJ,Telefone,Email,Cidade,Status,Processos,Cadastro']
+    for (const c of scoped) {
+      const status = STATUS_LABELS[c.status || 'active'] ?? ''
+      const proc = clientProcesses[c.id]?.length ?? 0
+      csvLines.push(`"${c.name}","${c.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}","${formatCPFCNPJ(c.cpf_cnpj || '') || '—'}","${formatPhone(c.phone || '') || '—'}","${c.email || '—'}","${c.cidade || '—'}","${status}","${proc}","${formatDate(c.created_at)}"`)
+    }
+    openExportWindow({
+      title: 'Relatório de Contatos', subtitle: 'Seleção manual',
+      filename: 'contatos-selecionados',
+      stats: [{ value: scoped.length, label: 'Selecionados', accent: '#2563eb' }],
+      columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status', 'Processos', 'Cadastro'],
+      rows: scoped.map(c => [
+        { text: c.name, sub: formatCPFCNPJ(c.cpf_cnpj || '') || undefined, bold: true },
+        { text: c.type === 'pf' ? 'PF' : 'PJ', badge: (c.type === 'pf' ? 'purple' : 'cyan') as any },
+        { text: formatPhone(c.phone || '') || '—' },
+        { text: c.email || '—' },
+        { text: c.cidade || '—' },
+        { text: STATUS_LABELS[c.status || 'active'], badge: (c.status === 'active' ? 'green' : c.status === 'inactive' ? 'gray' : 'blue') as any },
+        { text: String(clientProcesses[c.id]?.length ?? 0) },
+        { text: formatDate(c.created_at) },
+      ]),
+      csvContent: csvLines.join('\n'),
+    })
+  }
+
+  // ─── Tags disponíveis (para filtro) ──────────────────────────────────────────
+  const tagOptions = useMemo(() => {
+    const all = new Set<string>()
+    for (const c of clients) for (const t of (c as any).tags || []) all.add(t)
+    return Array.from(all).sort()
+  }, [clients])
+  // ─── Importação em massa ─────────────────────────────────────────────────────
+  const [importOpen, setImportOpen] = useState(false)
+  const [importRows, setImportRows] = useState<Record<string, string>[]>([])
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
+  const importFileRef = useRef<HTMLInputElement>(null)
+
+  function parseCsv(text: string): Record<string, string>[] {
+    const lines = text.split(/\r\n|\n/).filter(l => l.trim().length > 0)
+    if (lines.length < 2) return []
+    function parseLine(line: string): string[] {
+      const out: string[] = []
+      let cur = '', inQuotes = false
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (inQuotes) {
+          if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++ }
+          else if (ch === '"') { inQuotes = false }
+          else cur += ch
+        } else {
+          if (ch === '"') inQuotes = true
+          else if (ch === ',') { out.push(cur); cur = '' }
+          else cur += ch
+        }
+      }
+      out.push(cur)
+      return out
+    }
+    const headers = parseLine(lines[0]).map(h => h.trim().toLowerCase())
+    return lines.slice(1).map(line => {
+      const values = parseLine(line)
+      const row: Record<string, string> = {}
+      headers.forEach((h, i) => { row[h] = (values[i] || '').trim() })
+      return row
+    })
+  }
+
+  function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setImportError('')
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const rows = parseCsv(String(reader.result || ''))
+        if (rows.length === 0) { setImportError('Nenhuma linha reconhecida no arquivo.'); return }
+        setImportRows(rows)
+      } catch {
+        setImportError('Não foi possível ler o arquivo. Verifique se é um CSV válido.')
+      }
+    }
+    reader.readAsText(file, 'utf-8')
+  }
+
+  function downloadImportTemplate() {
+    const csv = 'nome,tipo,cpf_cnpj,telefone,email,cidade,area_direito,status\n' +
+      'Maria da Silva,pf,123.456.789-00,(83) 99999-0000,maria@email.com,João Pessoa,Previdenciário,prospect\n'
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'modelo-importacao-contatos.csv'
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  const importPreview = useMemo(() => {
+    const existingCpfs = new Set(clients.map(c => (c.cpf_cnpj || '').replace(/\D/g, '')).filter(Boolean))
+    return importRows.map(row => {
+      const cpfDigits = (row.cpf_cnpj || row['cpf/cnpj'] || '').replace(/\D/g, '')
+      return {
+        name: row.nome || row.name || '',
+        type: (row.tipo || row.type || 'pf').toLowerCase() === 'pj' ? 'pj' : 'pf',
+        cpf_cnpj: row.cpf_cnpj || row['cpf/cnpj'] || '',
+        phone: row.telefone || row.phone || row.celular || '',
+        email: row.email || '',
+        cidade: row.cidade || '',
+        area_direito: row.area_direito || row['área do direito'] || '',
+        status: ['active', 'inactive', 'prospect'].includes((row.status || '').toLowerCase()) ? row.status.toLowerCase() : 'prospect',
+        duplicate: cpfDigits.length > 0 && existingCpfs.has(cpfDigits),
+      }
+    })
+  }, [importRows, clients])
+
+  async function runImport() {
+    const toInsert = importPreview.filter(r => r.name.trim() && !r.duplicate)
+    if (toInsert.length === 0) return
+    setImporting(true)
+    const { error } = await supabase.from('clients').insert(toInsert.map(r => ({
+      type: r.type, name: r.name, cpf_cnpj: r.cpf_cnpj || null, phone: r.phone || null,
+      email: r.email || null, cidade: r.cidade || null, area_direito: r.area_direito || null,
+      status: r.status, origem: 'outro',
+    })))
+    setImporting(false)
+    if (error) { setImportError('Erro ao importar: ' + error.message); return }
+    setImportOpen(false)
+    setImportRows([])
+    load()
+  }
+
   const activeFilterCount = [
-    statusFilter, typeFilter, areaFilter, cidadeFilter,
+    statusFilter, typeFilter, areaFilter, cidadeFilter, tagFilter,
     activeProcessFilter !== 'all' ? activeProcessFilter : '',
   ].filter(Boolean).length
 
@@ -897,7 +1126,7 @@ export function ClientsPage() {
                       <p className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Filtros</p>
                       {activeFilterCount > 0 && (
                         <button
-                          onClick={() => { setStatusFilter(''); setTypeFilter(''); setAreaFilter(''); setCidadeFilter(''); setActiveProcessFilter('all'); setPage(0) }}
+                          onClick={() => { setStatusFilter(''); setTypeFilter(''); setAreaFilter(''); setCidadeFilter(''); setTagFilter(''); setActiveProcessFilter('all'); setPage(0) }}
                           className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium"
                         >Limpar tudo</button>
                       )}
@@ -965,6 +1194,20 @@ export function ClientsPage() {
                         {cityOptions.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
+
+                    {tagOptions.length > 0 && (
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Tag</label>
+                        <select
+                          value={tagFilter}
+                          onChange={e => { setTagFilter(e.target.value); setPage(0) }}
+                          className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                        >
+                          <option value="">Todas</option>
+                          {tagOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1063,6 +1306,13 @@ export function ClientsPage() {
                 )}
               </div>
 
+              <button
+                onClick={() => { setImportOpen(true); setImportRows([]); setImportError('') }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-700"
+              >
+                <Upload className="w-3.5 h-3.5" /> Importar
+              </button>
+
               {/* Toggle Lista / Por parceiro */}
               <div className="flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden ml-auto">
                 <button
@@ -1092,6 +1342,39 @@ export function ClientsPage() {
               </button>
             </div>
 
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-primary-100 dark:border-primary-800/40 bg-primary-50/60 dark:bg-primary-900/10 flex-wrap">
+                <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">{selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}</span>
+                <select
+                  disabled={bulkWorking}
+                  defaultValue=""
+                  onChange={e => { if (e.target.value) bulkSetStatus(e.target.value); e.target.value = '' }}
+                  className="text-xs border border-gray-200 dark:border-dark-600 rounded-lg px-2 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300"
+                >
+                  <option value="" disabled>Alterar status...</option>
+                  <option value="active">Ativo</option>
+                  <option value="inactive">Inativo</option>
+                  <option value="prospect">Prospect</option>
+                </select>
+                <select
+                  disabled={bulkWorking}
+                  defaultValue=""
+                  onChange={e => { if (e.target.value) bulkAssignLawyer(e.target.value); e.target.value = '' }}
+                  className="text-xs border border-gray-200 dark:border-dark-600 rounded-lg px-2 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 max-w-[180px]"
+                >
+                  <option value="" disabled>Atribuir advogado...</option>
+                  {systemUsers.map(u => <option key={u.user_id} value={u.user_id}>{u.name || u.display_name}</option>)}
+                </select>
+                <button onClick={bulkExport} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-white dark:hover:bg-dark-800">
+                  <Download className="w-3.5 h-3.5" /> Exportar
+                </button>
+                <button onClick={bulkDelete} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir
+                </button>
+                <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Limpar seleção</button>
+              </div>
+            )}
+
             {!loading && (filtered.length === 0 ? (
               <EmptyState icon={Users} title="Nenhum contato encontrado" />
             ) : viewMode === 'table' ? (
@@ -1100,6 +1383,14 @@ export function ClientsPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-gray-50 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
+                        <th className="w-9 px-3 py-2.5">
+                          <input
+                            type="checkbox"
+                            className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                            checked={pageClients.length > 0 && pageClients.every(c => selectedIds.has(c.id))}
+                            onChange={togglePageSelection}
+                          />
+                        </th>
                         <th className="w-10 px-3 py-2.5" />
                         <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                           <span className="flex items-center gap-1 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">
@@ -1124,6 +1415,14 @@ export function ClientsPage() {
                               onClick={() => setViewClient(c)}
                             >
                               <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                                  checked={selectedIds.has(c.id)}
+                                  onChange={e => toggleSelect(c.id, e as any)}
+                                />
+                              </td>
+                              <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                                 <button
                                   onClick={e => toggleExpandRow(c.id, e)}
                                   className={cn(
@@ -1143,7 +1442,10 @@ export function ClientsPage() {
                                       : c.name[0]?.toUpperCase()}
                                   </div>
                                   <div className="min-w-0">
-                                    <p className="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{c.name}</p>
+                                    <p className="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors flex items-center gap-1.5">
+                                      <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', STATUS_DOT[c.status || 'active'])} title={STATUS_LABELS[c.status || 'active']} />
+                                      {c.name}
+                                    </p>
                                     {procs.length > 0 && (
                                       <p className="text-[10px] text-gray-400 dark:text-gray-500">{procs.length} processo{procs.length !== 1 ? 's' : ''}</p>
                                     )}
@@ -1163,6 +1465,21 @@ export function ClientsPage() {
                               </td>
                               <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                                 <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  {c.phone && waLink(c.phone) && (
+                                    <a href={waLink(c.phone)!} target="_blank" rel="noreferrer" title="WhatsApp" className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-gray-400 hover:text-green-500 transition-colors">
+                                      <MessageCircle className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
+                                  {c.phone && (
+                                    <a href={`tel:${c.phone}`} title="Ligar" className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-blue-600 transition-colors">
+                                      <Phone className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
+                                  {c.email && (
+                                    <a href={`mailto:${c.email}`} title="Email" className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-purple-600 transition-colors">
+                                      <Mail className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
                                   <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
                                     <Edit3 className="w-3.5 h-3.5" />
                                   </button>
@@ -1174,7 +1491,7 @@ export function ClientsPage() {
                             </tr>
                             {isExpanded && (
                               <tr className="bg-primary-50/30 dark:bg-primary-900/5">
-                                <td colSpan={6} className="p-0">
+                                <td colSpan={7} className="p-0">
                                   <div className="border-t border-primary-100 dark:border-primary-800/40">
                                     {/* Sub-header */}
                                     <div className="grid grid-cols-[1fr_200px_220px_100px] gap-0 px-10 py-2 bg-gray-50/80 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
@@ -1276,7 +1593,10 @@ export function ClientsPage() {
                                         ? <img src={(c as any).avatar_url} alt={c.name} className="w-full h-full object-cover" />
                                         : c.name[0]?.toUpperCase()}
                                     </div>
-                                    <p className="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{c.name}</p>
+                                    <p className="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors flex items-center gap-1.5">
+                                      <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', STATUS_DOT[c.status || 'active'])} title={STATUS_LABELS[c.status || 'active']} />
+                                      {c.name}
+                                    </p>
                                   </div>
                                 </td>
                                 <td className="px-4 py-3">
@@ -1290,6 +1610,11 @@ export function ClientsPage() {
                                 <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{formatDate(c.created_at)}</td>
                                 <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {c.phone && waLink(c.phone) && (
+                                      <a href={waLink(c.phone)!} target="_blank" rel="noreferrer" title="WhatsApp" className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-gray-400 hover:text-green-500 transition-colors">
+                                        <MessageCircle className="w-3.5 h-3.5" />
+                                      </a>
+                                    )}
                                     <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
                                       <Edit3 className="w-3.5 h-3.5" />
                                     </button>
@@ -1438,6 +1763,7 @@ export function ClientsPage() {
                 className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
                 placeholder="Nome completo"
                 value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+                onBlur={() => checkContactDuplicate(form)}
               />
             </div>
             <div>
@@ -1582,7 +1908,8 @@ export function ClientsPage() {
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="(99) 99999-9999" value={form.celular} onChange={e => setForm({ ...form, celular: e.target.value })} />
+                placeholder="(99) 99999-9999" value={form.celular} onChange={e => setForm({ ...form, celular: e.target.value })}
+                onBlur={() => checkContactDuplicate(form)} />
             </div>
           </div>
           <div>
@@ -1590,7 +1917,8 @@ export function ClientsPage() {
             <div className="relative">
               <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="(99) 99999-9999" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                placeholder="(99) 99999-9999" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
+                onBlur={() => checkContactDuplicate(form)} />
             </div>
           </div>
           <div>
@@ -1741,6 +2069,44 @@ export function ClientsPage() {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1.5">
+              <Tag className="w-3.5 h-3.5" /> Tags
+            </label>
+            <input
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+              placeholder="VIP, aniversariante, inadimplente..."
+              value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
+            />
+            {form.tags.trim() && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {form.tags.split(',').map(t => t.trim()).filter(Boolean).map((t, i) => (
+                  <Badge key={`${t}-${i}`} className="bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400">{t}</Badge>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-gray-400 mt-1">Separe por vírgula</p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 dark:border-dark-600 p-4 bg-gray-50 dark:bg-dark-700/30">
+            <label className="flex items-center gap-3 cursor-pointer select-none" onClick={() => setForm(f => ({ ...f, lgpd_consent: !f.lgpd_consent, lgpd_consent_date: !f.lgpd_consent && !f.lgpd_consent_date ? new Date().toISOString().slice(0, 10) : f.lgpd_consent_date }))}>
+              <div className={cn('relative w-11 h-6 rounded-full transition-colors flex-shrink-0', form.lgpd_consent ? 'bg-green-500' : 'bg-gray-300 dark:bg-dark-500')}>
+                <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform', form.lgpd_consent && 'translate-x-5')} />
+              </div>
+              <div>
+                <p className={cn('text-sm font-semibold flex items-center gap-1.5', form.lgpd_consent ? 'text-green-700 dark:text-green-400' : 'text-gray-700 dark:text-gray-300')}>
+                  <ShieldCheck className="w-3.5 h-3.5" /> Consentimento LGPD
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Titular autorizou o tratamento destes dados pessoais</p>
+              </div>
+            </label>
+            {form.lgpd_consent && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-dark-600">
+                <Input label="Data do consentimento" type="date" value={form.lgpd_consent_date} onChange={e => setForm({ ...form, lgpd_consent_date: e.target.value })} />
+              </div>
+            )}
+          </div>
+
           {form.colaborador_id && (
             <div className="rounded-xl border border-gray-200 dark:border-dark-600 p-4 bg-gray-50 dark:bg-dark-700/30">
               <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -1841,13 +2207,34 @@ export function ClientsPage() {
                       <Badge className="bg-white/20 text-white border border-white/30">{viewClient.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</Badge>
                       <Badge className={STATUS_COLORS[viewClient.status || 'active']}>{STATUS_LABELS[viewClient.status || 'active']}</Badge>
                       {col && <Badge className="bg-white/20 text-white border border-white/30"><UserCheck className="w-3 h-3 mr-1" />{col.nome}</Badge>}
+                      {(viewClient as any).lgpd_consent && (
+                        <Badge className="bg-white/20 text-white border border-white/30"><ShieldCheck className="w-3 h-3 mr-1" />LGPD OK</Badge>
+                      )}
                     </div>
+                    {!!(viewClient as any).tags?.length && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {(viewClient as any).tags.map((t: string) => (
+                          <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white">
+                            <Tag className="w-2.5 h-2.5" />{t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
               <div className="px-6 py-5 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <DetailField icon={Phone} label="Telefone" value={viewClient.phone ? <a href={`tel:${viewClient.phone}`} className="text-primary-600 hover:underline">{formatPhone(viewClient.phone)}</a> : null} />
+                  <DetailField icon={Phone} label="Telefone" value={viewClient.phone ? (
+                    <span className="inline-flex items-center gap-2">
+                      <a href={`tel:${viewClient.phone}`} className="text-primary-600 hover:underline">{formatPhone(viewClient.phone)}</a>
+                      {waLink(viewClient.phone) && (
+                        <a href={waLink(viewClient.phone)!} target="_blank" rel="noreferrer" title="Abrir no WhatsApp" className="text-green-500 hover:text-green-600">
+                          <MessageCircle className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </span>
+                  ) : null} />
                   <DetailField icon={Mail} label="Email" value={viewClient.email ? <a href={`mailto:${viewClient.email}`} className="text-primary-600 hover:underline">{viewClient.email}</a> : null} />
                   <DetailField icon={MapPin} label="Cidade" value={viewClient.cidade} />
                   <DetailField icon={Scale} label="Área do Direito" value={viewClient.area_direito} />
@@ -1908,7 +2295,38 @@ export function ClientsPage() {
                     </div>
                   </div>
                 )}
-                <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-dark-700">
+                <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-100 dark:border-dark-700">
+                  {viewClient.phone && waLink(viewClient.phone) && (
+                    <a
+                      href={waLink(viewClient.phone)!} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-green-200 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />WhatsApp
+                    </a>
+                  )}
+                  <Button
+                    variant="outline" size="sm"
+                    onClick={() => downloadVCard({
+                      name: viewClient.name,
+                      phone: viewClient.phone || undefined,
+                      email: viewClient.email || undefined,
+                      address: [viewClient.address, viewClient.cidade].filter(Boolean).join(', ') || undefined,
+                      notes: viewClient.area_direito || undefined,
+                    })}
+                  ><IdCard className="w-3.5 h-3.5" />vCard</Button>
+                  <Button
+                    variant="outline" size="sm"
+                    onClick={() => navigate('/agenda', { state: { openNew: true, clientName: viewClient.name } })}
+                  ><CalendarPlus className="w-3.5 h-3.5" />Agendar reunião</Button>
+                  <Button
+                    variant="outline" size="sm"
+                    onClick={() => navigate('/dashboard', {
+                      state: {
+                        openTab: 'ia',
+                        prefillQuestion: `Me dê um resumo sobre o contato ${viewClient.name}: processos, pendências financeiras e tarefas relacionadas.`,
+                      },
+                    })}
+                  ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button>
                   <Button variant="outline" size="sm" onClick={() => { const vc = viewClient; setViewClient(null); openEdit(vc) }}><Edit3 className="w-3.5 h-3.5" />Editar</Button>
                   <Button size="sm" onClick={() => setViewClient(null)}>Fechar</Button>
                 </div>
@@ -2050,6 +2468,84 @@ export function ClientsPage() {
           >
             Pular esta etapa
           </button>
+        </div>
+      </Modal>
+
+      {/* ══ MODAL IMPORTAÇÃO ══ */}
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Importar contatos" size="lg">
+        <div className="space-y-4">
+          {importRows.length === 0 ? (
+            <>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Envie um arquivo CSV com os contatos. Use o modelo abaixo para garantir que as colunas sejam reconhecidas corretamente.
+              </p>
+              <button
+                onClick={downloadImportTemplate}
+                className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline"
+              >
+                <Download className="w-3.5 h-3.5" /> Baixar modelo CSV
+              </button>
+              <div
+                onClick={() => importFileRef.current?.click()}
+                className="border-2 border-dashed border-gray-300 dark:border-dark-600 rounded-xl p-8 text-center cursor-pointer hover:border-primary-400 transition-colors"
+              >
+                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-600 dark:text-gray-300 font-medium">Clique para selecionar um arquivo .csv</p>
+                <input ref={importFileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportFile} />
+              </div>
+              {importError && <p className="text-xs text-red-500">{importError}</p>}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-gray-800 dark:text-white">
+                  {importPreview.length} linha{importPreview.length !== 1 ? 's' : ''} encontrada{importPreview.length !== 1 ? 's' : ''}
+                  {' — '}
+                  <span className="text-emerald-600 dark:text-emerald-400">{importPreview.filter(r => r.name.trim() && !r.duplicate).length} serão importadas</span>
+                  {importPreview.some(r => r.duplicate) && (
+                    <span className="text-amber-600 dark:text-amber-400"> · {importPreview.filter(r => r.duplicate).length} duplicadas (ignoradas)</span>
+                  )}
+                </p>
+                <button onClick={() => { setImportRows([]); setImportError('') }} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Trocar arquivo</button>
+              </div>
+              <div className="max-h-72 overflow-y-auto border border-gray-200 dark:border-dark-600 rounded-xl">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 dark:bg-dark-700/40 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Nome</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Telefone</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Email</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Cidade</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-dark-700/50">
+                    {importPreview.map((r, i) => (
+                      <tr key={i} className={r.duplicate ? 'bg-amber-50/60 dark:bg-amber-900/10' : ''}>
+                        <td className="px-3 py-2 text-gray-900 dark:text-white">{r.name || <span className="text-red-500">sem nome</span>}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.phone || '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.email || '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.cidade || '—'}</td>
+                        <td className="px-3 py-2">
+                          {r.duplicate
+                            ? <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Duplicado</Badge>
+                            : <Badge className={STATUS_COLORS[r.status] || STATUS_COLORS.prospect}>{STATUS_LABELS[r.status] || r.status}</Badge>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {importError && <p className="text-xs text-red-500">{importError}</p>}
+              <button
+                onClick={runImport}
+                disabled={importing || importPreview.filter(r => r.name.trim() && !r.duplicate).length === 0}
+                className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
+              >
+                {importing ? 'Importando...' : `Importar ${importPreview.filter(r => r.name.trim() && !r.duplicate).length} contato(s)`}
+              </button>
+            </>
+          )}
         </div>
       </Modal>
     </Layout>

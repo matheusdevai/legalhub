@@ -228,3 +228,42 @@ export function openExportWindow(opts: ExportOptions): void {
   const win = window.open('', '_blank')
   if (win) { win.document.write(html); win.document.close() }
 }
+
+// ─── vCard ──────────────────────────────────────────────────────────────────
+export interface VCardContact {
+  name: string
+  org?: string
+  phone?: string
+  email?: string
+  address?: string
+  notes?: string
+}
+
+function vcardEscape(v: string): string {
+  return v.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;')
+}
+
+export function downloadVCard(contact: VCardContact): void {
+  const lines = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${vcardEscape(contact.name)}`,
+    `N:${vcardEscape(contact.name)};;;;`,
+  ]
+  if (contact.org) lines.push(`ORG:${vcardEscape(contact.org)}`)
+  if (contact.phone) lines.push(`TEL;TYPE=CELL:${contact.phone.replace(/[^\d+]/g, '')}`)
+  if (contact.email) lines.push(`EMAIL:${vcardEscape(contact.email)}`)
+  if (contact.address) lines.push(`ADR;TYPE=HOME:;;${vcardEscape(contact.address)};;;;`)
+  if (contact.notes) lines.push(`NOTE:${vcardEscape(contact.notes)}`)
+  lines.push('END:VCARD')
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${contact.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'contato'}.vcf`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}

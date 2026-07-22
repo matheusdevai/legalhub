@@ -1,5 +1,6 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, TrendingUp, Trash2, Phone, Mail, Facebook,
   MessageCircle, BarChart2, Users, Target, DollarSign, Zap,
@@ -132,7 +133,9 @@ const EMPTY_WA_FORM = {
 // ═══════════════════════════════════════════════════════════════════════════════
 export function LeadsPage() {
   const { profile } = useAuth()
+  const navigate = useNavigate()
   const [tab, setTab] = useState<'dashboard' | 'leads' | 'meta' | 'whatsapp'>('dashboard')
+  const [converting, setConverting] = useState(false)
 
   // Data
   const [leads, setLeads] = useState<ExtLead[]>([])
@@ -256,6 +259,36 @@ export function LeadsPage() {
     await supabase.from('leads').update({ status, converted_at }).eq('id', id)
     load()
     if (detailLead?.id === id) setDetailLead(prev => prev ? { ...prev, status: status as any, converted_at } : null)
+  }
+
+  // ─── Converter lead em contato ──────────────────────────────────────────────
+  const LEAD_SOURCE_TO_ORIGEM: Record<string, string> = {
+    website: 'site', referral: 'indicacao', social: 'redes_sociais',
+    meta: 'google', google: 'google', ads: 'outro', other: 'outro',
+  }
+
+  async function convertLeadToClient(lead: ExtLead) {
+    if (lead.converted_client_id) { navigate('/clientes'); return }
+    if (!confirm(`Converter "${lead.name}" em contato? Um novo cadastro será criado em Contatos.`)) return
+    setConverting(true)
+    const { data, error } = await supabase.from('clients').insert({
+      type: 'pf',
+      name: lead.name,
+      email: lead.email || null,
+      phone: lead.phone || null,
+      area_direito: lead.area || null,
+      origem: LEAD_SOURCE_TO_ORIGEM[lead.source || 'other'] || 'outro',
+      status: 'prospect',
+      notes: `Convertido do lead em ${new Date().toLocaleDateString('pt-BR')}.${lead.notes ? ` ${lead.notes}` : ''}`,
+    }).select('id').single()
+    setConverting(false)
+    if (error) { alert('Erro ao converter lead em contato: ' + error.message); return }
+    const clientId = (data?.id as string | undefined) ?? null
+    const converted_at = new Date().toISOString()
+    await supabase.from('leads').update({ status: 'won', converted_at, converted_client_id: clientId }).eq('id', lead.id)
+    setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: 'won', converted_at, converted_client_id: clientId } : l))
+    setDetailLead(prev => prev && prev.id === lead.id ? { ...prev, status: 'won', converted_at, converted_client_id: clientId } : prev)
+    navigate('/clientes')
   }
 
   // ─── Interactions ──────────────────────────────────────────────────────────
@@ -783,6 +816,14 @@ export function LeadsPage() {
                       </div>
                     )}
 
+                    <button
+                      onClick={() => convertLeadToClient(detailLead)}
+                      disabled={converting}
+                      className="w-full flex items-center justify-center gap-1.5 text-sm py-2 mb-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold transition-colors"
+                    >
+                      <Users className="w-3.5 h-3.5" />
+                      {detailLead.converted_client_id ? 'Já convertido — ver Contatos' : converting ? 'Convertendo...' : 'Converter em contato'}
+                    </button>
                     <div className="flex gap-2 mb-5">
                       <button onClick={() => openEditLead(detailLead)} className="flex-1 flex items-center justify-center gap-1 text-sm py-2 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700">
                         <Edit2 className="w-3.5 h-3.5" /> Editar

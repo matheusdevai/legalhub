@@ -14,16 +14,30 @@ const SUGESTOES = [
   'Resuma a agenda dos próximos 7 dias',
 ]
 
-export function AiCopilotoTab() {
+interface AiCopilotoTabProps {
+  initialQuestion?: string
+  onInitialQuestionConsumed?: () => void
+}
+
+export function AiCopilotoTab({ initialQuestion, onInitialQuestionConsumed }: AiCopilotoTabProps = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages, loading])
+
+  useEffect(() => {
+    if (!initialQuestion) return
+    setInput(initialQuestion)
+    inputRef.current?.focus()
+    onInitialQuestionConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion])
 
   async function send(text: string) {
     const content = text.trim()
@@ -146,6 +160,7 @@ export function AiCopilotoTab() {
       {/* Input */}
       <div className="flex-shrink-0 border-t border-gray-100 dark:border-dark-700 p-4 flex items-center gap-2">
         <input
+          ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') send(input) }}

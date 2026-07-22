@@ -52,6 +52,9 @@ export interface Client {
   colaborador_pago: boolean | null
   colaborador_pago_data: string | null
   colaborador_pago_valor: number | null
+  tags: string[] | null
+  lgpd_consent: boolean | null
+  lgpd_consent_date: string | null
 }
 
 export interface Process {
@@ -173,6 +176,7 @@ export interface Lead {
   last_contact: string | null
   created_at: string | null
   deleted_at: string | null
+  converted_client_id: string | null
 }
 
 export interface Colaborador {
