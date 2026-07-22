@@ -1,20 +1,21 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
-import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, Search, DollarSign, TrendingUp, TrendingDown, Trash2,
   Wallet, Plane, Coffee, Car, Bed, Receipt, Scale,
   Edit3, CheckCircle2, Clock, Users, UserCheck,
   ChevronLeft, ChevronRight, RefreshCw, Filter, ArrowUpDown, Download,
   ChevronDown, Minus, BarChart2, ArrowDownRight, ArrowUpRight,
+  MessageCircle, Sparkles, Landmark, Layers, X, SlidersHorizontal,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM } from '@/components/financials/FinancialDrawer'
 import { supabase } from '@/lib/supabase'
-import { Financial, Client, Process, UserExpense, Colaborador } from '@/types'
+import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatCurrency, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS } from '@/lib/utils'
+import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import {
@@ -47,6 +48,18 @@ const CATEGORY_META: Record<ExpenseCategory, { label: string; icon: any; badge: 
   other:         { label: 'Outros',      icon: Receipt, badge: 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-gray-300',           bar: 'bg-gray-500' },
 }
 
+function addMonthsToDateStr(dateStr: string, n: number): string {
+  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
+  d.setMonth(d.getMonth() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+function waLink(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 10) return null
+  return `https://wa.me/${digits.length <= 11 ? '55' + digits : digits}`
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   fees: 'Honorários', costs: 'Custas', salary: 'Salário', rent: 'Aluguel',
   subscription: 'Assinatura', tax: 'Impostos', comissao: 'Comissão', other: 'Outros',
@@ -58,12 +71,14 @@ type SecondaryTab = 'comissoes' | 'expenses' | 'anual'
 export function FinancialsPage() {
   const { profile } = useAuth()
   const currentUserId = profile?.user_id
+  const navigate = useNavigate()
 
   const [financials, setFinancials] = useState<Financial[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [processes, setProcesses] = useState<Process[]>([])
   const [expenses, setExpenses] = useState<UserExpense[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
+  const [accounts, setAccounts] = useState<FinancialAccount[]>([])
   const [loading, setLoading] = usePageLoadingState()
 
   // Lançamentos table state
@@ -73,7 +88,18 @@ export function FinancialsPage() {
   const [lancSearch, setLancSearch] = useState('')
   const [lancContaFilter, setLancContaFilter] = useState('')
   const [lancDateFilter, setLancDateFilter] = useState<'due' | 'paid'>('due')
-  const [pageSize] = useState(50)
+  const [lancTypeFilter, setLancTypeFilter] = useState('')
+  const [lancStatusFilter, setLancStatusFilter] = useState('')
+  const [lancCategoryFilter, setLancCategoryFilter] = useState('')
+  const [onlyOverdue, setOnlyOverdue] = useState(false)
+  const [lancSortField, setLancSortField] = useState<'due_date' | 'amount' | 'client_name'>('due_date')
+  const [lancSortDir, setLancSortDir] = useState<'asc' | 'desc'>('desc')
+  const [lancFilterOpen, setLancFilterOpen] = useState(false)
+  const [lancSortOpen, setLancSortOpen] = useState(false)
+  const [lancPage, setLancPage] = useState(0)
+  const [pageSize, setPageSize] = useState(50)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkWorking, setBulkWorking] = useState(false)
 
   // Secondary tabs
   const [secondaryTab, setSecondaryTab] = useState<SecondaryTab | null>(null)
@@ -84,7 +110,10 @@ export function FinancialsPage() {
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
 
   // Contas bancárias accordion
-  const [contasOpen, setContasOpen] = useState<Record<string, boolean>>({ principal: false, dinheiro: false, investimentos: false })
+  const [contasOpen, setContasOpen] = useState<Record<string, boolean>>({})
+  const [newAccountOpen, setNewAccountOpen] = useState(false)
+  const [newAccountName, setNewAccountName] = useState('')
+  const [savingAccount, setSavingAccount] = useState(false)
 
   // Drawer (lançamento)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -102,23 +131,45 @@ export function FinancialsPage() {
     setLoading(true)
     const promises: any[] = [
       supabase.from('financials').select('*').is('deleted_at', null).order('due_date', { ascending: false }),
-      supabase.from('clients').select('id,name,colaborador_id,colaborador_pago,colaborador_pago_data,colaborador_pago_valor,total_billed').is('deleted_at', null).order('name'),
+      supabase.from('clients').select('id,name,phone,colaborador_id,colaborador_pago,colaborador_pago_data,colaborador_pago_valor,total_billed').is('deleted_at', null).order('name'),
       supabase.from('processes').select('id,number,title').is('deleted_at', null).order('number'),
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
+      supabase.from('financial_accounts').select('*').order('created_at'),
     ]
     if (currentUserId) {
       promises.push(supabase.from('user_expenses').select('*').eq('user_id', currentUserId).is('deleted_at', null).order('expense_date', { ascending: false }))
     }
     const results = await Promise.all(promises)
-    setFinancials(results[0].data || [])
+    let financialsData: Financial[] = results[0].data || []
     setClients(results[1].data || [])
     setProcesses(results[2].data || [])
     setColaboradores(results[3].data || [])
-    if (results[4]) setExpenses(results[4].data || [])
+    setAccounts(results[4].data || [])
+    if (results[5]) setExpenses(results[5].data || [])
+
+    // Sincroniza status "vencido" — pendentes com vencimento no passado deixam de depender de cálculo manual
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const toMarkOverdue = financialsData.filter(f => f.status === 'pending' && f.due_date && f.due_date < todayStr).map(f => f.id)
+    if (toMarkOverdue.length > 0) {
+      await supabase.from('financials').update({ status: 'overdue' }).in('id', toMarkOverdue)
+      financialsData = financialsData.map(f => toMarkOverdue.includes(f.id) ? { ...f, status: 'overdue' as const } : f)
+    }
+    setFinancials(financialsData)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [currentUserId])
+
+  const lancFilterRef = useRef<HTMLDivElement>(null)
+  const lancSortRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (lancFilterRef.current && !lancFilterRef.current.contains(e.target as Node)) setLancFilterOpen(false)
+      if (lancSortRef.current && !lancSortRef.current.contains(e.target as Node)) setLancSortOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const location = useLocation()
   useEffect(() => {
@@ -130,22 +181,43 @@ export function FinancialsPage() {
   const currentYear = now.getFullYear()
 
   // Month lançamentos (filtered by selected month/year)
-  const lancMonthFinancials = useMemo(() => financials.filter(f => {
-    const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
-    if (!dateStr) return false
-    const d = new Date(dateStr)
-    return d.getMonth() === lancMonth && d.getFullYear() === lancYear
-  }), [financials, lancMonth, lancYear, lancDateFilter])
+  const lancMonthFinancials = useMemo(() => {
+    if (onlyOverdue) return financials.filter(f => f.status === 'overdue')
+    return financials.filter(f => {
+      const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
+      if (!dateStr) return false
+      const d = new Date(dateStr)
+      return d.getMonth() === lancMonth && d.getFullYear() === lancYear
+    })
+  }, [financials, lancMonth, lancYear, lancDateFilter, onlyOverdue])
 
   const lancFiltered = useMemo(() => {
-    if (!lancSearch) return lancMonthFinancials
     const q = lancSearch.toLowerCase()
-    return lancMonthFinancials.filter(f =>
-      f.description.toLowerCase().includes(q) ||
-      f.client_name?.toLowerCase().includes(q) ||
-      (CATEGORY_LABELS[f.category || ''] || '').toLowerCase().includes(q)
-    )
-  }, [lancMonthFinancials, lancSearch])
+    const result = lancMonthFinancials.filter(f => {
+      const matchSearch = !lancSearch ||
+        f.description.toLowerCase().includes(q) ||
+        f.client_name?.toLowerCase().includes(q) ||
+        (CATEGORY_LABELS[f.category || ''] || '').toLowerCase().includes(q)
+      const matchConta = !lancContaFilter || f.account_id === lancContaFilter
+      const matchType = !lancTypeFilter || f.type === lancTypeFilter
+      const matchStatus = !lancStatusFilter || f.status === lancStatusFilter
+      const matchCategory = !lancCategoryFilter || f.category === lancCategoryFilter
+      return matchSearch && matchConta && matchType && matchStatus && matchCategory
+    })
+    return [...result].sort((a, b) => {
+      let va: string | number = '', vb: string | number = ''
+      if (lancSortField === 'amount') { va = Number(a.amount); vb = Number(b.amount) }
+      else if (lancSortField === 'client_name') { va = (a.client_name || '').toLowerCase(); vb = (b.client_name || '').toLowerCase() }
+      else { va = a.due_date || ''; vb = b.due_date || '' }
+      if (va < vb) return lancSortDir === 'asc' ? -1 : 1
+      if (va > vb) return lancSortDir === 'asc' ? 1 : -1
+      return 0
+    })
+  }, [lancMonthFinancials, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, lancSortField, lancSortDir])
+
+  useEffect(() => { setLancPage(0) }, [lancMonth, lancYear, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, onlyOverdue, pageSize])
+  const lancTotalPages = Math.max(1, Math.ceil(lancFiltered.length / pageSize))
+  const lancPageItems = lancFiltered.slice(lancPage * pageSize, (lancPage + 1) * pageSize)
 
   // Total stats (all time)
   const totalReceivablePaid = financials.filter(f => f.type === 'receivable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
@@ -164,8 +236,12 @@ export function FinancialsPage() {
 
   const pagamentosAtrasados = financials.filter(f => {
     const today = now.toISOString().split('T')[0]
-    return f.type === 'receivable' && f.status === 'pending' && f.due_date && f.due_date < today
+    return f.type === 'receivable' && (f.status === 'overdue' || (f.status === 'pending' && f.due_date && f.due_date < today))
   }).reduce((s, f) => s + Number(f.amount), 0)
+  const pagamentosAtrasadosCount = financials.filter(f => {
+    const today = now.toISOString().split('T')[0]
+    return f.type === 'receivable' && (f.status === 'overdue' || (f.status === 'pending' && f.due_date && f.due_date < today))
+  }).length
 
   // Previous month for comparison
   const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1
@@ -178,6 +254,14 @@ export function FinancialsPage() {
     const d = new Date(f.due_date || f.paid_date || f.created_at || '')
     return f.type === 'payable' && d.getMonth() === prevMonth && d.getFullYear() === prevYear
   }).reduce((s, f) => s + Number(f.amount), 0)
+  const prevMonthSaldoRealizado = financials.filter(f => {
+    const d = new Date(f.due_date || f.paid_date || f.created_at || '')
+    return f.status === 'paid' && d.getMonth() === prevMonth && d.getFullYear() === prevYear
+  }).reduce((s, f) => s + (f.type === 'receivable' ? Number(f.amount) : -Number(f.amount)), 0)
+  const saldoMensalRealizado = receitaMensalRealizada - despesaMensalRealizada
+  const pctSaldo = prevMonthSaldoRealizado !== 0
+    ? Math.round(((saldoMensalRealizado - prevMonthSaldoRealizado) / Math.abs(prevMonthSaldoRealizado)) * 100)
+    : (saldoMensalRealizado !== 0 ? 100 : 0)
 
   // Chart data — last 6 months
   const chartData = useMemo(() => {
@@ -265,7 +349,7 @@ export function FinancialsPage() {
       process_id: f.process_id || '', process_number: f.process_number || '',
       due_date: f.due_date || '', paid_date: f.paid_date || '',
       status: (f.status as 'pending' | 'paid' | 'overdue' | 'cancelled') || 'pending',
-      notes: f.notes || '',
+      notes: f.notes || '', account_id: f.account_id || '', installments: '1',
     })
     setDrawerOpen(true)
   }
@@ -273,15 +357,33 @@ export function FinancialsPage() {
     setSaving(true)
     const selectedClient = clients.find(c => c.id === form.client_id)
     const selectedProcess = processes.find(p => p.id === form.process_id)
-    const payload = {
-      ...form, amount: parseFloat(form.amount),
+    const { installments: installmentsStr, ...rest } = form
+    const basePayload = {
+      ...rest, amount: parseFloat(form.amount),
       client_name: selectedClient?.name || form.client_name,
       process_number: selectedProcess?.number || form.process_number,
       client_id: form.client_id || null, process_id: form.process_id || null,
+      account_id: form.account_id || null,
       due_date: form.due_date || null, paid_date: form.paid_date || null,
     }
-    if (editId) await supabase.from('financials').update(payload).eq('id', editId)
-    else await supabase.from('financials').insert(payload)
+    const installments = Math.max(1, parseInt(installmentsStr || '1', 10) || 1)
+
+    if (editId) {
+      await supabase.from('financials').update(basePayload).eq('id', editId)
+    } else if (installments > 1) {
+      const groupId = crypto.randomUUID()
+      const rows = Array.from({ length: installments }, (_, i) => ({
+        ...basePayload,
+        description: `${basePayload.description} (${i + 1}/${installments})`,
+        due_date: addMonthsToDateStr(basePayload.due_date || new Date().toISOString().slice(0, 10), i),
+        paid_date: i === 0 ? basePayload.paid_date : null,
+        status: i === 0 ? basePayload.status : 'pending',
+        installment_group_id: groupId, installment_number: i + 1, installment_total: installments,
+      }))
+      await supabase.from('financials').insert(rows)
+    } else {
+      await supabase.from('financials').insert(basePayload)
+    }
     setSaving(false)
     setDrawerOpen(false)
     load()
@@ -333,9 +435,56 @@ export function FinancialsPage() {
   }
 
   function navMonth(dir: -1 | 1) {
+    setOnlyOverdue(false)
     const d = new Date(lancYear, lancMonth + dir, 1)
     setLancMonth(d.getMonth())
     setLancYear(d.getFullYear())
+  }
+
+  // ─── Seleção em massa (lançamentos) ──────────────────────────────────────────
+  function toggleSelectLanc(id: string) {
+    setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
+  function togglePageSelectionLanc() {
+    setSelectedIds(prev => {
+      const allSelected = lancPageItems.every(f => prev.has(f.id))
+      const next = new Set(prev)
+      if (allSelected) lancPageItems.forEach(f => next.delete(f.id))
+      else lancPageItems.forEach(f => next.add(f.id))
+      return next
+    })
+  }
+  async function bulkMarkPaid() {
+    setBulkWorking(true)
+    await supabase.from('financials').update({ status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  async function bulkDeleteLanc() {
+    if (!confirm(`Excluir ${selectedIds.size} lançamento(s) selecionado(s)?`)) return
+    setBulkWorking(true)
+    await supabase.from('financials').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+
+  // ─── Contas bancárias ─────────────────────────────────────────────────────────
+  function accountBalance(accountId: string) {
+    const items = financials.filter(f => f.account_id === accountId && f.status === 'paid')
+    const receitas = items.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0)
+    const despesas = items.filter(f => f.type === 'payable').reduce((s, f) => s + Number(f.amount), 0)
+    return { receitas, despesas, saldo: receitas - despesas }
+  }
+  async function saveNewAccount() {
+    if (!newAccountName.trim()) return
+    setSavingAccount(true)
+    await supabase.from('financial_accounts').insert({ name: newAccountName.trim() })
+    setSavingAccount(false)
+    setNewAccountName('')
+    setNewAccountOpen(false)
+    load()
   }
 
   function exportLancamentos() {
@@ -394,13 +543,15 @@ export function FinancialsPage() {
             </div>
             <div className="flex items-end gap-2 mt-1.5">
               <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(saldo)}</p>
-              <span className={cn('text-[11px] font-bold px-1.5 py-0.5 rounded-full mb-1',
-                saldo >= 0 ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'text-red-500 bg-red-50 dark:bg-red-900/20'
-              )}>
-                {saldo >= 0 ? '↑' : '↓'} 0%
-              </span>
+              {pctSaldo !== 0 && (
+                <span className={cn('text-[11px] font-bold px-1.5 py-0.5 rounded-full mb-1',
+                  pctSaldo >= 0 ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' : 'text-red-500 bg-red-50 dark:bg-red-900/20'
+                )}>
+                  {pctSaldo >= 0 ? '↑' : '↓'} {Math.abs(pctSaldo)}%
+                </span>
+              )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">vs mês anterior: {formatCurrency(prevMonthReceitas - prevMonthDespesas)}</p>
+            <p className="text-[11px] text-slate-400 mt-1">saldo realizado do mês vs anterior: {formatCurrency(prevMonthSaldoRealizado)}</p>
           </Card>
 
           {/* Receita mensal prevista */}
@@ -453,10 +604,14 @@ export function FinancialsPage() {
               {pagamentosAtrasados > 0 ? `-${formatCurrency(pagamentosAtrasados)}` : formatCurrency(0)}
             </p>
             <button
-              onClick={() => {}}
+              onClick={() => {
+                setOnlyOverdue(true)
+                setLancPage(0)
+                document.getElementById('lancamentos-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }}
               className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline mt-1"
             >
-              Mostrar lançamentos
+              Mostrar lançamentos {pagamentosAtrasadosCount > 0 ? `(${pagamentosAtrasadosCount})` : ''}
             </button>
           </Card>
         </div>
@@ -525,46 +680,75 @@ export function FinancialsPage() {
 
             {/* Contas bancárias */}
             <div>
-              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Contas bancárias</p>
-              <div className="space-y-1">
-                {[
-                  { key: 'principal', label: 'Conta Principal', value: totalReceivablePaid },
-                  { key: 'dinheiro', label: 'Dinheiro', value: 0 },
-                  { key: 'investimentos', label: 'Investimentos', value: 0 },
-                ].map(conta => (
-                  <div key={conta.key} className="rounded-xl border border-slate-100 dark:border-dark-700 overflow-hidden">
-                    <button
-                      onClick={() => setContasOpen(o => ({ ...o, [conta.key]: !o[conta.key] }))}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-dark-700/50 transition-colors"
-                    >
-                      <div className="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 font-bold text-xs flex-shrink-0">
-                        $
-                      </div>
-                      <div className="flex-1 text-left min-w-0">
-                        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{conta.label}</p>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatCurrency(conta.value)}</p>
-                      </div>
-                      <ChevronDown className={cn('w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0', contasOpen[conta.key] && 'rotate-180')} />
-                    </button>
-                    {contasOpen[conta.key] && (
-                      <div className="px-4 pb-3 pt-1 bg-slate-50 dark:bg-dark-800/50 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-dark-700">
-                        <div className="flex justify-between py-1"><span>Receitas pagas</span><span className="text-emerald-600 font-medium">{formatCurrency(conta.key === 'principal' ? totalReceivablePaid : 0)}</span></div>
-                        <div className="flex justify-between py-1"><span>Despesas pagas</span><span className="text-red-500 font-medium">{formatCurrency(conta.key === 'principal' ? totalPayablePaid : 0)}</span></div>
-                        <div className="flex justify-between py-1 font-semibold border-t border-slate-200 dark:border-dark-600 mt-1 pt-2"><span>Saldo</span><span className="text-slate-700 dark:text-slate-200">{formatCurrency(conta.value)}</span></div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Contas bancárias</p>
+                <button onClick={() => setNewAccountOpen(v => !v)} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 transition-colors" title="Nova conta">
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
               </div>
+              {newAccountOpen && (
+                <div className="flex gap-1.5 mb-2">
+                  <input
+                    value={newAccountName} onChange={e => setNewAccountName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveNewAccount() }}
+                    placeholder="Nome da conta" autoFocus
+                    className="flex-1 px-2.5 py-1.5 text-xs border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                  />
+                  <button onClick={saveNewAccount} disabled={savingAccount || !newAccountName.trim()} className="px-2.5 py-1.5 text-xs font-semibold bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg transition-colors">
+                    {savingAccount ? '...' : 'Criar'}
+                  </button>
+                </div>
+              )}
+              {accounts.length === 0 ? (
+                <p className="text-xs text-slate-400 dark:text-slate-500 py-2">Nenhuma conta cadastrada. Crie uma para organizar seus lançamentos por conta.</p>
+              ) : (
+                <div className="space-y-1">
+                  {accounts.map(conta => {
+                    const bal = accountBalance(conta.id)
+                    return (
+                      <div key={conta.id} className="rounded-xl border border-slate-100 dark:border-dark-700 overflow-hidden">
+                        <button
+                          onClick={() => setContasOpen(o => ({ ...o, [conta.id]: !o[conta.id] }))}
+                          className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 dark:hover:bg-dark-700/50 transition-colors"
+                        >
+                          <div className="w-7 h-7 rounded-full bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center text-primary-600 dark:text-primary-400 flex-shrink-0">
+                            <Landmark className="w-3.5 h-3.5" />
+                          </div>
+                          <div className="flex-1 text-left min-w-0">
+                            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{conta.name}</p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatCurrency(bal.saldo)}</p>
+                          </div>
+                          <ChevronDown className={cn('w-3.5 h-3.5 text-slate-400 transition-transform flex-shrink-0', contasOpen[conta.id] && 'rotate-180')} />
+                        </button>
+                        {contasOpen[conta.id] && (
+                          <div className="px-4 pb-3 pt-1 bg-slate-50 dark:bg-dark-800/50 text-xs text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-dark-700">
+                            <div className="flex justify-between py-1"><span>Receitas pagas</span><span className="text-emerald-600 font-medium">{formatCurrency(bal.receitas)}</span></div>
+                            <div className="flex justify-between py-1"><span>Despesas pagas</span><span className="text-red-500 font-medium">{formatCurrency(bal.despesas)}</span></div>
+                            <div className="flex justify-between py-1 font-semibold border-t border-slate-200 dark:border-dark-600 mt-1 pt-2"><span>Saldo</span><span className="text-slate-700 dark:text-slate-200">{formatCurrency(bal.saldo)}</span></div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </Card>
         </div>
 
         {/* ── Lançamentos section ── */}
-        <Card className="overflow-hidden">
+        <Card id="lancamentos-section" className="overflow-hidden scroll-mt-4">
           {/* Header */}
-          <div className="px-5 py-3 border-b border-slate-100 dark:border-dark-700/50">
+          <div className="px-5 py-3 border-b border-slate-100 dark:border-dark-700/50 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-800 dark:text-white">Lançamentos</h2>
+            <button
+              onClick={() => navigate('/dashboard', {
+                state: { openTab: 'ia', prefillQuestion: 'Como está a saúde financeira do escritório este mês? Aponte riscos e o que precisa de atenção.' },
+              })}
+              className="flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Perguntar ao Copiloto
+            </button>
           </div>
 
           {/* Toolbar */}
@@ -576,33 +760,39 @@ export function FinancialsPage() {
               className="text-xs border border-slate-200 dark:border-dark-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
             >
               <option value="">Filtrar por conta</option>
-              <option value="principal">Conta Principal</option>
-              <option value="dinheiro">Dinheiro</option>
-              <option value="investimentos">Investimentos</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
 
             {/* Date type filter */}
             <select
               value={lancDateFilter}
               onChange={e => setLancDateFilter(e.target.value as 'due' | 'paid')}
-              className="text-xs border border-slate-200 dark:border-dark-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+              disabled={onlyOverdue}
+              className="text-xs border border-slate-200 dark:border-dark-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-100 disabled:opacity-50"
             >
               <option value="due">Data de vencimento</option>
               <option value="paid">Data de pagamento</option>
             </select>
 
-            {/* Month navigation */}
-            <div className="flex items-center gap-1">
-              <button onClick={() => navMonth(-1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-500 transition-colors">
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 min-w-[90px] text-center">
-                {MONTHS_PT[lancMonth].slice(0, 3)} {lancYear}
-              </span>
-              <button onClick={() => navMonth(1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-500 transition-colors">
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            {onlyOverdue ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                Somente atrasados
+                <button onClick={() => setOnlyOverdue(false)} className="hover:text-red-800 dark:hover:text-red-300"><X className="w-3 h-3" /></button>
+              </div>
+            ) : (
+              /* Month navigation */
+              <div className="flex items-center gap-1">
+                <button onClick={() => navMonth(-1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-500 transition-colors">
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 min-w-[90px] text-center">
+                  {MONTHS_PT[lancMonth].slice(0, 3)} {lancYear}
+                </span>
+                <button onClick={() => navMonth(1)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-500 transition-colors">
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
 
             <div className="flex-1" />
 
@@ -617,12 +807,90 @@ export function FinancialsPage() {
               />
             </div>
 
-            <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors">
-              <Filter className="w-3.5 h-3.5" /> Filtrar
-            </button>
-            <button className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors">
-              <ArrowUpDown className="w-3.5 h-3.5" /> Ordenar
-            </button>
+            {/* Filtrar */}
+            <div className="relative" ref={lancFilterRef}>
+              <button
+                onClick={() => { setLancFilterOpen(v => !v); setLancSortOpen(false) }}
+                className={cn('flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-colors',
+                  lancFilterOpen || lancTypeFilter || lancStatusFilter || lancCategoryFilter
+                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
+                    : 'text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700')}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" /> Filtrar
+                {[lancTypeFilter, lancStatusFilter, lancCategoryFilter].filter(Boolean).length > 0 && (
+                  <span className="ml-0.5 w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    {[lancTypeFilter, lancStatusFilter, lancCategoryFilter].filter(Boolean).length}
+                  </span>
+                )}
+              </button>
+              {lancFilterOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-64 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Filtros</p>
+                    {(lancTypeFilter || lancStatusFilter || lancCategoryFilter) && (
+                      <button onClick={() => { setLancTypeFilter(''); setLancStatusFilter(''); setLancCategoryFilter('') }} className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium">Limpar</button>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Tipo</label>
+                    <div className="flex gap-1.5">
+                      {[{ v: '', l: 'Todos' }, { v: 'receivable', l: 'Receita' }, { v: 'payable', l: 'Despesa' }].map(o => (
+                        <button key={o.v} onClick={() => setLancTypeFilter(o.v)} className={cn('px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors',
+                          lancTypeFilter === o.v ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300')}>{o.l}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Status</label>
+                    <select value={lancStatusFilter} onChange={e => setLancStatusFilter(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-slate-700 dark:text-slate-200">
+                      <option value="">Todos</option>
+                      <option value="pending">Pendente</option>
+                      <option value="paid">Pago</option>
+                      <option value="overdue">Vencido</option>
+                      <option value="cancelled">Cancelado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Categoria</label>
+                    <select value={lancCategoryFilter} onChange={e => setLancCategoryFilter(e.target.value)}
+                      className="w-full px-2.5 py-1.5 text-xs border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-slate-700 dark:text-slate-200">
+                      <option value="">Todas</option>
+                      {Object.entries(CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Ordenar */}
+            <div className="relative" ref={lancSortRef}>
+              <button
+                onClick={() => { setLancSortOpen(v => !v); setLancFilterOpen(false) }}
+                className={cn('flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium border rounded-lg transition-colors',
+                  lancSortOpen ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700' : 'text-slate-600 dark:text-slate-300 border-slate-200 dark:border-dark-600 hover:bg-slate-100 dark:hover:bg-dark-700')}
+              >
+                <ArrowUpDown className="w-3.5 h-3.5" /> Ordenar
+              </button>
+              {lancSortOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-52 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-2 space-y-0.5">
+                  {([
+                    { field: 'due_date' as const, dir: 'desc' as const, label: 'Vencimento (recente)' },
+                    { field: 'due_date' as const, dir: 'asc' as const, label: 'Vencimento (antigo)' },
+                    { field: 'amount' as const, dir: 'desc' as const, label: 'Maior valor' },
+                    { field: 'amount' as const, dir: 'asc' as const, label: 'Menor valor' },
+                    { field: 'client_name' as const, dir: 'asc' as const, label: 'Cliente A → Z' },
+                  ]).map(opt => (
+                    <button key={`${opt.field}-${opt.dir}`} onClick={() => { setLancSortField(opt.field); setLancSortDir(opt.dir); setLancSortOpen(false) }}
+                      className={cn('w-full text-left px-3 py-2 text-xs rounded-lg transition-colors',
+                        lancSortField === opt.field && lancSortDir === opt.dir ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-dark-700')}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={exportLancamentos}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
@@ -634,6 +902,19 @@ export function FinancialsPage() {
             </button>
           </div>
 
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-primary-100 dark:border-primary-800/40 bg-primary-50/60 dark:bg-primary-900/10 flex-wrap">
+              <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">{selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}</span>
+              <button onClick={bulkMarkPaid} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Marcar como pago
+              </button>
+              <button onClick={bulkDeleteLanc} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                <Trash2 className="w-3.5 h-3.5" /> Excluir
+              </button>
+              <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">Limpar seleção</button>
+            </div>
+          )}
+
           {/* Table */}
           {lancFiltered.length === 0 ? (
             <EmptyState icon={DollarSign} title="Nenhum lançamento neste período" description="Navegue entre os meses ou crie um novo lançamento." />
@@ -642,22 +923,33 @@ export function FinancialsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-dark-700/50 bg-slate-50 dark:bg-dark-700/30">
+                    <th className="w-9 px-3 py-2.5">
+                      <input type="checkbox" className="w-3.5 h-3.5 rounded border-slate-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                        checked={lancPageItems.length > 0 && lancPageItems.every(f => selectedIds.has(f.id))}
+                        onChange={togglePageSelectionLanc} />
+                    </th>
                     {['Vencimento', 'Pagamento', 'Competência', 'Lançamento', 'Categoria', 'Valor'].map(h => (
                       <th key={h} className={cn(
                         'px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400',
                         h === 'Valor' ? 'text-right' : 'text-left'
                       )}>{h}</th>
                     ))}
-                    <th className="px-4 py-2.5 w-16" />
+                    <th className="px-4 py-2.5 w-20" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50 dark:divide-dark-700/30">
-                  {lancFiltered.slice(0, pageSize).map(f => {
+                  {lancPageItems.map(f => {
                     const isReceita = f.type === 'receivable'
                     const catLabel = CATEGORY_LABELS[f.category || ''] || f.category || '—'
                     const competencia = f.due_date ? `${MONTHS_SHORT[new Date(f.due_date).getMonth()]}/${new Date(f.due_date).getFullYear()}` : '—'
+                    const linkedClient = clients.find(c => c.id === f.client_id)
+                    const wa = linkedClient?.phone ? waLink(linkedClient.phone) : null
                     return (
                       <tr key={f.id} className="hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors group">
+                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                          <input type="checkbox" className="w-3.5 h-3.5 rounded border-slate-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                            checked={selectedIds.has(f.id)} onChange={() => toggleSelectLanc(f.id)} />
+                        </td>
                         <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(f.due_date)}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(f.paid_date)}</td>
                         <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{competencia}</td>
@@ -665,8 +957,26 @@ export function FinancialsPage() {
                           <div className="flex items-center gap-2">
                             <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isReceita ? 'bg-emerald-500' : 'bg-red-400')} />
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{f.description}</p>
-                              {f.client_name && <p className="text-[11px] text-slate-400 truncate">{f.client_name}</p>}
+                              <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px] flex items-center gap-1.5">
+                                {f.description}
+                                {!!f.installment_total && f.installment_total > 1 && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 flex-shrink-0">
+                                    <Layers className="w-2.5 h-2.5" />{f.installment_number}/{f.installment_total}
+                                  </span>
+                                )}
+                              </p>
+                              {f.client_name && (
+                                <button
+                                  onClick={() => navigate('/clientes', { state: { prefillSearch: f.client_name } })}
+                                  className="text-[11px] text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate block"
+                                >{f.client_name}</button>
+                              )}
+                              {f.process_number && (
+                                <button
+                                  onClick={() => navigate('/processos', { state: { prefillSearch: f.process_number } })}
+                                  className="text-[11px] text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate block font-mono"
+                                >{f.process_number}</button>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -680,6 +990,13 @@ export function FinancialsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {wa && isReceita && f.status !== 'paid' && (
+                              <a
+                                href={`${wa}?text=${encodeURIComponent(`Olá${f.client_name ? ' ' + f.client_name.split(' ')[0] : ''}, passando para lembrar do pagamento "${f.description}" no valor de ${formatCurrency(f.amount)}${f.due_date ? `, com vencimento em ${formatDate(f.due_date)}` : ''}.`)}`}
+                                target="_blank" rel="noreferrer" title="Cobrar via WhatsApp"
+                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-slate-400 hover:text-green-500"
+                              ><MessageCircle className="w-3.5 h-3.5" /></a>
+                            )}
                             <button onClick={() => openEdit(f)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400 hover:text-primary-600">
                               <Edit3 className="w-3.5 h-3.5" />
                             </button>
@@ -705,14 +1022,18 @@ export function FinancialsPage() {
             </div>
             <div className="flex items-center gap-2">
               <span>Registros por página:</span>
-              <select className="text-xs border border-slate-200 dark:border-dark-600 rounded px-1.5 py-0.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300">
-                <option>50</option>
-                <option>100</option>
-                <option>200</option>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setLancPage(0) }}
+                className="text-xs border border-slate-200 dark:border-dark-600 rounded px-1.5 py-0.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300"
+              >
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
               </select>
-              <span className="mx-1">0–{lancFiltered.length} de {lancFiltered.length}</span>
-              <button className="p-1 rounded hover:bg-slate-200 dark:hover:bg-dark-600 disabled:opacity-40" disabled><ChevronLeft className="w-3.5 h-3.5" /></button>
-              <button className="p-1 rounded hover:bg-slate-200 dark:hover:bg-dark-600 disabled:opacity-40" disabled><ChevronRight className="w-3.5 h-3.5" /></button>
+              <span className="mx-1">{lancFiltered.length === 0 ? 0 : lancPage * pageSize + 1}–{Math.min((lancPage + 1) * pageSize, lancFiltered.length)} de {lancFiltered.length}</span>
+              <button onClick={() => setLancPage(p => Math.max(0, p - 1))} disabled={lancPage === 0} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-dark-600 disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /></button>
+              <button onClick={() => setLancPage(p => Math.min(lancTotalPages - 1, p + 1))} disabled={lancPage >= lancTotalPages - 1} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-dark-600 disabled:opacity-40"><ChevronRight className="w-3.5 h-3.5" /></button>
             </div>
           </div>
         </Card>
@@ -999,6 +1320,7 @@ export function FinancialsPage() {
         editId={editId}
         clients={clients.map(c => ({ id: c.id, name: (c as any).name }))}
         processes={processes.map(p => ({ id: p.id, number: p.number, title: p.title }))}
+        accounts={accounts.map(a => ({ id: a.id, name: a.name }))}
         saving={saving}
       />
 

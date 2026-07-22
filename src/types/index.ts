@@ -134,6 +134,17 @@ export interface Financial {
   notes: string | null
   created_at: string | null
   deleted_at: string | null
+  account_id: string | null
+  installment_group_id: string | null
+  installment_number: number | null
+  installment_total: number | null
+}
+
+export interface FinancialAccount {
+  id: string
+  tenant_id: string
+  name: string
+  created_at: string | null
 }
 
 export interface UserExpense {

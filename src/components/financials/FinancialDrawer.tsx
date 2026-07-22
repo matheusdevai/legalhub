@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { X, ArrowUpRight, ArrowDownRight, DollarSign, CalendarDays, FileText, User, Briefcase, Tag, CheckCircle2, Clock } from 'lucide-react'
+import { X, ArrowUpRight, ArrowDownRight, DollarSign, CalendarDays, FileText, User, Briefcase, Tag, CheckCircle2, Clock, Landmark, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export type FinancialDrawerForm = {
@@ -15,6 +15,9 @@ export type FinancialDrawerForm = {
   paid_date: string
   status: 'pending' | 'paid' | 'overdue' | 'cancelled'
   notes: string
+  account_id: string
+  /** Quantidade de parcelas — só usado ao criar (ignorado em edição), gerado como N lançamentos */
+  installments: string
 }
 
 export const DRAWER_EMPTY_FORM: FinancialDrawerForm = {
@@ -30,6 +33,8 @@ export const DRAWER_EMPTY_FORM: FinancialDrawerForm = {
   paid_date: '',
   status: 'pending',
   notes: '',
+  account_id: '',
+  installments: '1',
 }
 
 const CATEGORIES = [
@@ -45,6 +50,7 @@ const CATEGORIES = [
 
 type Client = { id: string; name: string }
 type Process = { id: string; number: string; title: string }
+type Account = { id: string; name: string }
 
 type Props = {
   open: boolean
@@ -54,6 +60,7 @@ type Props = {
   editId?: string | null
   clients?: Client[]
   processes?: Process[]
+  accounts?: Account[]
   saving?: boolean
 }
 
@@ -63,7 +70,7 @@ function formatAmountDisplay(raw: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
 }
 
-export function FinancialDrawer({ open, onClose, onSave, initial, editId, clients = [], processes = [], saving = false }: Props) {
+export function FinancialDrawer({ open, onClose, onSave, initial, editId, clients = [], processes = [], accounts = [], saving = false }: Props) {
   const [form, setForm] = useState<FinancialDrawerForm>({ ...DRAWER_EMPTY_FORM, ...initial })
   const firstInput = useRef<HTMLInputElement>(null)
 
@@ -243,6 +250,30 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             </div>
           </div>
 
+          {/* Parcelamento — só ao criar */}
+          {!editId && (
+            <div>
+              <label htmlFor="drawer-installments" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                <Layers className="w-3.5 h-3.5" /> Parcelas
+              </label>
+              <input
+                id="drawer-installments"
+                data-testid="field-installments"
+                type="number"
+                min="1"
+                max="60"
+                value={form.installments}
+                onChange={e => set('installments', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+              />
+              {parseInt(form.installments || '1', 10) > 1 && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Gera {form.installments} lançamentos de {formatAmountDisplay(form.amount)} cada, um por mês a partir do vencimento
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Datas */}
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -343,6 +374,24 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
               >
                 <option value="">Selecione um processo</option>
                 {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Conta */}
+          {accounts.length > 0 && (
+            <div>
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
+                <Landmark className="w-3.5 h-3.5" /> Conta
+              </label>
+              <select
+                data-testid="field-account"
+                value={form.account_id}
+                onChange={e => set('account_id', e.target.value)}
+                className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+              >
+                <option value="">Sem conta</option>
+                {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
           )}

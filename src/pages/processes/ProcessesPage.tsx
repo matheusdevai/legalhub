@@ -190,7 +190,9 @@ export function ProcessesPage() {
 
   const location = useLocation()
   useEffect(() => {
-    if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
+    const state = location.state as { openNew?: boolean; prefillSearch?: string } | null
+    if (state?.openNew) { openNew(); window.history.replaceState({}, '') }
+    else if (state?.prefillSearch) { setSearch(state.prefillSearch); window.history.replaceState({}, '') }
   }, [location.state])
 
   const filtered = useMemo(() => {
