@@ -4,7 +4,9 @@ import { useLocation } from 'react-router-dom'
 import {
   Plus, Search, Check, Trash2,
   CheckCircle2, User, ChevronDown, X as XIcon,
-  ArrowLeft, ArrowRight, LayoutGrid, List, RefreshCw, SlidersHorizontal, Download,
+  ArrowLeft, ArrowRight, Target, List, RefreshCw, SlidersHorizontal, Download,
+  AlarmClock, Gavel, FileText, Users, CircleDot,
+  Flame, Zap, CalendarClock, Inbox, PartyPopper,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
@@ -82,12 +84,78 @@ const PRIORITY_BADGE: Record<string, string> = {
   medium: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
   low: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
 }
-const TYPE_META: Record<string, { label: string; icon: string; chip: string }> = {
-  deadline: { label: 'Prazo', icon: '⏰', chip: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' },
-  hearing: { label: 'Audiência', icon: '⚖️', chip: 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400' },
-  document: { label: 'Documento', icon: '📄', chip: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
-  meeting: { label: 'Reunião', icon: '🤝', chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
-  custom: { label: 'Geral', icon: '📌', chip: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300' },
+const TYPE_META: Record<string, { label: string; icon: React.ElementType; chip: string }> = {
+  deadline: { label: 'Prazo', icon: AlarmClock, chip: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' },
+  hearing: { label: 'Audiência', icon: Gavel, chip: 'bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400' },
+  document: { label: 'Documento', icon: FileText, chip: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
+  meeting: { label: 'Reunião', icon: Users, chip: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
+  custom: { label: 'Geral', icon: CircleDot, chip: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300' },
+}
+
+function TaskRow({ task, today, done, deletingTaskId, onOpen, onComplete, onDeleteRequest, onDeleteConfirm, onDeleteCancel }: {
+  task: Task; today: string; done: boolean; deletingTaskId: string | null
+  onOpen: (t: Task) => void; onComplete: (t: Task) => void
+  onDeleteRequest: (id: string) => void; onDeleteConfirm: (id: string) => void; onDeleteCancel: () => void
+}) {
+  const isOverdue = !done && task.due_date && task.due_date.slice(0, 10) < today
+  const initials = task.assigned_name ? task.assigned_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() : null
+  const TypeIcon = TYPE_META[task.type || 'custom']?.icon || CircleDot
+  return (
+    <div
+      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-dark-700/40 transition-colors cursor-pointer"
+      onClick={() => onOpen(task)}
+    >
+      <button
+        onClick={e => { e.stopPropagation(); if (!done) onComplete(task) }}
+        className={cn('w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all',
+          done ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300 dark:border-dark-500 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20')}
+        title={done ? 'Concluída' : 'Marcar como concluída'}
+      >
+        {done && <Check className="w-3 h-3 text-white" />}
+      </button>
+
+      <div className={cn('w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0', TYPE_META[task.type || 'custom']?.chip)}>
+        <TypeIcon className="w-3.5 h-3.5" />
+      </div>
+
+      <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', PRIORITY_BAR[task.priority || 'medium'])} title={PRIORITY_LABELS[task.priority || 'medium']} />
+
+      <p className={cn('flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white truncate', done && 'line-through text-gray-400 dark:text-gray-500')}>
+        {task.title}
+      </p>
+
+      {task.due_date && (
+        <span className={cn('text-xs font-medium flex-shrink-0', isOverdue ? 'text-red-500' : 'text-gray-400 dark:text-gray-500')}>
+          {formatDate(task.due_date)}
+        </span>
+      )}
+
+      {initials ? (
+        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" title={task.assigned_name || ''}>
+          {initials}
+        </div>
+      ) : (
+        <div className="w-6 h-6 rounded-full border border-dashed border-gray-300 dark:border-dark-600 flex-shrink-0" />
+      )}
+
+      <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+        {deletingTaskId === task.id ? (
+          <div className="flex items-center gap-1">
+            <button onClick={onDeleteCancel} className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors">Não</button>
+            <button onClick={() => onDeleteConfirm(task.id)} className="text-[11px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded-lg transition-colors">Excluir</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => onDeleteRequest(task.id)}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+            title="Excluir tarefa"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -117,7 +185,8 @@ export function TasksPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
 
-  const [viewMode, setViewMode] = useState<'list' | 'quadro'>('quadro')
+  const [viewMode, setViewMode] = useState<'list' | 'foco'>('foco')
+  const [focoTab, setFocoTab] = useState<'atrasadas' | 'fazendo' | 'agendadas' | 'sem_data' | 'concluidas'>('atrasadas')
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
@@ -167,32 +236,57 @@ export function TasksPage() {
     if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
   }, [location.state])
 
-  // ── Quadro computed columns ──────────────────────────────────────────────
-  const filteredActive = useMemo(() => tasks.filter(t => {
-    const active = t.status !== 'done' && t.status !== 'cancelled'
+  // ── Modo Foco: categorização mutuamente exclusiva ────────────────────────
+  const matchesFilters = (t: Task) => {
     const q = search.toLowerCase()
     const matchSearch = !search || t.title.toLowerCase().includes(q) || t.assigned_name?.toLowerCase().includes(q)
     const matchPriority = !priorityFilter || (t.priority || 'medium') === priorityFilter
     const matchType = !typeFilter || (t.type || 'custom') === typeFilter
-    return active && matchSearch && matchPriority && matchType
-  }), [tasks, search, priorityFilter, typeFilter])
+    return matchSearch && matchPriority && matchType
+  }
 
-  const todayTasks = useMemo(
-    () => filteredActive.filter(t => t.due_date?.slice(0, 10) === today),
+  const filteredActive = useMemo(() => tasks.filter(t =>
+    t.status !== 'done' && t.status !== 'cancelled' && matchesFilters(t)
+  ), [tasks, search, priorityFilter, typeFilter])
+
+  // Agenda de hoje — inclui concluídas de hoje, para o anel de progresso
+  const todayAllTasks = useMemo(
+    () => tasks.filter(t => t.due_date?.slice(0, 10) === today && t.status !== 'cancelled' && matchesFilters(t)),
+    [tasks, search, priorityFilter, typeFilter, today]
+  )
+  const todayOpenTasks = useMemo(() => todayAllTasks.filter(t => t.status !== 'done'), [todayAllTasks])
+  const todayDoneTasks = useMemo(() => todayAllTasks.filter(t => t.status === 'done'), [todayAllTasks])
+  const todayProgressPct = todayAllTasks.length > 0 ? Math.round((todayDoneTasks.length / todayAllTasks.length) * 100) : 0
+
+  // Tudo que não é de hoje, sem sobreposição entre categorias
+  const overdueTasks = useMemo(
+    () => filteredActive.filter(t => t.due_date && t.due_date.slice(0, 10) < today),
+    [filteredActive, today]
+  )
+  const fazendoTasks = useMemo(
+    () => filteredActive.filter(t => t.status === 'in_progress' && t.due_date?.slice(0, 10) !== today && !(t.due_date && t.due_date.slice(0, 10) < today)),
     [filteredActive, today]
   )
   const proximosTasks = useMemo(
-    () => filteredActive.filter(t => { const d = t.due_date?.slice(0, 10); return d && d > today && d <= sevenDaysAhead }),
-    [filteredActive, today, sevenDaysAhead]
+    () => filteredActive.filter(t => t.status !== 'in_progress' && t.due_date && t.due_date.slice(0, 10) > today),
+    [filteredActive, today]
   )
-  const fazendoTasks = useMemo(
-    () => filteredActive.filter(t => t.status === 'in_progress'),
+  const semDataTasks = useMemo(
+    () => filteredActive.filter(t => t.status !== 'in_progress' && !t.due_date),
     [filteredActive]
   )
   const completedTodayTasks = useMemo(
     () => tasks.filter(t => t.status === 'done' && t.completed_at?.slice(0, 10) === today),
     [tasks, today]
   )
+  const focoTabs = [
+    { key: 'atrasadas' as const, label: 'Atrasadas', icon: Flame, items: overdueTasks, color: 'text-red-600 dark:text-red-400', activeColor: 'bg-red-600' },
+    { key: 'fazendo' as const, label: 'Fazendo', icon: Zap, items: fazendoTasks, color: 'text-amber-600 dark:text-amber-400', activeColor: 'bg-amber-500' },
+    { key: 'agendadas' as const, label: 'Agendadas', icon: CalendarClock, items: proximosTasks, color: 'text-violet-600 dark:text-violet-400', activeColor: 'bg-violet-600' },
+    { key: 'sem_data' as const, label: 'Sem data', icon: Inbox, items: semDataTasks, color: 'text-gray-500 dark:text-gray-400', activeColor: 'bg-gray-500' },
+    { key: 'concluidas' as const, label: 'Concluídas hoje', icon: CheckCircle2, items: completedTodayTasks, color: 'text-emerald-600 dark:text-emerald-400', activeColor: 'bg-emerald-600', done: true },
+  ]
+  const activeFocoTab = focoTabs.find(t => t.key === focoTab) || focoTabs[0]
 
   // ── List view computed ───────────────────────────────────────────────────
   const filtered = useMemo(() => tasks.filter(t => {
@@ -365,15 +459,6 @@ export function TasksPage() {
     })
   }
 
-  // ── Quadro columns definition ────────────────────────────────────────────
-  const quadroColumns = [
-    { key: 'todas', label: 'Todas as tarefas', color: 'text-orange-500', dotColor: 'bg-orange-400', borderColor: 'border-orange-200 dark:border-orange-800/30', bgColor: 'bg-orange-50 dark:bg-orange-900/10', items: filteredActive, done: false },
-    { key: 'hoje', label: 'Hoje', color: 'text-blue-600 dark:text-blue-400', dotColor: 'bg-blue-500', borderColor: 'border-blue-200 dark:border-blue-800/30', bgColor: 'bg-blue-50 dark:bg-blue-900/10', items: todayTasks, done: false },
-    { key: 'proximos', label: 'Próximos 7 dias', color: 'text-violet-600 dark:text-violet-400', dotColor: 'bg-violet-500', borderColor: 'border-violet-200 dark:border-violet-800/30', bgColor: 'bg-violet-50 dark:bg-violet-900/10', items: proximosTasks, done: false },
-    { key: 'fazendo', label: 'Fazendo', color: 'text-amber-600 dark:text-amber-400', dotColor: 'bg-amber-500', borderColor: 'border-amber-200 dark:border-amber-800/30', bgColor: 'bg-amber-50 dark:bg-amber-900/10', items: fazendoTasks, done: false },
-    { key: 'concluidas', label: 'Concluídas hoje', color: 'text-emerald-600 dark:text-emerald-400', dotColor: 'bg-emerald-500', borderColor: 'border-emerald-200 dark:border-emerald-800/30', bgColor: 'bg-emerald-50 dark:bg-emerald-900/10', items: completedTodayTasks, done: true },
-  ]
-
   return (
     <Layout
       title="Atividades"
@@ -452,18 +537,18 @@ export function TasksPage() {
               {/* View toggle */}
               <div className="ml-auto flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden">
                 <button
-                  onClick={() => setViewMode('list')}
-                  className={cn('p-2 transition-colors', viewMode === 'list' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-dark-700')}
-                  title="Lista"
+                  onClick={() => setViewMode('foco')}
+                  className={cn('flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors', viewMode === 'foco' ? 'bg-primary-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-700')}
+                  title="Modo Foco"
                 >
-                  <List className="w-4 h-4" />
+                  <Target className="w-4 h-4" /> Foco
                 </button>
                 <button
-                  onClick={() => setViewMode('quadro')}
-                  className={cn('p-2 transition-colors', viewMode === 'quadro' ? 'bg-primary-600 text-white' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-dark-700')}
-                  title="Quadro"
+                  onClick={() => setViewMode('list')}
+                  className={cn('flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-l border-gray-200 dark:border-dark-600 transition-colors', viewMode === 'list' ? 'bg-primary-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-700')}
+                  title="Lista"
                 >
-                  <LayoutGrid className="w-4 h-4" />
+                  <List className="w-4 h-4" /> Lista
                 </button>
               </div>
             </div>
@@ -519,119 +604,107 @@ export function TasksPage() {
             )}
           </div>
 
-          {/* ── Quadro view ── */}
-          {viewMode === 'quadro' && (
-            <div className="overflow-x-auto pb-2">
-              <div className="flex gap-3 min-w-max">
-                {quadroColumns.map(col => (
-                  <div key={col.key} className="w-64 flex flex-col flex-shrink-0">
-                    {/* Column header */}
-                    <div className={cn('flex items-center justify-between px-3 py-2.5 rounded-t-xl border', col.bgColor, col.borderColor)}>
-                      <div className="flex items-center gap-2">
-                        <div className={cn('w-2 h-2 rounded-full flex-shrink-0', col.dotColor)} />
-                        <span className={cn('text-xs font-bold', col.color)}>{col.label}</span>
-                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-white/70 dark:bg-dark-800/70', col.color)}>{col.items.length}</span>
-                      </div>
-                      <button
-                        onClick={() => openNew()}
-                        className={cn('p-1 rounded-lg hover:bg-white/60 dark:hover:bg-dark-800/60 transition-colors', col.color)}
-                        title="Nova tarefa"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+          {/* ── Modo Foco ── */}
+          {viewMode === 'foco' && (
+            <div className="space-y-4">
+
+              {/* Hero — Hoje */}
+              <div className="bg-white dark:bg-dark-800 rounded-2xl border border-gray-200 dark:border-dark-700 overflow-hidden">
+                <div className="relative overflow-hidden bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-5 sm:px-6 py-5">
+                  <div className="absolute -right-10 -top-10 w-48 h-48 bg-white/10 rounded-full blur-3xl" />
+                  <div className="relative flex items-center gap-5 flex-wrap sm:flex-nowrap">
+                    <div className="relative w-16 h-16 flex-shrink-0">
+                      <svg viewBox="0 0 64 64" className="w-16 h-16 -rotate-90">
+                        <circle cx="32" cy="32" r="27" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="7" />
+                        <circle
+                          cx="32" cy="32" r="27" fill="none" stroke="white" strokeWidth="7" strokeLinecap="round"
+                          strokeDasharray={2 * Math.PI * 27}
+                          strokeDashoffset={2 * Math.PI * 27 * (1 - todayProgressPct / 100)}
+                          className="transition-all duration-500"
+                        />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center text-sm font-bold">{todayProgressPct}%</div>
                     </div>
-
-                    {/* Cards */}
-                    <div className={cn('rounded-b-xl border border-t-0 p-2 space-y-2 min-h-[120px] max-h-[calc(100vh-320px)] overflow-y-auto bg-gray-50 dark:bg-dark-900/40', col.borderColor)}>
-                      {col.items.length === 0 ? (
-                        <div className="flex items-center justify-center h-16 text-xs text-gray-400 dark:text-gray-600 italic">
-                          Nenhuma tarefa
-                        </div>
-                      ) : col.items.map(task => {
-                        const isOverdue = !col.done && task.due_date && task.due_date.slice(0, 10) < today
-                        const initials = task.assigned_name
-                          ? task.assigned_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
-                          : null
-                        return (
-                          <div
-                            key={task.id}
-                            className="group bg-white dark:bg-dark-800 rounded-xl border border-gray-100 dark:border-dark-700 shadow-sm hover:shadow-md transition-all overflow-hidden cursor-pointer"
-                            onClick={() => openEdit(task)}
-                          >
-                            {/* Priority bar */}
-                            <div className={cn('h-1', PRIORITY_BAR[task.priority || 'medium'])} />
-
-                            <div className="p-3">
-                              {/* Type icon + title + mark done circle */}
-                              <div className="flex items-start gap-2 mb-2">
-                                <span className="text-sm flex-shrink-0 mt-0.5">{TYPE_META[task.type || 'custom']?.icon}</span>
-                                <p className={cn('text-sm font-medium text-gray-900 dark:text-white line-clamp-2 leading-snug flex-1', col.done && 'line-through text-gray-400 dark:text-gray-500')}>
-                                  {task.title}
-                                </p>
-                                {!col.done && (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); requestComplete(task) }}
-                                    className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-dark-500 flex-shrink-0 opacity-0 group-hover:opacity-100 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all"
-                                    title="Marcar como concluída"
-                                  />
-                                )}
-                              </div>
-
-                              {/* Footer */}
-                              <div className="flex items-center justify-between" onClick={e => e.stopPropagation()}>
-                                {initials ? (
-                                  <div className="flex items-center gap-1.5">
-                                    <div className="w-5 h-5 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">
-                                      {initials}
-                                    </div>
-                                    <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate max-w-[60px]">
-                                      {task.assigned_name?.split(' ')[0]}
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <div className="w-5 h-5 rounded-full border border-dashed border-gray-300 dark:border-dark-600 flex-shrink-0" />
-                                )}
-
-                                <div className="flex items-center gap-1.5">
-                                  {task.due_date && (
-                                    <span className={cn('text-[10px] font-medium', isOverdue ? 'text-red-500' : 'text-gray-400 dark:text-gray-500')}>
-                                      {formatDate(task.due_date)}
-                                    </span>
-                                  )}
-                                  {!col.done && (
-                                    deletingTaskId === task.id ? (
-                                      <div className="flex items-center gap-1">
-                                        <button onClick={() => setDeletingTaskId(null)} className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors">Não</button>
-                                        <button onClick={() => softDeleteTask(task.id)} className="text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-1.5 py-0.5 rounded-lg transition-colors">Excluir</button>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        onClick={() => setDeletingTaskId(task.id)}
-                                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-red-500 dark:hover:text-red-400 transition-all"
-                                        title="Excluir tarefa"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    )
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-
-                      {/* Add task */}
-                      <button
-                        onClick={() => openNew()}
-                        className="w-full flex items-center gap-1.5 px-3 py-2 text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-white/60 dark:hover:bg-dark-800/60 rounded-lg transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        Adicionar tarefa
-                      </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] uppercase tracking-wider text-white/70 font-semibold">
+                        {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      </p>
+                      <h2 className="text-xl font-bold leading-tight">Hoje</h2>
+                      <p className="text-sm text-white/80">
+                        {todayAllTasks.length === 0 ? 'Nada agendado para hoje' : `${todayDoneTasks.length} de ${todayAllTasks.length} concluídas`}
+                      </p>
                     </div>
+                    <button
+                      onClick={() => openNew()}
+                      className="flex items-center gap-1.5 px-3.5 py-2 bg-white/15 hover:bg-white/25 text-white text-sm font-semibold rounded-lg transition-colors flex-shrink-0"
+                    >
+                      <Plus className="w-4 h-4" /> Nova tarefa
+                    </button>
                   </div>
-                ))}
+                </div>
+
+                <div className="p-2 sm:p-3">
+                  {todayAllTasks.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                      <PartyPopper className="w-8 h-8 text-gray-300 dark:text-gray-600" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Nenhuma tarefa agendada para hoje</p>
+                      <p className="text-xs text-gray-400 dark:text-gray-600">Aproveite para adiantar as próximas ou revisar atrasadas</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-50 dark:divide-dark-700/50">
+                      {[...todayOpenTasks, ...todayDoneTasks].map(task => (
+                        <TaskRow
+                          key={task.id} task={task} today={today} done={task.status === 'done'}
+                          deletingTaskId={deletingTaskId}
+                          onOpen={openEdit} onComplete={requestComplete}
+                          onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Abas secundárias — sem sobreposição com "Hoje" */}
+              <div className="bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 overflow-hidden">
+                <div className="flex items-center gap-1 px-2 pt-2 overflow-x-auto">
+                  {focoTabs.map(tab => {
+                    const TabIcon = tab.icon
+                    const active = focoTab === tab.key
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setFocoTab(tab.key)}
+                        className={cn('flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors whitespace-nowrap',
+                          active ? cn('border-current', tab.color) : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300')}
+                      >
+                        <TabIcon className="w-3.5 h-3.5" />
+                        {tab.label}
+                        <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-bold', active ? cn(tab.activeColor, 'text-white') : 'bg-gray-100 dark:bg-dark-700 text-gray-500 dark:text-gray-400')}>
+                          {tab.items.length}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="p-2 sm:p-3 border-t border-gray-100 dark:border-dark-700">
+                  {activeFocoTab.items.length === 0 ? (
+                    <div className="flex items-center justify-center py-10 text-sm text-gray-400 dark:text-gray-600 italic">
+                      Nenhuma tarefa aqui
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-50 dark:divide-dark-700/50 max-h-[420px] overflow-y-auto">
+                      {activeFocoTab.items.map(task => (
+                        <TaskRow
+                          key={task.id} task={task} today={today} done={!!activeFocoTab.done}
+                          deletingTaskId={deletingTaskId}
+                          onOpen={openEdit} onComplete={requestComplete}
+                          onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -695,8 +768,9 @@ export function TasksPage() {
                             </span>
                           </td>
                           <td className="px-3 py-3">
-                            <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', TYPE_META[t.type || 'custom']?.chip)}>
-                              {TYPE_META[t.type || 'custom']?.icon} {TYPE_META[t.type || 'custom']?.label}
+                            <span className={cn('inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium', TYPE_META[t.type || 'custom']?.chip)}>
+                              {(() => { const TypeIcon = TYPE_META[t.type || 'custom']?.icon; return TypeIcon ? <TypeIcon className="w-3 h-3" /> : null })()}
+                              {TYPE_META[t.type || 'custom']?.label}
                             </span>
                           </td>
                           <td className="px-3 py-3">
