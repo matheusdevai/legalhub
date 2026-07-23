@@ -1,15 +1,23 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, Trash2, Mail, Briefcase, ChevronDown, ChevronUp,
-  Filter, Download, RefreshCw, Edit3, Users,
+  Plus, Search, Trash2, Mail, Phone, Briefcase, ChevronDown, ChevronUp,
+  SlidersHorizontal, ArrowUpDown, Download, RefreshCw, Edit3, Users,
+  MessageCircle, Sparkles, DollarSign, Clock, CheckCircle2, X, UserCheck,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
+import { Modal, Input, Select, Textarea, Spinner, Badge } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador } from '@/types'
-import { cn, formatDate, formatCPFCNPJ, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
+import { cn, formatDate, formatCurrency, formatCPFCNPJ, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
+
+function waLink(phone: string): string | null {
+  const digits = phone.replace(/\D/g, '')
+  if (digits.length < 10) return null
+  return `https://wa.me/${digits.length <= 11 ? '55' + digits : digits}`
+}
 
 const CLIENT_STATUS_LABELS: Record<string, string> = { active: 'Ativo', inactive: 'Inativo', prospect: 'Prospect' }
 
@@ -102,13 +110,24 @@ function LineChart({ data }: { data: { label: string; value: number }[] }) {
   )
 }
 
+type ParceiroClientFull = ParceiroClientRow & {
+  colaborador_id: string | null; colaborador_pago: boolean | null
+  colaborador_pago_valor: number | null; colaborador_pago_data: string | null
+}
+
 export function CollaboratorsPage() {
   const { profile } = useAuth()
+  const navigate = useNavigate()
   const [collaborators, setCollaborators] = useState<Colaborador[]>([])
+  const [allClients, setAllClients] = useState<ParceiroClientFull[]>([])
   const [clientCounts, setClientCounts] = useState<Record<string, number>>({})
   const [indicacoesCounts, setIndicacoesCounts] = useState<Record<string, number>>({})
   const [processCounts, setProcessCounts] = useState<Record<string, number>>({})
+  const [activeProcessCounts, setActiveProcessCounts] = useState<Record<string, number>>({})
   const [processAreas, setProcessAreas] = useState<Record<string, number>>({})
+  const [pendingCommissionCounts, setPendingCommissionCounts] = useState<Record<string, number>>({})
+  const [paidCommissionValue, setPaidCommissionValue] = useState<Record<string, number>>({})
+  const [pendingCommissionValue, setPendingCommissionValue] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showSearch, setShowSearch] = useState(false)
@@ -122,34 +141,78 @@ export function CollaboratorsPage() {
   const [expandParceiro, setExpandParceiro] = useState(false)
   const [exportingId, setExportingId] = useState<string | null>(null)
 
+  // Filtrar / Ordenar
+  const [cargoFilter, setCargoFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [sortField, setSortField] = useState<'nome' | 'processos' | 'indicacoes'>('nome')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [sortOpen, setSortOpen] = useState(false)
+  const filterRef = useRef<HTMLDivElement>(null)
+  const sortRef = useRef<HTMLDivElement>(null)
+
+  // Seleção em massa
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkWorking, setBulkWorking] = useState(false)
+
+  // Painel de detalhe do parceiro
+  const [viewPartner, setViewPartner] = useState<Colaborador | null>(null)
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+      if (sortRef.current && !sortRef.current.contains(e.target as Node)) setSortOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   async function load() {
     setLoading(true)
     const [{ data: col }, { data: cli }, { data: proc }] = await Promise.all([
-      supabase.from('colaboradores').select('*').order('nome'),
-      supabase.from('clients').select('id,colaborador_id,origem').is('deleted_at', null),
-      supabase.from('processes').select('id,colaborador_id,area').is('deleted_at', null),
+      supabase.from('colaboradores').select('*').is('deleted_at', null).order('nome'),
+      supabase.from('clients').select('id,name,type,cpf_cnpj,phone,email,cidade,status,colaborador_id,origem,colaborador_pago,colaborador_pago_valor,colaborador_pago_data').is('deleted_at', null),
+      supabase.from('processes').select('id,colaborador_id,area,status').is('deleted_at', null),
     ])
     setCollaborators(col || [])
+    setAllClients((cli || []) as ParceiroClientFull[])
 
     const cMap: Record<string, number> = {}
     const indicMap: Record<string, number> = {}
+    const pendCommCount: Record<string, number> = {}
+    const paidCommVal: Record<string, number> = {}
+    const pendCommVal: Record<string, number> = {}
     for (const c of (cli || [])) {
       if (c.colaborador_id) {
         cMap[c.colaborador_id] = (cMap[c.colaborador_id] || 0) + 1
         // Conta como indicação todo cliente vinculado ao parceiro (com ou sem origem='indicacao')
         indicMap[c.colaborador_id] = (indicMap[c.colaborador_id] || 0) + 1
+        if (c.colaborador_pago) {
+          paidCommVal[c.colaborador_id] = (paidCommVal[c.colaborador_id] || 0) + (c.colaborador_pago_valor || 0)
+        } else {
+          pendCommCount[c.colaborador_id] = (pendCommCount[c.colaborador_id] || 0) + 1
+          pendCommVal[c.colaborador_id] = (pendCommVal[c.colaborador_id] || 0) + (c.colaborador_pago_valor || 0)
+        }
       }
     }
     setClientCounts(cMap)
     setIndicacoesCounts(indicMap)
+    setPendingCommissionCounts(pendCommCount)
+    setPaidCommissionValue(paidCommVal)
+    setPendingCommissionValue(pendCommVal)
 
     const pMap: Record<string, number> = {}
+    const activeMap: Record<string, number> = {}
     const aMap: Record<string, number> = {}
     for (const p of (proc || [])) {
-      if (p.colaborador_id) pMap[p.colaborador_id] = (pMap[p.colaborador_id] || 0) + 1
+      if (p.colaborador_id) {
+        pMap[p.colaborador_id] = (pMap[p.colaborador_id] || 0) + 1
+        if (p.status === 'active') activeMap[p.colaborador_id] = (activeMap[p.colaborador_id] || 0) + 1
+      }
       if (p.area) aMap[p.area] = (aMap[p.area] || 0) + 1
     }
     setProcessCounts(pMap)
+    setActiveProcessCounts(activeMap)
     setProcessAreas(aMap)
     setLoading(false)
   }
@@ -159,12 +222,16 @@ export function CollaboratorsPage() {
   const stats = useMemo(() => {
     const ativos = collaborators.filter(c => c.ativo)
     const inativos = collaborators.filter(c => !c.ativo)
-    const totalProcessos = Object.values(processCounts).reduce((a, b) => a + b, 0)
+    // Processos ativos vinculados a parceiros — antes contava TODOS os status apesar do rótulo "(ativos)"
+    const totalProcessosAtivos = Object.values(activeProcessCounts).reduce((a, b) => a + b, 0)
     const totalIndicacoes = Object.values(indicacoesCounts).reduce((a, b) => a + b, 0)
-    const demandaEscritorio = ativos.filter(c => (processCounts[c.id] || 0) > 0).length
-    const demandaParceiro = inativos.length
-    return { ativos, inativos, totalProcessos, totalIndicacoes, demandaEscritorio, demandaParceiro }
-  }, [collaborators, processCounts, indicacoesCounts])
+    // Antes: contagem de processos de parceiros ativos (redundante/confuso). Agora: soma de processos ativos.
+    const demandaEscritorio = totalProcessosAtivos
+    // Antes: contagem de parceiros inativos (não tinha relação com "demanda"). Agora: comissões pendentes de pagamento.
+    const comissoesPendentesCount = Object.values(pendingCommissionCounts).reduce((a, b) => a + b, 0)
+    const comissoesPendentesValor = Object.values(pendingCommissionValue).reduce((a, b) => a + b, 0)
+    return { ativos, inativos, totalProcessosAtivos, totalIndicacoes, demandaEscritorio, comissoesPendentesCount, comissoesPendentesValor }
+  }, [collaborators, activeProcessCounts, indicacoesCounts, pendingCommissionCounts, pendingCommissionValue])
 
   // Map process areas to ADVBOX chart categories
   const chartData = useMemo(() => {
@@ -188,13 +255,25 @@ export function CollaboratorsPage() {
     })
   }, [processAreas])
 
-  const filtered = collaborators.filter(c => {
-    if (!search) return true
-    const q = search.toLowerCase()
-    return c.nome.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q) ||
-      (CARGO_LABELS[c.cargo || ''] || c.cargo || '').toLowerCase().includes(q)
-  })
+  const filtered = useMemo(() => {
+    const result = collaborators.filter(c => {
+      const q = search.toLowerCase()
+      const matchSearch = !search ||
+        c.nome.toLowerCase().includes(q) ||
+        c.email?.toLowerCase().includes(q) ||
+        (CARGO_LABELS[c.cargo || ''] || c.cargo || '').toLowerCase().includes(q)
+      const matchCargo = !cargoFilter || c.cargo === cargoFilter
+      const matchStatus = !statusFilter || (statusFilter === 'ativo' ? c.ativo : !c.ativo)
+      return matchSearch && matchCargo && matchStatus
+    })
+    return [...result].sort((a, b) => {
+      let va = 0, vb = 0
+      if (sortField === 'processos') { va = processCounts[a.id] || 0; vb = processCounts[b.id] || 0 }
+      else if (sortField === 'indicacoes') { va = indicacoesCounts[a.id] || 0; vb = indicacoesCounts[b.id] || 0 }
+      else return sortDir === 'asc' ? a.nome.localeCompare(b.nome) : b.nome.localeCompare(a.nome)
+      return sortDir === 'asc' ? va - vb : vb - va
+    })
+  }, [collaborators, search, cargoFilter, statusFilter, sortField, sortDir, processCounts, indicacoesCounts])
 
   function exportAll() {
     const ativos = filtered.filter(c => c.ativo).length
@@ -323,8 +402,54 @@ export function CollaboratorsPage() {
 
   async function deleteCollaborator(id: string) {
     if (!confirm('Deseja excluir este parceiro?')) return
-    await supabase.from('colaboradores').delete().eq('id', id)
+    await supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
+  }
+
+  // ─── Seleção em massa ────────────────────────────────────────────────────────
+  function toggleSelect(id: string, e: React.MouseEvent) {
+    e.stopPropagation()
+    setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  }
+  function togglePageSelection() {
+    setSelectedIds(prev => {
+      const allSelected = filtered.every(c => prev.has(c.id))
+      const next = new Set(prev)
+      if (allSelected) filtered.forEach(c => next.delete(c.id))
+      else filtered.forEach(c => next.add(c.id))
+      return next
+    })
+  }
+  async function bulkSetAtivo(ativo: boolean) {
+    setBulkWorking(true)
+    await supabase.from('colaboradores').update({ ativo }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+  async function bulkDelete() {
+    if (!confirm(`Excluir ${selectedIds.size} parceiro(s) selecionado(s)?`)) return
+    setBulkWorking(true)
+    await supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    setBulkWorking(false)
+    setSelectedIds(new Set())
+    load()
+  }
+
+  // ─── Navegação pros contatos/processos do parceiro ───────────────────────────
+  function goToClientes(col: Colaborador) {
+    navigate('/clientes', { state: { prefillColaborador: col.id } })
+  }
+  function goToProcessos(col: Colaborador) {
+    navigate('/processos', { state: { prefillColaborador: col.id } })
+  }
+  function askCopiloto(col: Colaborador) {
+    navigate('/dashboard', {
+      state: {
+        openTab: 'ia',
+        prefillQuestion: `Me dê um resumo da rede do parceiro ${col.nome}: contatos indicados, processos em andamento e comissões pendentes.`,
+      },
+    })
   }
 
   return (
@@ -347,7 +472,7 @@ export function CollaboratorsPage() {
             >
               selecionar um parceiro
             </button>{' '}
-            para ver o histórico detalhado
+            na tabela abaixo para ver o histórico detalhado
           </p>
         </div>
 
@@ -358,7 +483,7 @@ export function CollaboratorsPage() {
           <div className="bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl p-5">
             <p className="text-sm text-gray-500 dark:text-gray-400">Processos compartilhados (ativos)</p>
             <div className="flex items-center justify-between mt-2">
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalProcessos}</p>
+              <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalProcessosAtivos}</p>
               <button onClick={() => setExpandAtivos(v => !v)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <ChevronDown className={cn('w-4 h-4 transition-transform', expandAtivos && 'rotate-180')} />
               </button>
@@ -369,14 +494,14 @@ export function CollaboratorsPage() {
             </button>
             {expandAtivos && (
               <div className="mt-3 space-y-1.5 border-t border-gray-100 dark:border-dark-700 pt-3">
-                {collaborators.filter(c => (processCounts[c.id] || 0) > 0).map(c => (
+                {collaborators.filter(c => (activeProcessCounts[c.id] || 0) > 0).map(c => (
                   <div key={c.id} className="flex items-center justify-between text-xs">
                     <span className="text-gray-600 dark:text-gray-300 truncate">{c.nome}</span>
-                    <span className="font-semibold text-gray-900 dark:text-white ml-2">{processCounts[c.id]}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white ml-2">{activeProcessCounts[c.id]}</span>
                   </div>
                 ))}
-                {collaborators.filter(c => (processCounts[c.id] || 0) > 0).length === 0 && (
-                  <p className="text-xs text-gray-400">Nenhum processo atribuído</p>
+                {collaborators.filter(c => (activeProcessCounts[c.id] || 0) > 0).length === 0 && (
+                  <p className="text-xs text-gray-400">Nenhum processo ativo atribuído</p>
                 )}
               </div>
             )}
@@ -384,7 +509,7 @@ export function CollaboratorsPage() {
 
           {/* Card 2 */}
           <div className="bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl p-5">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Demanda pendente pelo escritório</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Processos ativos aguardando o escritório</p>
             <div className="flex items-center justify-between mt-2">
               <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.demandaEscritorio}</p>
               <button onClick={() => setExpandEscritorio(v => !v)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
@@ -397,38 +522,43 @@ export function CollaboratorsPage() {
             </button>
             {expandEscritorio && (
               <div className="mt-3 space-y-1.5 border-t border-gray-100 dark:border-dark-700 pt-3">
-                {stats.ativos.filter(c => (processCounts[c.id] || 0) > 0).map(c => (
+                {stats.ativos.filter(c => (activeProcessCounts[c.id] || 0) > 0).map(c => (
                   <div key={c.id} className="flex items-center justify-between text-xs">
                     <span className="text-gray-600 dark:text-gray-300 truncate">{c.nome}</span>
-                    <span className="font-semibold text-gray-900 dark:text-white ml-2">{processCounts[c.id]}</span>
+                    <span className="font-semibold text-gray-900 dark:text-white ml-2">{activeProcessCounts[c.id]}</span>
                   </div>
                 ))}
-                {stats.ativos.filter(c => (processCounts[c.id] || 0) > 0).length === 0 && (
+                {stats.ativos.filter(c => (activeProcessCounts[c.id] || 0) > 0).length === 0 && (
                   <p className="text-xs text-gray-400">Sem demanda pendente</p>
                 )}
               </div>
             )}
           </div>
 
-          {/* Card 3 */}
+          {/* Card 3 — Comissões pendentes */}
           <div className="bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl p-5">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Demanda pendente pelo parceiro</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Comissões pendentes de pagamento</p>
             <div className="flex items-center justify-between mt-2">
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.demandaParceiro}</p>
+              <p className="text-3xl font-bold text-orange-600 dark:text-orange-400">{formatCurrency(stats.comissoesPendentesValor)}</p>
               <button onClick={() => setExpandParceiro(v => !v)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                 <ChevronDown className={cn('w-4 h-4 transition-transform', expandParceiro && 'rotate-180')} />
               </button>
             </div>
             <button onClick={() => setExpandParceiro(v => !v)}
               className="text-xs text-primary-600 dark:text-primary-400 hover:underline mt-1">
-              Mostrar processos
+              {stats.comissoesPendentesCount} contato{stats.comissoesPendentesCount !== 1 ? 's' : ''} aguardando pagamento
             </button>
             {expandParceiro && (
               <div className="mt-3 space-y-1.5 border-t border-gray-100 dark:border-dark-700 pt-3">
-                {stats.inativos.map(c => (
-                  <div key={c.id} className="text-xs text-gray-600 dark:text-gray-300 truncate">{c.nome}</div>
+                {collaborators.filter(c => (pendingCommissionValue[c.id] || 0) > 0).map(c => (
+                  <div key={c.id} className="flex items-center justify-between text-xs">
+                    <span className="text-gray-600 dark:text-gray-300 truncate">{c.nome}</span>
+                    <span className="font-semibold text-orange-600 dark:text-orange-400 ml-2">{formatCurrency(pendingCommissionValue[c.id])}</span>
+                  </div>
                 ))}
-                {stats.inativos.length === 0 && <p className="text-xs text-gray-400">Nenhum parceiro inativo</p>}
+                {collaborators.filter(c => (pendingCommissionValue[c.id] || 0) > 0).length === 0 && (
+                  <p className="text-xs text-gray-400">Nenhuma comissão pendente</p>
+                )}
               </div>
             )}
           </div>
@@ -505,19 +635,99 @@ export function CollaboratorsPage() {
                 >
                   <Search className="w-4 h-4" /> Buscar
                 </button>
-                <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                  <Filter className="w-4 h-4" /> Filtrar
-                </button>
-                <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M6 12h12M9 17h6" />
-                  </svg>
-                  Ordenar
-                </button>
+
+                {/* Filtrar */}
+                <div className="relative" ref={filterRef}>
+                  <button
+                    onClick={() => { setFilterOpen(v => !v); setSortOpen(false) }}
+                    className={cn('flex items-center gap-2 px-4 py-2 text-sm font-medium border rounded-lg transition-colors',
+                      filterOpen || cargoFilter || statusFilter
+                        ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
+                        : 'text-gray-700 dark:text-gray-300 border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-800 hover:bg-gray-50 dark:hover:bg-dark-700')}
+                  >
+                    <SlidersHorizontal className="w-4 h-4" /> Filtrar
+                    {[cargoFilter, statusFilter].filter(Boolean).length > 0 && (
+                      <span className="ml-0.5 w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">
+                        {[cargoFilter, statusFilter].filter(Boolean).length}
+                      </span>
+                    )}
+                  </button>
+                  {filterOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-lg z-50 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Filtros</p>
+                        {(cargoFilter || statusFilter) && (
+                          <button onClick={() => { setCargoFilter(''); setStatusFilter('') }} className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium">Limpar</button>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Status</label>
+                        <div className="flex gap-1.5">
+                          {[{ v: '', l: 'Todos' }, { v: 'ativo', l: 'Ativo' }, { v: 'inativo', l: 'Inativo' }].map(o => (
+                            <button key={o.v} onClick={() => setStatusFilter(o.v)} className={cn('px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors',
+                              statusFilter === o.v ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300')}>{o.l}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Cargo</label>
+                        <select value={cargoFilter} onChange={e => setCargoFilter(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-200">
+                          <option value="">Todos</option>
+                          {Object.entries(CARGO_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ordenar */}
+                <div className="relative" ref={sortRef}>
+                  <button
+                    onClick={() => { setSortOpen(v => !v); setFilterOpen(false) }}
+                    className={cn('flex items-center gap-2 px-4 py-2 text-sm font-medium border rounded-lg transition-colors',
+                      sortOpen ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700' : 'text-gray-700 dark:text-gray-300 border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-800 hover:bg-gray-50 dark:hover:bg-dark-700')}
+                  >
+                    <ArrowUpDown className="w-4 h-4" /> Ordenar
+                  </button>
+                  {sortOpen && (
+                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-lg z-50 p-2 space-y-0.5">
+                      {([
+                        { field: 'nome' as const, dir: 'asc' as const, label: 'Nome A → Z' },
+                        { field: 'nome' as const, dir: 'desc' as const, label: 'Nome Z → A' },
+                        { field: 'processos' as const, dir: 'desc' as const, label: 'Mais processos' },
+                        { field: 'indicacoes' as const, dir: 'desc' as const, label: 'Mais indicações' },
+                      ]).map(opt => (
+                        <button key={`${opt.field}-${opt.dir}`} onClick={() => { setSortField(opt.field); setSortDir(opt.dir); setSortOpen(false) }}
+                          className={cn('w-full text-left px-3 py-2 text-xs rounded-lg transition-colors',
+                            sortField === opt.field && sortDir === opt.dir ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 font-semibold' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700')}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button onClick={exportAll} className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                   <Download className="w-4 h-4" /> Exportar
                 </button>
               </div>
+
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2 px-5 py-2.5 border-b border-primary-100 dark:border-primary-800/40 bg-primary-50/60 dark:bg-primary-900/10 flex-wrap">
+                  <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">{selectedIds.size} selecionado{selectedIds.size !== 1 ? 's' : ''}</span>
+                  <button onClick={() => bulkSetAtivo(true)} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Ativar
+                  </button>
+                  <button onClick={() => bulkSetAtivo(false)} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-dark-700">
+                    <Clock className="w-3.5 h-3.5" /> Desativar
+                  </button>
+                  <button onClick={bulkDelete} disabled={bulkWorking} className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                    <Trash2 className="w-3.5 h-3.5" /> Excluir
+                  </button>
+                  <button onClick={() => setSelectedIds(new Set())} className="ml-auto text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Limpar seleção</button>
+                </div>
+              )}
 
               {/* Inline search */}
               {showSearch && (
@@ -540,36 +750,43 @@ export function CollaboratorsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-dark-700">
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                        <button className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300">
-                          Partes <ChevronUp className="w-3 h-3" />
-                        </button>
+                      <th className="w-9 px-3 py-3">
+                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                          checked={filtered.length > 0 && filtered.every(c => selectedIds.has(c.id))}
+                          onChange={togglePageSelection} />
                       </th>
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tipo de Ação</th>
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Parceiro</th>
-                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data</th>
-                      <th className="w-10 px-2 py-3" />
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Nome</th>
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Cargo</th>
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Rede</th>
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Contato</th>
+                      <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Status</th>
+                      <th className="w-24 px-2 py-3" />
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={6} className="py-16 text-center"><Spinner className="w-6 h-6 mx-auto" /></td></tr>
+                      <tr><td colSpan={7} className="py-16 text-center"><Spinner className="w-6 h-6 mx-auto" /></td></tr>
                     ) : filtered.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-5 py-16 text-center text-sm text-gray-400">
+                        <td colSpan={7} className="px-5 py-16 text-center text-sm text-gray-400">
                           Não encontramos nenhum registro.
                         </td>
                       </tr>
                     ) : (
-                      filtered.map((c, idx) => (
+                      filtered.map((c, idx) => {
+                        const wa = c.telefone ? waLink(c.telefone) : null
+                        return (
                         <tr key={c.id}
+                          onClick={() => setViewPartner(c)}
                           className={cn(
-                            'border-b border-gray-50 dark:border-dark-700/50 hover:bg-gray-50/60 dark:hover:bg-dark-700/30 transition-colors group',
+                            'border-b border-gray-50 dark:border-dark-700/50 hover:bg-gray-50/60 dark:hover:bg-dark-700/30 transition-colors group cursor-pointer',
                             idx % 2 === 1 && 'bg-gray-50/30 dark:bg-dark-700/10'
                           )}
                         >
-                          {/* Partes = nome */}
+                          <td className="px-3 py-3.5" onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                              checked={selectedIds.has(c.id)} onChange={e => toggleSelect(c.id, e as any)} />
+                          </td>
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-3">
                               <div className={cn(
@@ -578,14 +795,12 @@ export function CollaboratorsPage() {
                               )}>
                                 {c.nome[0]?.toUpperCase()}
                               </div>
-                              <span className="font-medium text-gray-900 dark:text-white text-sm">{c.nome}</span>
+                              <span className="font-medium text-gray-900 dark:text-white text-sm hover:text-primary-600 dark:hover:text-primary-400 transition-colors">{c.nome}</span>
                             </div>
                           </td>
-                          {/* Tipo de Ação = cargo */}
                           <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-300">
                             {CARGO_LABELS[c.cargo || ''] || c.cargo || '—'}
                           </td>
-                          {/* Número do Processo = count + indicações */}
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
                               <div className="flex items-center gap-1">
@@ -600,20 +815,28 @@ export function CollaboratorsPage() {
                               )}
                             </div>
                           </td>
-                          {/* Parceiro = email */}
-                          <td className="px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400">
-                            <div className="flex items-center gap-1">
-                              {c.email
-                                ? <><Mail className="w-3.5 h-3.5 flex-shrink-0" /><span className="truncate max-w-[150px]">{c.email}</span></>
-                                : '—'}
+                          <td className="px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                              {wa && (
+                                <a href={wa} target="_blank" rel="noreferrer" title="WhatsApp" className="text-gray-400 hover:text-green-500 transition-colors flex-shrink-0">
+                                  <MessageCircle className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                              {c.email && (
+                                <a href={`mailto:${c.email}`} title={c.email} className="flex items-center gap-1 truncate max-w-[140px] hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                                  <Mail className="w-3.5 h-3.5 flex-shrink-0" /><span className="truncate">{c.email}</span>
+                                </a>
+                              )}
+                              {!c.email && !wa && '—'}
                             </div>
                           </td>
-                          {/* Data = created_at via cidade proxy */}
-                          <td className="px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                            {c.cidade || '—'}
+                          <td className="px-5 py-3.5">
+                            <Badge className={c.ativo ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'}>
+                              {c.ativo ? 'Ativo' : 'Inativo'}
+                            </Badge>
                           </td>
                           {/* Actions */}
-                          <td className="px-2 py-3.5">
+                          <td className="px-2 py-3.5" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => exportParceiro(c)} disabled={exportingId === c.id}
                                 className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50" title="Exportar contatos e processos deste parceiro">
@@ -625,14 +848,13 @@ export function CollaboratorsPage() {
                               </button>
                               <button onClick={() => deleteCollaborator(c.id)}
                                 className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors" title="Excluir">
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           </td>
                         </tr>
-                      ))
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
@@ -685,6 +907,174 @@ export function CollaboratorsPage() {
           </button>
         </div>
       </Modal>
+
+      {/* Painel de detalhe do parceiro */}
+      {viewPartner && (
+        <PartnerDetailPanel
+          partner={viewPartner}
+          clients={allClients.filter(c => c.colaborador_id === viewPartner.id)}
+          paidValue={paidCommissionValue[viewPartner.id] || 0}
+          pendingValue={pendingCommissionValue[viewPartner.id] || 0}
+          onClose={() => setViewPartner(null)}
+          onEdit={() => { openEdit(viewPartner); setViewPartner(null) }}
+          onGoToClientes={() => goToClientes(viewPartner)}
+          onGoToProcessos={() => goToProcessos(viewPartner)}
+          onAskCopiloto={() => askCopiloto(viewPartner)}
+        />
+      )}
     </Layout>
+  )
+}
+
+function PartnerDetailPanel({ partner, clients, paidValue, pendingValue, onClose, onEdit, onGoToClientes, onGoToProcessos, onAskCopiloto }: {
+  partner: Colaborador
+  clients: ParceiroClientFull[]
+  paidValue: number
+  pendingValue: number
+  onClose: () => void
+  onEdit: () => void
+  onGoToClientes: () => void
+  onGoToProcessos: () => void
+  onAskCopiloto: () => void
+}) {
+  const [processes, setProcesses] = useState<ParceiroProcessRow[]>([])
+  const [loadingProc, setLoadingProc] = useState(true)
+  const wa = partner.telefone ? waLink(partner.telefone) : null
+
+  useEffect(() => {
+    let active = true
+    setLoadingProc(true)
+    supabase.from('processes')
+      .select('id,number,title,client_name,modalidade,area,status,next_deadline')
+      .eq('colaborador_id', partner.id).is('deleted_at', null).order('created_at', { ascending: false })
+      .then(({ data }) => { if (active) { setProcesses((data || []) as ParceiroProcessRow[]); setLoadingProc(false) } })
+    return () => { active = false }
+  }, [partner.id])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="bg-white dark:bg-dark-800 rounded-2xl shadow-2xl flex flex-col w-full max-w-2xl max-h-[88vh] overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-6 flex-shrink-0">
+          <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-2xl font-bold flex-shrink-0">
+              {partner.nome[0]?.toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-xl font-bold">{partner.nome}</h3>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <Badge className="bg-white/20 text-white border border-white/30">{CARGO_LABELS[partner.cargo || ''] || partner.cargo || '—'}</Badge>
+                <Badge className={partner.ativo ? 'bg-white/20 text-white border border-white/30' : 'bg-black/20 text-white/70 border border-white/20'}>
+                  {partner.ativo ? 'Ativo' : 'Inativo'}
+                </Badge>
+                {partner.comissao_percent != null && (
+                  <Badge className="bg-white/20 text-white border border-white/30">{partner.comissao_percent}% comissão</Badge>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* Stats + ações */}
+          <div className="p-5 border-b border-gray-100 dark:border-dark-700 space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="text-center p-3 rounded-xl bg-gray-50 dark:bg-dark-700/50">
+                <p className="text-lg font-bold text-gray-900 dark:text-white">{clients.length}</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">Contatos</p>
+              </div>
+              <div className="text-center p-3 rounded-xl bg-gray-50 dark:bg-dark-700/50">
+                <p className="text-lg font-bold text-gray-900 dark:text-white">{processes.length}</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">Processos</p>
+              </div>
+              <div className="text-center p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
+                <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(paidValue)}</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">Comissão paga</p>
+              </div>
+              <div className="text-center p-3 rounded-xl bg-orange-50 dark:bg-orange-900/20">
+                <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{formatCurrency(pendingValue)}</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">Comissão pendente</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {wa && (
+                <a href={wa} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-green-200 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors">
+                  <MessageCircle className="w-3.5 h-3.5" />WhatsApp
+                </a>
+              )}
+              <button onClick={onGoToClientes} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                <UserCheck className="w-3.5 h-3.5" />Ver contatos
+              </button>
+              <button onClick={onGoToProcessos} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                <Briefcase className="w-3.5 h-3.5" />Ver processos
+              </button>
+              <button onClick={onAskCopiloto} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                <Sparkles className="w-3.5 h-3.5" />Copiloto
+              </button>
+              <button onClick={onEdit} className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">
+                <Edit3 className="w-3.5 h-3.5" />Editar
+              </button>
+            </div>
+          </div>
+
+          {/* Contatos vinculados */}
+          <div className="p-5 border-b border-gray-100 dark:border-dark-700">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">Contatos vinculados</p>
+            {clients.length === 0 ? (
+              <p className="text-sm text-gray-400 dark:text-gray-500">Nenhum contato indicado por este parceiro ainda.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {clients.slice(0, 8).map(c => (
+                  <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 dark:bg-dark-700/50 rounded-lg">
+                    <span className="text-sm text-gray-800 dark:text-gray-200 truncate">{c.name}</span>
+                    <span className={cn('text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0',
+                      c.colaborador_pago ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400')}>
+                      {c.colaborador_pago ? 'Comissão paga' : 'Comissão pendente'}
+                    </span>
+                  </div>
+                ))}
+                {clients.length > 8 && (
+                  <button onClick={onGoToClientes} className="text-xs text-primary-600 dark:text-primary-400 hover:underline pt-1">Ver todos os {clients.length} contatos →</button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Processos vinculados */}
+          <div className="p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">Processos vinculados</p>
+            {loadingProc ? (
+              <div className="flex justify-center py-6"><Spinner className="w-5 h-5" /></div>
+            ) : processes.length === 0 ? (
+              <p className="text-sm text-gray-400 dark:text-gray-500">Nenhum processo vinculado a este parceiro.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {processes.slice(0, 8).map(p => (
+                  <div key={p.id} className="flex items-center gap-3 bg-gray-50 dark:bg-dark-700/50 rounded-lg px-3 py-2 overflow-hidden">
+                    <div className={cn('w-1 self-stretch rounded-full flex-shrink-0', p.modalidade === 'judicial' ? 'bg-purple-500' : 'bg-blue-500')} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{p.title}</p>
+                      <p className="text-[11px] font-mono text-gray-400">{p.number}</p>
+                    </div>
+                    <Badge className={cn(p.status === 'active' ? 'bg-green-100 text-green-700' : p.status === 'won' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600')}>
+                      {PROCESS_STATUS_LABELS[p.status || 'active'] || p.status}
+                    </Badge>
+                  </div>
+                ))}
+                {processes.length > 8 && (
+                  <button onClick={onGoToProcessos} className="text-xs text-primary-600 dark:text-primary-400 hover:underline pt-1">Ver todos os {processes.length} processos →</button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }

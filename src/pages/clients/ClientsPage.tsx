@@ -400,9 +400,14 @@ export function ClientsPage() {
   }
   const location = useLocation()
   useEffect(() => {
-    const state = location.state as { openNew?: boolean; prefillSearch?: string } | null
+    const state = location.state as { openNew?: boolean; prefillSearch?: string; prefillColaborador?: string } | null
     if (state?.openNew) { openNew(); window.history.replaceState({}, '') }
     else if (state?.prefillSearch) { setSearch(state.prefillSearch); window.history.replaceState({}, '') }
+    else if (state?.prefillColaborador) {
+      setViewMode('byColaborador')
+      setExpandedGroups(new Set([state.prefillColaborador]))
+      window.history.replaceState({}, '')
+    }
   }, [location.state])
 
   useEffect(() => {
