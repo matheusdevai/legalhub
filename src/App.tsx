@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { LandingPage } from '@/pages/landing/LandingPage'
 import { Login } from '@/pages/auth/Login'
+import { ResetPassword } from '@/pages/auth/ResetPassword'
 import { Dashboard } from '@/pages/dashboard/Dashboard'
 import { ClientsPage } from '@/pages/clients/ClientsPage'
 import { ProcessesPage } from '@/pages/processes/ProcessesPage'
@@ -55,6 +56,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<LandingPage />} />
       <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/clientes" element={<PrivateRoute><ClientsPage /></PrivateRoute>} />

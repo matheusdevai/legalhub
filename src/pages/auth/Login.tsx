@@ -81,11 +81,13 @@ export function Login() {
   }
 
   async function handleForgot(e: FormEvent) {
-    e.preventDefault(); setForgotLoading(true)
-    await supabase.auth.resetPasswordForEmail(forgotEmail, {
+    e.preventDefault(); setError(''); setForgotLoading(true)
+    const { error: err } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
       redirectTo: window.location.origin + '/reset-password',
     })
-    setForgotLoading(false); setForgotDone(true)
+    setForgotLoading(false)
+    if (err) { setError('Não foi possível enviar o e-mail. Verifique o endereço e tente novamente.'); return }
+    setForgotDone(true)
   }
 
   async function loginWithGoogle() {
@@ -332,6 +334,9 @@ export function Login() {
                     value={forgotEmail} onChange={e => setForgotEmail(e.target.value)}
                     className={inputCls} />
                 </div>
+                {error && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">{error}</p>
+                )}
                 <button type="submit" disabled={forgotLoading}
                   className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-60"
                   style={{ background: '#0f172a', boxShadow: '0 4px 14px rgba(15,23,42,0.25)' }}>
