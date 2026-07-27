@@ -64,7 +64,11 @@ const TIPOS_ACAO: Record<string, string[]> = {
   'Tributário': ['Execução fiscal', 'Mandado de segurança', 'Restituição de tributos', 'Outro'],
   'Administrativo': ['Cargo - vereador', 'Licitação', 'Concurso público', 'Outro'],
   'Família': ['Divórcio', 'Guarda', 'Alimentos', 'Inventário', 'Outro'],
-  'Previdenciário': ['Aposentadoria', 'BPC/LOAS', 'Auxílio-doença', 'Outro'],
+  'Previdenciário': [
+    'Aposentadoria por Idade', 'Aposentadoria por Tempo de Contribuição', 'Aposentadoria por Invalidez',
+    'Aposentadoria Especial', 'Aposentadoria da Pessoa com Deficiência', 'Auxílio-Doença', 'Auxílio-Acidente',
+    'BPC/LOAS', 'Pensão por Morte', 'Auxílio-Reclusão', 'Salário-Maternidade', 'Revisão de Benefício', 'Outro',
+  ],
   'Empresarial': ['Recuperação judicial', 'Dissolução societária', 'Outro'],
   'Imobiliário': ['Usucapião', 'Despejo', 'Compra e venda', 'Outro'],
   'Outro': ['Outro'],
@@ -382,12 +386,20 @@ export function TasksPage() {
   function requestComplete(t: Task) {
     const match = t.description?.match(/^client_id:([a-f0-9-]{36})/)
     const preClient = match ? clients.find(c => c.id === match[1]) : null
+    const matchOption = (value: string | null | undefined, options: string[]) => {
+      const v = value?.trim().toLowerCase()
+      return (v && options.find(o => o.toLowerCase() === v)) || ''
+    }
+    const grupoAcao = matchOption((preClient as any)?.area_direito, GRUPOS_ACAO)
+    const tipoAcao = grupoAcao ? matchOption((preClient as any)?.beneficio_previdenciario, TIPOS_ACAO[grupoAcao] || []) : ''
     setCompletionModal({ taskId: t.id, taskTitle: t.title, taskType: t.type || 'custom', step: 'ask' })
     setCompletionForm({
       ...PROCESS_EMPTY_FORM,
       client_id: preClient?.id || '',
       client_name: preClient?.name || '',
       colaborador_id: preClient?.colaborador_id || '',
+      grupo_acao: grupoAcao,
+      type: tipoAcao,
       data_protocolo: new Date().toISOString().slice(0, 10),
     })
   }
