@@ -34,21 +34,14 @@ const FILTER_OPTIONS = [
   { id: 'other',     label: 'Outros' },
 ]
 
-// Built-in public library templates
-const BIBLIOTECA_PUBLICA: { title: string; type: string; category: string; content: string }[] = [
-  { title: 'Contrato de Honorários Advocatícios', type: 'contract', category: 'Contratos',
-    content: 'CONTRATO DE HONORÁRIOS\n\nCONTRATANTE: [Nome do cliente], [Qualificação]\nCONTRATADO: [Nome do advogado], OAB/[Estado] nº [OAB]\n\nCLÁUSULA 1ª – DO OBJETO\nO presente contrato tem por objeto a prestação de serviços advocatícios...' },
-  { title: 'Procuração Ad Judicia', type: 'template', category: 'Procurações',
-    content: 'PROCURAÇÃO\n\nEu, [Nome do outorgante], [Qualificação], pelo presente instrumento, nomeio e constituo meu bastante procurador o Dr. [Nome do advogado], inscrito na OAB/[Estado] sob o nº [OAB]...' },
-  { title: 'Procuração ao Juízo com Poderes Especiais', type: 'template', category: 'Procurações',
-    content: 'PROCURAÇÃO AO JUÍZO COM PODERES ESPECIAIS\n\nEu, [Nome do outorgante], [Qualificação], OUTORGO ao Dr. [Nome do advogado] amplos poderes para o foro em geral, incluindo os especiais para receber citação, confessar, desistir, transigir...' },
-  { title: 'Declaração de Hipossuficiência', type: 'template', category: 'Declarações',
-    content: 'DECLARAÇÃO DE HIPOSSUFICIÊNCIA\n\nEu, [Nome], portador do CPF nº [CPF], declaro, sob as penas da lei, que não possuo condições financeiras de arcar com as custas processuais e os honorários advocatícios...' },
-  { title: 'Contestação Cível', type: 'petition', category: 'Cível',
-    content: 'EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO\n\nProcesso nº [Número do processo]\n\n[Nome do réu], já qualificado nos autos do processo em epígrafe, vem, por seu advogado, apresentar CONTESTAÇÃO...' },
-  { title: 'Petição Inicial — Ação de Cobrança', type: 'petition', category: 'Cível',
-    content: 'EXCELENTÍSSIMO SENHOR DOUTOR JUIZ DE DIREITO\n\n[Nome do autor], [Qualificação], vem propor AÇÃO DE COBRANÇA em face de [Nome do réu], pelos fatos e fundamentos a seguir expostos...' },
-]
+interface LibraryTemplate {
+  id: string
+  title: string
+  type: string
+  category: string | null
+  content: string
+  is_library_public: true
+}
 
 function formatFileSize(bytes?: number) {
   if (!bytes) return ''
@@ -107,7 +100,9 @@ function DocThumbnail({ content, title }: { content: string; title: string }) {
 
 export function DocumentsPage() {
   const { profile } = useAuth()
+  const isSuperAdmin = profile?.role === 'super_admin'
   const [documents, setDocuments] = useState<Document[]>([])
+  const [libraryTemplates, setLibraryTemplates] = useState<LibraryTemplate[]>([])
   const [loading, setLoading] = usePageLoadingState()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -118,6 +113,7 @@ export function DocumentsPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ title: '', type: 'template', category: '', content: '', tags: '' })
   const [editId, setEditId] = useState<string | null>(null)
+  const [editingLibrary, setEditingLibrary] = useState(false)
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -128,12 +124,12 @@ export function DocumentsPage() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('documents')
-      .select('*')
-      .is('deleted_at', null)
-      .order('updated_at', { ascending: false })
+    const [{ data }, { data: libData }] = await Promise.all([
+      supabase.from('documents').select('*').is('deleted_at', null).order('updated_at', { ascending: false }),
+      supabase.from('document_library_templates').select('*').is('deleted_at', null).order('title'),
+    ])
     setDocuments((data || []) as Document[])
+    setLibraryTemplates((libData || []).map((t: any) => ({ ...t, is_library_public: true as const })))
     setLoading(false)
   }
 
@@ -142,20 +138,23 @@ export function DocumentsPage() {
   async function save() {
     if (!form.title.trim()) return
     setSaving(true)
-    const payload = {
-      title: form.title, type: form.type,
-      category: form.category || null, content: form.content,
-      is_template: form.type === 'template',
-      tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
-    }
-    if (editId) {
-      await supabase.from('documents').update(payload).eq('id', editId)
+    if (editingLibrary) {
+      const payload = { title: form.title, type: form.type, category: form.category || null, content: form.content }
+      if (editId) await supabase.from('document_library_templates').update(payload).eq('id', editId)
+      else await supabase.from('document_library_templates').insert(payload)
     } else {
-      await supabase.from('documents').insert(payload)
+      const payload = {
+        title: form.title, type: form.type,
+        category: form.category || null, content: form.content,
+        is_template: form.type === 'template',
+        tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+      }
+      if (editId) await supabase.from('documents').update(payload).eq('id', editId)
+      else await supabase.from('documents').insert(payload)
     }
     setSaving(false); setModalOpen(false)
     setForm({ title: '', type: 'template', category: '', content: '', tags: '' })
-    setEditId(null); load()
+    setEditId(null); setEditingLibrary(false); load()
   }
 
   async function deleteDoc(id: string) {
@@ -164,9 +163,30 @@ export function DocumentsPage() {
     load()
   }
 
+  async function deleteLibraryTemplate(id: string) {
+    if (!confirm('Excluir este modelo da Biblioteca Pública? Ele deixará de ficar visível para todos os escritórios.')) return
+    await supabase.from('document_library_templates').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    load()
+  }
+
   function openNew(prefill?: Partial<typeof form>) {
     setEditId(null)
+    setEditingLibrary(false)
     setForm({ title: '', type: 'template', category: '', content: '', tags: '', ...prefill })
+    setModalOpen(true)
+  }
+
+  function openNewLibraryTemplate() {
+    setEditId(null)
+    setEditingLibrary(true)
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '' })
+    setModalOpen(true)
+  }
+
+  function openEditLibraryTemplate(tpl: LibraryTemplate) {
+    setEditId(tpl.id)
+    setEditingLibrary(true)
+    setForm({ title: tpl.title, type: tpl.type, category: tpl.category || '', content: tpl.content, tags: '' })
     setModalOpen(true)
   }
 
@@ -220,7 +240,7 @@ export function DocumentsPage() {
         const matchType = !typeFilter || d.type === typeFilter
         return matchSearch && matchType
       })
-    : BIBLIOTECA_PUBLICA.filter(d => {
+    : libraryTemplates.filter(d => {
         const matchSearch = !search || d.title.toLowerCase().includes(search.toLowerCase())
         const matchType = !typeFilter || d.type === typeFilter
         return matchSearch && matchType
@@ -316,7 +336,15 @@ export function DocumentsPage() {
                 />
               </div>
               {/* Filtrar por */}
-              <div className="relative ml-auto">
+              <div className="relative ml-auto flex items-center gap-2">
+                {activeTab === 'publica' && isSuperAdmin && (
+                  <button
+                    onClick={openNewLibraryTemplate}
+                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium border border-primary-200 dark:border-primary-800 rounded-lg bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" /> Novo modelo público
+                  </button>
+                )}
                 <button
                   onClick={() => setFilterOpen(v => !v)}
                   className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
@@ -362,7 +390,7 @@ export function DocumentsPage() {
                           className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Visualizar">
                           <Eye className="w-4 h-4" />
                         </button>
-                        {(doc as any).id && (doc as Document).file_url && (
+                        {!(doc as any).is_library_public && (doc as Document).file_url && (
                           <a
                             href={(doc as Document).file_url}
                             target="_blank"
@@ -372,25 +400,39 @@ export function DocumentsPage() {
                             <Download className="w-4 h-4" />
                           </a>
                         )}
-                        {(doc as any).id && !(doc as Document).file_url && (
+                        {!(doc as any).is_library_public && !(doc as Document).file_url && (
                           <button
                             onClick={e => { e.stopPropagation(); openEdit(doc as Document) }}
                             className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Editar">
                             <Edit3 className="w-4 h-4" />
                           </button>
                         )}
-                        {(doc as any).id && (
+                        {!(doc as any).is_library_public && (
                           <button
                             onClick={e => { e.stopPropagation(); deleteDoc((doc as any).id) }}
                             className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors" title="Excluir">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
-                        {!(doc as any).id && (
+                        {(doc as any).is_library_public && (
                           <button
                             onClick={e => { e.stopPropagation(); openNew({ title: doc.title, type: (doc as any).type, category: (doc as any).category, content: (doc as any).content }) }}
                             className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Usar modelo">
                             <Copy className="w-4 h-4" />
+                          </button>
+                        )}
+                        {(doc as any).is_library_public && isSuperAdmin && (
+                          <button
+                            onClick={e => { e.stopPropagation(); openEditLibraryTemplate(doc as LibraryTemplate) }}
+                            className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Editar (admin)">
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                        )}
+                        {(doc as any).is_library_public && isSuperAdmin && (
+                          <button
+                            onClick={e => { e.stopPropagation(); deleteLibraryTemplate((doc as any).id) }}
+                            className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors" title="Excluir (admin)">
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -411,7 +453,9 @@ export function DocumentsPage() {
       </div>
 
       {/* Create/Edit Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Editar Documento' : 'Novo Documento'} size="lg">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={
+        editingLibrary ? (editId ? 'Editar Modelo Público' : 'Novo Modelo Público') : (editId ? 'Editar Documento' : 'Novo Documento')
+      } size="lg">
         <div className="space-y-4">
           <Input label="Título *" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Nome do documento" />
           <div className="grid grid-cols-2 gap-4">
@@ -425,7 +469,14 @@ export function DocumentsPage() {
           </div>
           <Textarea label="Conteúdo" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={10}
             placeholder="Insira o conteúdo. Use [NOME_CLIENTE], [NUMERO_PROCESSO], [DATA] como variáveis..." />
-          <Input label="Tags (separadas por vírgula)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="cível, contrato, honorários" />
+          {!editingLibrary && (
+            <Input label="Tags (separadas por vírgula)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="cível, contrato, honorários" />
+          )}
+          {editingLibrary && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
+              Este modelo fica visível na Biblioteca Pública para todos os escritórios do sistema.
+            </p>
+          )}
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button onClick={() => setModalOpen(false)}
@@ -472,22 +523,28 @@ export function DocumentsPage() {
               className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
               Fechar
             </button>
-            {previewDoc.id && previewDoc.file_url && (
+            {!previewDoc.is_library_public && previewDoc.file_url && (
               <a href={previewDoc.file_url} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors">
                 <Download className="w-4 h-4" /> Baixar
               </a>
             )}
-            {previewDoc.id && !previewDoc.file_url && (
+            {!previewDoc.is_library_public && !previewDoc.file_url && (
               <button onClick={() => { openEdit(previewDoc); setPreviewDoc(null) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
                 <Edit3 className="w-4 h-4" /> Editar
               </button>
             )}
-            {!previewDoc.id && (
+            {previewDoc.is_library_public && (
               <button onClick={() => { openNew({ title: previewDoc.title, type: previewDoc.type, category: previewDoc.category, content: previewDoc.content }); setPreviewDoc(null) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
                 <Copy className="w-4 h-4" /> Usar este modelo
+              </button>
+            )}
+            {previewDoc.is_library_public && isSuperAdmin && (
+              <button onClick={() => { openEditLibraryTemplate(previewDoc); setPreviewDoc(null) }}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                <Edit3 className="w-4 h-4" /> Editar (admin)
               </button>
             )}
           </div>

@@ -12,6 +12,24 @@ const ESTADOS_BR = [
   'RJ','RN','RO','RR','RS','SC','SE','SP','TO',
 ]
 
+// Mapeia seccional (UF) → código do TJ no DataJud (API pública do CNJ)
+const UF_TO_TJ: Record<string, string> = {
+  AC: 'tjac', AL: 'tjal', AM: 'tjam', AP: 'tjap', BA: 'tjba', CE: 'tjce',
+  DF: 'tjdft', ES: 'tjes', GO: 'tjgo', MA: 'tjma', MG: 'tjmg', MS: 'tjms',
+  MT: 'tjmt', PA: 'tjpa', PB: 'tjpb', PE: 'tjpe', PI: 'tjpi', PR: 'tjpr',
+  RJ: 'tjrj', RN: 'tjrn', RO: 'tjro', RR: 'tjrr', RS: 'tjrs', SC: 'tjsc',
+  SE: 'tjse', SP: 'tjsp', TO: 'tjto',
+}
+
+const TRFS_CNJ = [
+  { code: 'trf1', label: 'TRF1' },
+  { code: 'trf2', label: 'TRF2' },
+  { code: 'trf3', label: 'TRF3' },
+  { code: 'trf4', label: 'TRF4' },
+  { code: 'trf5', label: 'TRF5' },
+  { code: 'trf6', label: 'TRF6' },
+]
+
 type Step = 'config' | 'syncing' | 'result'
 
 interface SyncResult {
@@ -22,6 +40,8 @@ interface SyncResult {
   oab: string
   jusbrasil: { total: number; imported: number; updated: number; first_sync_note?: string | null } | null
   escavador: { total: number; imported: number; updated: number } | null
+  cnj: { total: number; imported: number; updated: number } | null
+  pje: { total: number; imported: number; updated: number } | null
 }
 
 interface Props { onDone: () => void }
@@ -36,6 +56,15 @@ export function OabSyncModal({ onDone }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [savingOab, setSavingOab] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
+  const [tribunais, setTribunais] = useState<string[]>(profile?.oab_seccional ? [UF_TO_TJ[profile.oab_seccional]] : [])
+  const [showMaisTribunais, setShowMaisTribunais] = useState(false)
+  const [showPje, setShowPje] = useState(false)
+  const [pjeCpf, setPjeCpf] = useState('')
+  const [pjeSenha, setPjeSenha] = useState('')
+
+  function toggleTribunal(code: string) {
+    setTribunais(prev => prev.includes(code) ? prev.filter(t => t !== code) : [...prev, code])
+  }
 
   async function startSync() {
     if (!oabNumber.trim() || !oabSeccional) {
@@ -58,8 +87,12 @@ export function OabSyncModal({ onDone }: Props) {
     setStep('syncing')
 
     const body = { oab_number: oabNumber.trim(), oab_seccional: oabSeccional.toUpperCase() }
+    const cnjBody = { ...body, tribunais }
+    const pjeBody = { cpf: pjeCpf.replace(/\D/g, ''), senha: pjeSenha, tribunais }
+    const usePje = showPje && pjeCpf.trim() && pjeSenha.trim() && tribunais.length > 0
+    setPjeSenha('') // não retém a senha do PJe em memória após o disparo
 
-    const [jbSettled, escSettled] = await Promise.allSettled([
+    const [jbSettled, escSettled, cnjSettled, pjeSettled] = await Promise.allSettled([
       supabase.functions.invoke('sync-jusbrasil', { body }).catch((e: any) => ({
         data: { error: e?.message || 'Erro JusBrasil', total: 0, imported: 0, updated: 0, errors: [] },
         error: null,
@@ -68,6 +101,18 @@ export function OabSyncModal({ onDone }: Props) {
         data: { error: e?.message || 'Erro Escavador', total: 0, imported: 0, updated: 0, errors: [] },
         error: null,
       })),
+      tribunais.length > 0
+        ? supabase.functions.invoke('sync-cnj', { body: cnjBody }).catch((e: any) => ({
+            data: { error: e?.message || 'Erro CNJ', total: 0, imported: 0, updated: 0, errors: [] },
+            error: null,
+          }))
+        : Promise.resolve({ data: null, error: null }),
+      usePje
+        ? supabase.functions.invoke('sync-pje', { body: pjeBody }).catch((e: any) => ({
+            data: { error: e?.message || 'Erro PJe', total: 0, imported: 0, updated: 0, errors: [] },
+            error: null,
+          }))
+        : Promise.resolve({ data: null, error: null }),
     ])
 
     const allErrors: string[] = []
@@ -92,14 +137,36 @@ export function OabSyncModal({ onDone }: Props) {
       }
     }
 
+    let cnjData: any = null
+    if (cnjSettled.status === 'fulfilled') {
+      const d = (cnjSettled.value as any)?.data
+      if (d?.error) allErrors.push(`CNJ: ${d.error}`)
+      else if (d) {
+        cnjData = d
+        if (Array.isArray(d.errors)) allErrors.push(...d.errors.map((e: string) => `CNJ: ${e}`))
+      }
+    }
+
+    let pjeData: any = null
+    if (pjeSettled.status === 'fulfilled') {
+      const d = (pjeSettled.value as any)?.data
+      if (d?.error) allErrors.push(`PJe: ${d.error}`)
+      else if (d) {
+        pjeData = d
+        if (Array.isArray(d.errors)) allErrors.push(...d.errors.map((e: string) => `PJe: ${e}`))
+      }
+    }
+
     setResult({
-      total: (jbData?.total || 0) + (escData?.total || 0),
-      imported: (jbData?.imported || 0) + (escData?.imported || 0),
-      updated: (jbData?.updated || 0) + (escData?.updated || 0),
+      total: (jbData?.total || 0) + (escData?.total || 0) + (cnjData?.total || 0) + (pjeData?.total || 0),
+      imported: (jbData?.imported || 0) + (escData?.imported || 0) + (cnjData?.imported || 0) + (pjeData?.imported || 0),
+      updated: (jbData?.updated || 0) + (escData?.updated || 0) + (cnjData?.updated || 0) + (pjeData?.updated || 0),
       errors: allErrors,
-      oab: jbData?.oab || escData?.oab || `${oabNumber}/${oabSeccional}`,
+      oab: jbData?.oab || escData?.oab || cnjData?.oab || `${oabNumber}/${oabSeccional}`,
       jusbrasil: jbData ? { total: jbData.total, imported: jbData.imported, updated: jbData.updated, first_sync_note: jbData.first_sync_note } : null,
       escavador: escData ? { total: escData.total, imported: escData.imported, updated: escData.updated } : null,
+      cnj: cnjData ? { total: cnjData.total, imported: cnjData.imported, updated: cnjData.updated } : null,
+      pje: pjeData ? { total: pjeData.total, imported: pjeData.imported, updated: pjeData.updated } : null,
     })
     setStep('result')
   }
@@ -120,8 +187,8 @@ export function OabSyncModal({ onDone }: Props) {
                 Sincronizar processos via OAB
               </h2>
               <p className="text-xs text-primary-100 mt-0.5">
-                {step === 'config' && 'JusBrasil + Escavador — busca automática por OAB'}
-                {step === 'syncing' && 'Buscando processos no JusBrasil e Escavador…'}
+                {step === 'config' && 'JusBrasil + Escavador + CNJ — busca automática por OAB'}
+                {step === 'syncing' && 'Buscando processos no JusBrasil, Escavador e CNJ…'}
                 {step === 'result' && 'Sincronização concluída'}
               </p>
             </div>
@@ -163,8 +230,9 @@ export function OabSyncModal({ onDone }: Props) {
         <div className="space-y-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             Informe sua OAB para importar automaticamente seus processos via{' '}
-            <strong className="text-gray-700 dark:text-gray-200">JusBrasil</strong> e{' '}
-            <strong className="text-gray-700 dark:text-gray-200">Escavador</strong>.
+            <strong className="text-gray-700 dark:text-gray-200">JusBrasil</strong>,{' '}
+            <strong className="text-gray-700 dark:text-gray-200">Escavador</strong> e{' '}
+            <strong className="text-gray-700 dark:text-gray-200">CNJ (DataJud)</strong>.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <Input
@@ -176,7 +244,12 @@ export function OabSyncModal({ onDone }: Props) {
             <Select
               label="Seccional (UF) *"
               value={oabSeccional}
-              onChange={e => setOabSeccional(e.target.value)}
+              onChange={e => {
+                const uf = e.target.value
+                setOabSeccional(uf)
+                const tj = UF_TO_TJ[uf]
+                if (tj) setTribunais(prev => prev.includes(tj) ? prev : [tj, ...prev])
+              }}
             >
               <option value="">Selecione</option>
               {ESTADOS_BR.map(uf => <option key={uf} value={uf}>{uf}</option>)}
@@ -185,7 +258,7 @@ export function OabSyncModal({ onDone }: Props) {
 
           <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
             <div className="flex gap-2 flex-wrap">
-              {['JusBrasil', 'Escavador'].map(src => (
+              {['JusBrasil', 'Escavador', 'CNJ'].map(src => (
                 <span key={src} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-dark-700 border border-blue-200 dark:border-blue-700 text-xs font-medium text-blue-700 dark:text-blue-300 shadow-sm">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   {src}
@@ -193,8 +266,93 @@ export function OabSyncModal({ onDone }: Props) {
               ))}
             </div>
             <p className="text-xs text-blue-600 dark:text-blue-400 flex-1">
-              Busca em paralelo nas duas plataformas
+              Busca em paralelo nas três plataformas
             </p>
+          </div>
+
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+              Tribunais para busca no CNJ (DataJud)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {oabSeccional && UF_TO_TJ[oabSeccional] && (
+                <button
+                  type="button"
+                  onClick={() => toggleTribunal(UF_TO_TJ[oabSeccional])}
+                  className={cn(
+                    'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                    tribunais.includes(UF_TO_TJ[oabSeccional])
+                      ? 'bg-primary-600 text-white border-primary-600'
+                      : 'bg-white dark:bg-dark-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-dark-600',
+                  )}
+                >
+                  TJ{oabSeccional}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowMaisTribunais(v => !v)}
+                className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 dark:border-dark-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                {showMaisTribunais ? 'Ocultar tribunais federais' : '+ Tribunais federais (TRF)'}
+              </button>
+            </div>
+            {showMaisTribunais && (
+              <div className="flex flex-wrap gap-1.5">
+                {TRFS_CNJ.map(trf => (
+                  <button
+                    key={trf.code}
+                    type="button"
+                    onClick={() => toggleTribunal(trf.code)}
+                    className={cn(
+                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                      tribunais.includes(trf.code)
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'bg-white dark:bg-dark-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-dark-600',
+                    )}
+                  >
+                    {trf.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {tribunais.length === 0 && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                Nenhum tribunal selecionado — a busca no CNJ será pulada (JusBrasil e Escavador continuam ativos).
+              </p>
+            )}
+          </div>
+
+          <div className="border border-gray-100 dark:border-dark-700 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setShowPje(v => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400"
+            >
+              <span>+ Sincronizar também via PJe (opcional)</span>
+              <span className="text-gray-300 dark:text-gray-600">{showPje ? '−' : '+'}</span>
+            </button>
+            {showPje && (
+              <div className="px-3 pb-3 space-y-2">
+                <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                  Usa seu login do PJe (CPF e senha) para consultar avisos pendentes nos tribunais selecionados acima. As credenciais não são armazenadas — usadas apenas nesta consulta.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="CPF (PJe)"
+                    value={pjeCpf}
+                    onChange={e => setPjeCpf(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Somente números"
+                  />
+                  <Input
+                    label="Senha (PJe)"
+                    type="password"
+                    value={pjeSenha}
+                    onChange={e => setPjeSenha(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
@@ -220,7 +378,7 @@ export function OabSyncModal({ onDone }: Props) {
           </div>
           <div className="text-center space-y-1">
             <p className="font-semibold text-gray-900 dark:text-white">
-              Buscando no JusBrasil e Escavador
+              Buscando no JusBrasil, Escavador e CNJ
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               OAB {oabNumber}/{oabSeccional}
@@ -266,11 +424,13 @@ export function OabSyncModal({ onDone }: Props) {
           </div>
 
           {/* Breakdown por fonte */}
-          {(result.jusbrasil || result.escavador) && (
+          {(result.jusbrasil || result.escavador || result.cnj || result.pje) && (
             <div className="grid grid-cols-2 gap-2">
               {[
                 { label: 'JusBrasil', data: result.jusbrasil },
                 { label: 'Escavador', data: result.escavador },
+                { label: 'CNJ', data: result.cnj },
+                { label: 'PJe', data: result.pje },
               ].map(({ label, data }) => (
                 <div key={label} className="p-3 rounded-xl border border-gray-100 dark:border-dark-700 bg-gray-50/50 dark:bg-dark-800/50">
                   <div className="flex items-center gap-1.5 mb-1.5">
@@ -282,7 +442,11 @@ export function OabSyncModal({ onDone }: Props) {
                       {data.total} encontrados · {data.imported} novos · {data.updated} atualizados
                     </p>
                   ) : (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 italic">Token não configurado</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 italic">
+                      {label === 'CNJ' ? 'Nenhum tribunal selecionado'
+                        : label === 'PJe' ? 'Não utilizado nesta busca'
+                        : 'Token não configurado'}
+                    </p>
                   )}
                 </div>
               ))}

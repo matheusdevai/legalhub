@@ -61,9 +61,13 @@ function gTokenKey(uid: string)     { return `gcal_token_${uid}` }
 function gEmailKey(uid: string)     { return `gcal_email_${uid}` }
 function gConnectedKey(uid: string) { return `gcal_connected_${uid}` }
 
+// O access_token fica em sessionStorage (não localStorage): é o dado sensível
+// aqui — escopo de calendário por até 1h — e não deve sobreviver ao fechamento
+// do navegador. E-mail/flag "conectado" seguem em localStorage por serem só
+// estado de UX (permitem o silent-refresh voltar sem novo consentimento).
 function getStoredToken(uid: string): string | null {
   try {
-    const raw = localStorage.getItem(gTokenKey(uid))
+    const raw = sessionStorage.getItem(gTokenKey(uid))
     if (!raw) return null
     const { access_token, expires_at } = JSON.parse(raw)
     if (Date.now() > expires_at - 60_000) return null
@@ -71,10 +75,10 @@ function getStoredToken(uid: string): string | null {
   } catch { return null }
 }
 function storeToken(uid: string, token: string, expiresIn: number) {
-  localStorage.setItem(gTokenKey(uid), JSON.stringify({ access_token: token, expires_at: Date.now() + expiresIn * 1000 }))
+  sessionStorage.setItem(gTokenKey(uid), JSON.stringify({ access_token: token, expires_at: Date.now() + expiresIn * 1000 }))
 }
 function clearToken(uid: string) {
-  localStorage.removeItem(gTokenKey(uid))
+  sessionStorage.removeItem(gTokenKey(uid))
   localStorage.removeItem(gEmailKey(uid))
   localStorage.removeItem(gConnectedKey(uid))
 }

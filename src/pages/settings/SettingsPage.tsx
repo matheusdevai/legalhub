@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   User, Lock, Bell, Building2, CreditCard, Palette, Globe,
   CheckCircle2, AlertCircle, Eye, EyeOff, Shield, Smartphone, Mail,
@@ -9,6 +9,21 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { NotificationPrefs } from '@/types'
+
+const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  new_tasks: true, task_due: true, new_processes: false,
+  new_publications: true, financial_due: true, new_clients: false,
+}
+
+const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; icon: any; label: string; desc: string }[] = [
+  { key: 'new_tasks',        icon: Bell,       label: 'Novas tarefas atribuídas', desc: 'Quando uma tarefa é atribuída a você' },
+  { key: 'task_due',         icon: AlertCircle, label: 'Tarefas vencendo',         desc: 'Lembretes 24h antes do vencimento' },
+  { key: 'new_processes',    icon: Mail,       label: 'Novos processos',          desc: 'Quando um processo é criado ou atualizado' },
+  { key: 'new_publications', icon: Bell,       label: 'Novas publicações',        desc: 'Publicações no Diário de Justiça' },
+  { key: 'financial_due',    icon: CreditCard, label: 'Vencimentos financeiros',   desc: 'Cobranças próximas do vencimento' },
+  { key: 'new_clients',      icon: User,       label: 'Novos clientes',           desc: 'Quando um cliente é cadastrado' },
+]
 
 type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'plan'
 
@@ -26,9 +41,19 @@ export function SettingsPage() {
   const [tab, setTab] = useState<Tab>('profile')
   const [name, setName] = useState(profile?.name || profile?.display_name || '')
   const [city, setCity] = useState(profile?.city || '')
-  const [phone, setPhone] = useState('')
+  const [phone, setPhone] = useState(profile?.phone || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>(profile?.notification_prefs || DEFAULT_NOTIFICATION_PREFS)
+  const [savingNotifKey, setSavingNotifKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!profile) return
+    setName(profile.name || profile.display_name || '')
+    setCity(profile.city || '')
+    setPhone(profile.phone || '')
+    setNotifPrefs(profile.notification_prefs || DEFAULT_NOTIFICATION_PREFS)
+  }, [profile])
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPwd, setShowPwd] = useState(false)
@@ -40,11 +65,21 @@ export function SettingsPage() {
   async function saveProfile() {
     if (!profile) return
     setSaving(true)
-    await supabase.from('profiles').update({ name, city }).eq('id', profile.id)
+    await supabase.from('profiles').update({ name, city, phone }).eq('id', profile.id)
     await refreshProfile()
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
     setSaving(false)
+  }
+
+  async function toggleNotification(key: keyof NotificationPrefs) {
+    if (!profile) return
+    const next = { ...notifPrefs, [key]: !notifPrefs[key] }
+    setNotifPrefs(next)
+    setSavingNotifKey(key)
+    await supabase.from('profiles').update({ notification_prefs: next }).eq('id', profile.id)
+    await refreshProfile()
+    setSavingNotifKey(null)
   }
 
   async function changePassword() {
@@ -270,17 +305,11 @@ export function SettingsPage() {
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Controle como e quando receber notificações</p>
                 </div>
                 <div className="p-6 space-y-1">
-                  {[
-                    { icon: Bell, label: 'Novas tarefas atribuídas', desc: 'Quando uma tarefa é atribuída a você', enabled: true },
-                    { icon: AlertCircle, label: 'Tarefas vencendo', desc: 'Lembretes 24h antes do vencimento', enabled: true },
-                    { icon: Mail, label: 'Novos processos', desc: 'Quando um processo é criado ou atualizado', enabled: false },
-                    { icon: Bell, label: 'Novas publicações', desc: 'Publicações no Diário de Justiça', enabled: true },
-                    { icon: CreditCard, label: 'Vencimentos financeiros', desc: 'Cobranças próximas do vencimento', enabled: true },
-                    { icon: User, label: 'Novos clientes', desc: 'Quando um cliente é cadastrado', enabled: false },
-                  ].map((item, i) => {
+                  {NOTIFICATION_ITEMS.map(item => {
                     const Icon = item.icon
+                    const enabled = notifPrefs[item.key]
                     return (
-                      <div key={i} className="flex items-center justify-between py-3.5 border-b border-gray-50 dark:border-dark-700 last:border-0">
+                      <div key={item.key} className="flex items-center justify-between py-3.5 border-b border-gray-50 dark:border-dark-700 last:border-0">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-dark-700 flex items-center justify-center">
                             <Icon className="w-4 h-4 text-gray-500 dark:text-gray-400" />
@@ -291,14 +320,16 @@ export function SettingsPage() {
                           </div>
                         </div>
                         <button
+                          onClick={() => toggleNotification(item.key)}
+                          disabled={savingNotifKey === item.key}
                           className={cn(
-                            'relative w-11 h-6 rounded-full transition-all',
-                            item.enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                            'relative w-11 h-6 rounded-full transition-all disabled:opacity-60',
+                            enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
                           )}
                         >
                           <span className={cn(
                             'absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all',
-                            item.enabled ? 'left-[22px]' : 'left-0.5'
+                            enabled ? 'left-[22px]' : 'left-0.5'
                           )} />
                         </button>
                       </div>
@@ -340,12 +371,14 @@ export function SettingsPage() {
                     </div>
                   </div>
                   <div>
-                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-3">Idioma</p>
-                    <Select label="" value="pt-BR" onChange={() => {}}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Idioma</p>
+                      <span className="text-[10px] font-semibold text-gray-400 bg-gray-100 dark:bg-dark-600 px-2 py-0.5 rounded-full">Em breve</span>
+                    </div>
+                    <Select label="" value="pt-BR" disabled className="opacity-60 cursor-not-allowed">
                       <option value="pt-BR">Português (Brasil)</option>
-                      <option value="en">English</option>
-                      <option value="es">Español</option>
                     </Select>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">O sistema está disponível apenas em português por enquanto.</p>
                   </div>
                 </div>
               </Card>

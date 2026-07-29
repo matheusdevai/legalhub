@@ -9,6 +9,7 @@ import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { useAuth } from '@/contexts/AuthContext'
+import { OabSyncModal } from '@/components/cnj/OabSyncModal'
 
 interface CnjMovimento {
   codigo?: number
@@ -65,10 +66,13 @@ export function PublicacoesPage() {
   const [periodo, setPeriodo] = useState('Todos')
   const [responsavelOpen, setResponsavelOpen] = useState(false)
   const [responsavelFilter, setResponsavelFilter] = useState('')
+  const [situacaoOpen, setSituacaoOpen] = useState(false)
+  const [situacaoFilter, setSituacaoFilter] = useState<'' | 'Pendente' | 'Lida' | 'Cumprida'>('')
   const [pageSize, setPageSize] = useState(50)
   const [page, setPage] = useState(0)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [statusMap, setStatusMap] = useState<Record<string, 'Lida' | 'Cumprida'>>(getStatusMap)
+  const [oabSyncOpen, setOabSyncOpen] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -137,6 +141,7 @@ export function PublicacoesPage() {
 
     if (cutoff) list = list.filter(i => i.publicacao && new Date(i.publicacao) >= cutoff!)
     if (responsavelFilter) list = list.filter(i => i.responsavel === responsavelFilter)
+    if (situacaoFilter) list = list.filter(i => i.situacao === situacaoFilter)
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(i =>
@@ -153,7 +158,7 @@ export function PublicacoesPage() {
       : a.publicacao.localeCompare(b.publicacao)
     )
     return list
-  }, [items, periodo, responsavelFilter, sortDir, statusMap, search])
+  }, [items, periodo, responsavelFilter, situacaoFilter, sortDir, statusMap, search])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const paginated = filtered.slice(page * pageSize, (page + 1) * pageSize)
@@ -213,22 +218,29 @@ export function PublicacoesPage() {
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
             <span className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
-              {hasCnjData ? 'Processos sincronizados via CNJ DataJud' : 'Sincronize seus processos pelo botão na barra superior'}
+              {hasCnjData ? 'Processos sincronizados via CNJ DataJud / PJe' : 'Nenhum processo sincronizado ainda — clique em "Sincronizar" para importar intimações'}
             </span>
           </div>
           <div className="flex items-center gap-3">
             {lastSync && (
               <span className="text-sm text-emerald-700 dark:text-emerald-400 font-medium">
-                Atualizado às {lastSync}
+                Lista atualizada às {lastSync}
               </span>
             )}
             <button
               onClick={handleSync}
               disabled={syncing}
+              title="Recarrega a lista com os dados já sincronizados (não busca novos dados nos tribunais)"
               className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 transition-colors font-medium"
             >
               <RefreshCw className={cn('w-3.5 h-3.5', syncing && 'animate-spin')} />
-              Atualizar
+              Atualizar lista
+            </button>
+            <button
+              onClick={() => setOabSyncOpen(true)}
+              className="flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
+            >
+              Sincronizar agora
             </button>
           </div>
         </div>
@@ -305,9 +317,33 @@ export function PublicacoesPage() {
             )}
           </div>
 
-          <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-            <Filter className="w-4 h-4" /> Filtrar
-          </button>
+          {/* Situação */}
+          <div className="relative">
+            <button
+              onClick={() => setSituacaoOpen(v => !v)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 text-sm font-medium border rounded-lg bg-white dark:bg-dark-800 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors',
+                situacaoFilter
+                  ? 'border-primary-300 text-primary-700 dark:border-primary-700 dark:text-primary-400'
+                  : 'border-gray-200 dark:border-dark-600 text-gray-700 dark:text-gray-300',
+              )}
+            >
+              <Filter className="w-4 h-4" /> {situacaoFilter || 'Filtrar'} <ChevronDown className="w-4 h-4 text-gray-400" />
+            </button>
+            {situacaoOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-lg z-20 py-1 min-w-[160px]">
+                <button onClick={() => { setSituacaoFilter(''); setSituacaoOpen(false) }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-700">Todas as situações</button>
+                {(['Pendente', 'Lida', 'Cumprida'] as const).map(s => (
+                  <button key={s} onClick={() => { setSituacaoFilter(s); setSituacaoOpen(false) }}
+                    className={cn('w-full text-left px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors',
+                      situacaoFilter === s && 'text-primary-600 dark:text-primary-400 font-semibold')}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
             <Printer className="w-4 h-4" /> Imprimir
           </button>
@@ -427,6 +463,8 @@ export function PublicacoesPage() {
         </div>
 
       </div>
+
+      {oabSyncOpen && <OabSyncModal onDone={() => { setOabSyncOpen(false); load() }} />}
     </Layout>
   )
 }

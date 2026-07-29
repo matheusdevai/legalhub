@@ -257,23 +257,23 @@ export function ClientsPage() {
             name: existing.name,
             email: existing.email || '',
             phone: existing.phone || '',
-            celular: (existing as any).celular || '',
+            celular: existing.celular || '',
             address: existing.address || '',
-            bairro: (existing as any).bairro || '',
+            bairro: existing.bairro || '',
             cidade: existing.cidade || '',
-            state: (existing as any).state || '',
-            cep: (existing as any).cep || '',
+            state: existing.state || '',
+            cep: existing.cep || '',
             notes: existing.notes || '',
             type: existing.type,
             area_direito: existing.area_direito || '',
-            beneficio_previdenciario: (existing as any).beneficio_previdenciario || '',
+            beneficio_previdenciario: existing.beneficio_previdenciario || '',
             modalidade: existing.modalidade || '',
-            birth_date: (existing as any).birth_date || '',
-            gender: (existing as any).gender || '',
-            profession: (existing as any).profession || '',
-            marital_status: (existing as any).marital_status || '',
-            nationality: (existing as any).nationality || '',
-            origem: (existing as any).origem || '',
+            birth_date: existing.birth_date || '',
+            gender: existing.gender || '',
+            profession: existing.profession || '',
+            marital_status: existing.marital_status || '',
+            nationality: existing.nationality || '',
+            origem: existing.origem || '',
           },
         })
         return
@@ -339,9 +339,9 @@ export function ClientsPage() {
         sub: `Possível contato duplicado (mesmo ${normalizeForCompare(existing.name) === nameNorm ? 'nome' : 'telefone'}) — clique para preencher com os dados existentes`,
         fields: {
           name: existing.name, email: existing.email || '', phone: existing.phone || '',
-          celular: (existing as any).celular || '', address: existing.address || '',
-          bairro: (existing as any).bairro || '', cidade: existing.cidade || '',
-          state: (existing as any).state || '', cep: (existing as any).cep || '',
+          celular: existing.celular || '', address: existing.address || '',
+          bairro: existing.bairro || '', cidade: existing.cidade || '',
+          state: existing.state || '', cep: existing.cep || '',
           notes: existing.notes || '', type: existing.type, area_direito: existing.area_direito || '',
           cpf_cnpj: existing.cpf_cnpj || '',
         },
@@ -449,10 +449,10 @@ export function ClientsPage() {
       }
     }
     setClientProcesses(procMap)
-    const cities = Array.from(new Set((c || []).map((cl: any) => cl.cidade).filter(Boolean))).sort() as string[]
+    const cities = Array.from(new Set((c || []).map((cl: Client) => cl.cidade).filter(Boolean))).sort() as string[]
     setCityOptions(cities)
     const DEFAULT_AREAS = ['Previdenciário', 'Cível', 'Consumidor', 'Trabalhista', 'Tributário', 'Criminal']
-    const dbAreas = Array.from(new Set((c || []).map((cl: any) => cl.area_direito).filter(Boolean))) as string[]
+    const dbAreas = Array.from(new Set((c || []).map((cl: Client) => cl.area_direito).filter(Boolean))) as string[]
     setAreaOptions(Array.from(new Set([...DEFAULT_AREAS, ...dbAreas])).sort())
     setLoading(false)
   }
@@ -479,7 +479,7 @@ export function ClientsPage() {
     }
     const origenCount: Record<string, number> = {}
     for (const c of clients) {
-      const key = ORIGEM_LABELS[(c as any).origem] || (c as any).origem || 'Não informado'
+      const key = (c.origem && ORIGEM_LABELS[c.origem]) || c.origem || 'Não informado'
       origenCount[key] = (origenCount[key] || 0) + 1
     }
     const topOrigens = Object.entries(origenCount)
@@ -488,7 +488,7 @@ export function ClientsPage() {
 
     const faixaCount: Record<string, number> = {}
     for (const c of clients) {
-      const bd = (c as any).birth_date
+      const bd = c.birth_date
       if (bd) {
         const age = new Date().getFullYear() - new Date(bd).getFullYear()
         const key = age < 18 ? '< 18' : age < 30 ? '18-29' : age < 45 ? '30-44' : age < 60 ? '45-59' : '60+'
@@ -500,7 +500,7 @@ export function ClientsPage() {
 
     const profCount: Record<string, number> = {}
     for (const c of clients) {
-      const key = (c as any).profession
+      const key = c.profession
       if (key) profCount[key] = (profCount[key] || 0) + 1
     }
     const topProfissoes = Object.entries(profCount)
@@ -533,7 +533,7 @@ export function ClientsPage() {
       const matchType = !typeFilter || c.type === typeFilter
       const matchArea = !areaFilter || c.area_direito === areaFilter
       const matchCidade = !cidadeFilter || c.cidade === cidadeFilter
-      const matchTag = !tagFilter || ((c as any).tags || []).includes(tagFilter)
+      const matchTag = !tagFilter || (c.tags || []).includes(tagFilter)
       const hasProc = (clientProcesses[c.id]?.length || 0) > 0
       const matchProc = activeProcessFilter === 'all' || (activeProcessFilter === 'with' ? hasProc : !hasProc)
       return matchSearch && matchStatus && matchType && matchArea && matchCidade && matchTag && matchProc
@@ -575,30 +575,30 @@ export function ClientsPage() {
     setForm({
       type: c.type, name: c.name, cpf_cnpj: c.cpf_cnpj || '',
       email: c.email || '', phone: c.phone || '', address: c.address || '',
-      status: (c.status as any) || 'active', notes: c.notes || '',
+      status: c.status || 'active', notes: c.notes || '',
       assunto: c.assunto || '', cidade: c.cidade || '',
       colaborador_id: c.colaborador_id || '', assigned_lawyer: c.assigned_lawyer || '',
       assigned_lawyer_uid: matchedUser?.user_id || '', entry_date: c.entry_date || '',
       modalidade: c.modalidade || '', area_direito: c.area_direito || '',
-      beneficio_previdenciario: (c as any).beneficio_previdenciario || '',
+      beneficio_previdenciario: c.beneficio_previdenciario || '',
       colaborador_pago: c.colaborador_pago ?? false,
       colaborador_pago_data: c.colaborador_pago_data || '',
       colaborador_pago_valor: c.colaborador_pago_valor != null ? String(c.colaborador_pago_valor) : '',
       processo_pago: false, processo_pago_valor: '', processo_pago_data: '', processo_categoria: 'fees',
-      avatar_url: (c as any).avatar_url || '',
-      origem: (c as any).origem || '', pais: (c as any).pais || 'BRASIL',
-      rg: (c as any).rg || '', birth_date: (c as any).birth_date || '',
-      marital_status: (c as any).marital_status || '', profession: (c as any).profession || '',
-      gender: (c as any).gender || '', nationality: (c as any).nationality || '',
-      celular: (c as any).celular || '', cep: (c as any).cep || '',
-      state: (c as any).state || '', bairro: (c as any).bairro || '',
-      pis_pasep: (c as any).pis_pasep || '', ctps: (c as any).ctps || '',
-      cid: (c as any).cid || '', nome_mae: (c as any).nome_mae || '',
-      tags: ((c as any).tags || []).join(', '),
-      lgpd_consent: (c as any).lgpd_consent ?? false,
-      lgpd_consent_date: (c as any).lgpd_consent_date || '',
+      avatar_url: c.avatar_url || '',
+      origem: c.origem || '', pais: c.pais || 'BRASIL',
+      rg: c.rg || '', birth_date: c.birth_date || '',
+      marital_status: c.marital_status || '', profession: c.profession || '',
+      gender: c.gender || '', nationality: c.nationality || '',
+      celular: c.celular || '', cep: c.cep || '',
+      state: c.state || '', bairro: c.bairro || '',
+      pis_pasep: c.pis_pasep || '', ctps: c.ctps || '',
+      cid: c.cid || '', nome_mae: c.nome_mae || '',
+      tags: (c.tags || []).join(', '),
+      lgpd_consent: c.lgpd_consent ?? false,
+      lgpd_consent_date: c.lgpd_consent_date || '',
     })
-    setAvatarPreview((c as any).avatar_url || '')
+    setAvatarPreview(c.avatar_url || '')
     setModalOpen(true)
   }
 
@@ -751,12 +751,12 @@ export function ClientsPage() {
     function clientRow(c: typeof filtered[0]) {
       return [
         { text: c.name, sub: formatCPFCNPJ(c.cpf_cnpj || '') || undefined, bold: true },
-        { text: c.type === 'pf' ? 'PF' : 'PJ', badge: (c.type === 'pf' ? 'purple' : 'cyan') as any },
+        { text: c.type === 'pf' ? 'PF' : 'PJ', badge: (c.type === 'pf' ? 'purple' : 'cyan') },
         { text: formatPhone(c.phone || '') || '—' },
         { text: c.email || '—' },
         { text: c.cidade || '—' },
-        { text: STATUS_LABELS[c.status || 'active'], badge: (c.status === 'active' ? 'green' : c.status === 'inactive' ? 'gray' : 'blue') as any },
-        { text: String(clientProcesses[c.id]?.length ?? 0), badge: ((clientProcesses[c.id]?.length ?? 0) > 0 ? 'blue' : 'gray') as any },
+        { text: STATUS_LABELS[c.status || 'active'], badge: (c.status === 'active' ? 'green' : c.status === 'inactive' ? 'gray' : 'blue') },
+        { text: String(clientProcesses[c.id]?.length ?? 0), badge: ((clientProcesses[c.id]?.length ?? 0) > 0 ? 'blue' : 'gray') },
         { text: formatDate(c.created_at) },
       ]
     }
@@ -842,7 +842,7 @@ export function ClientsPage() {
   // ─── Seleção em massa ────────────────────────────────────────────────────────
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkWorking, setBulkWorking] = useState(false)
-  function toggleSelect(id: string, e: React.MouseEvent) {
+  function toggleSelect(id: string, e: React.SyntheticEvent) {
     e.stopPropagation()
     setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
@@ -893,11 +893,11 @@ export function ClientsPage() {
       columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status', 'Processos', 'Cadastro'],
       rows: scoped.map(c => [
         { text: c.name, sub: formatCPFCNPJ(c.cpf_cnpj || '') || undefined, bold: true },
-        { text: c.type === 'pf' ? 'PF' : 'PJ', badge: (c.type === 'pf' ? 'purple' : 'cyan') as any },
+        { text: c.type === 'pf' ? 'PF' : 'PJ', badge: (c.type === 'pf' ? 'purple' : 'cyan') },
         { text: formatPhone(c.phone || '') || '—' },
         { text: c.email || '—' },
         { text: c.cidade || '—' },
-        { text: STATUS_LABELS[c.status || 'active'], badge: (c.status === 'active' ? 'green' : c.status === 'inactive' ? 'gray' : 'blue') as any },
+        { text: STATUS_LABELS[c.status || 'active'], badge: (c.status === 'active' ? 'green' : c.status === 'inactive' ? 'gray' : 'blue') },
         { text: String(clientProcesses[c.id]?.length ?? 0) },
         { text: formatDate(c.created_at) },
       ]),
@@ -908,7 +908,7 @@ export function ClientsPage() {
   // ─── Tags disponíveis (para filtro) ──────────────────────────────────────────
   const tagOptions = useMemo(() => {
     const all = new Set<string>()
-    for (const c of clients) for (const t of (c as any).tags || []) all.add(t)
+    for (const c of clients) for (const t of c.tags || []) all.add(t)
     return Array.from(all).sort()
   }, [clients])
   // ─── Importação em massa ─────────────────────────────────────────────────────
@@ -1426,7 +1426,7 @@ export function ClientsPage() {
                                   type="checkbox"
                                   className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
                                   checked={selectedIds.has(c.id)}
-                                  onChange={e => toggleSelect(c.id, e as any)}
+                                  onChange={e => toggleSelect(c.id, e)}
                                 />
                               </td>
                               <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
@@ -1444,8 +1444,8 @@ export function ClientsPage() {
                                 <div className="flex items-center gap-2.5">
                                   <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0 overflow-hidden',
                                     c.type === 'pf' ? 'bg-gradient-to-br from-primary-500 to-primary-700' : 'bg-gradient-to-br from-primary-400 to-primary-600')}>
-                                    {(c as any).avatar_url
-                                      ? <img src={(c as any).avatar_url} alt={c.name} className="w-full h-full object-cover" />
+                                    {c.avatar_url
+                                      ? <img src={c.avatar_url} alt={c.name} className="w-full h-full object-cover" />
                                       : c.name[0]?.toUpperCase()}
                                   </div>
                                   <div className="min-w-0">
@@ -1515,9 +1515,9 @@ export function ClientsPage() {
                                     ) : procs.map(p => (
                                       <div key={p.id} className="grid grid-cols-[1fr_200px_220px_100px] gap-0 px-10 py-2.5 border-b border-gray-100/60 dark:border-dark-700/40 hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors last:border-b-0">
                                         <span className="text-xs text-gray-800 dark:text-gray-200 truncate pr-4">{p.title || '—'}</span>
-                                        <span className="text-xs text-gray-600 dark:text-gray-300 truncate pr-4">{(p as any).counterparty || '—'}</span>
+                                        <span className="text-xs text-gray-600 dark:text-gray-300 truncate pr-4">{p.counterparty || '—'}</span>
                                         <span className="text-xs font-mono text-gray-600 dark:text-gray-300 truncate pr-4">{p.number || '—'}</span>
-                                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate((p as any).data_protocolo || p.created_at, 'dd MMM yyyy')}</span>
+                                        <span className="text-xs text-gray-500 dark:text-gray-400">{formatDate(p.data_protocolo || p.created_at, 'dd MMM yyyy')}</span>
                                       </div>
                                     ))}
                                   </div>
@@ -1596,8 +1596,8 @@ export function ClientsPage() {
                                   <div className="flex items-center gap-2.5">
                                     <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center text-white font-bold text-xs flex-shrink-0 overflow-hidden',
                                       c.type === 'pf' ? 'bg-gradient-to-br from-primary-500 to-primary-700' : 'bg-gradient-to-br from-primary-400 to-primary-600')}>
-                                      {(c as any).avatar_url
-                                        ? <img src={(c as any).avatar_url} alt={c.name} className="w-full h-full object-cover" />
+                                      {c.avatar_url
+                                        ? <img src={c.avatar_url} alt={c.name} className="w-full h-full object-cover" />
                                         : c.name[0]?.toUpperCase()}
                                     </div>
                                     <p className="font-medium text-gray-900 dark:text-white truncate group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors flex items-center gap-1.5">
@@ -2203,8 +2203,8 @@ export function ClientsPage() {
                 <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
                 <div className="relative flex items-start gap-4">
                   <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-2xl font-bold flex-shrink-0 overflow-hidden">
-                    {(viewClient as any).avatar_url
-                      ? <img src={(viewClient as any).avatar_url} alt={viewClient.name} className="w-full h-full object-cover" />
+                    {viewClient.avatar_url
+                      ? <img src={viewClient.avatar_url} alt={viewClient.name} className="w-full h-full object-cover" />
                       : viewClient.name[0]?.toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -2214,13 +2214,13 @@ export function ClientsPage() {
                       <Badge className="bg-white/20 text-white border border-white/30">{viewClient.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</Badge>
                       <Badge className={STATUS_COLORS[viewClient.status || 'active']}>{STATUS_LABELS[viewClient.status || 'active']}</Badge>
                       {col && <Badge className="bg-white/20 text-white border border-white/30"><UserCheck className="w-3 h-3 mr-1" />{col.nome}</Badge>}
-                      {(viewClient as any).lgpd_consent && (
+                      {viewClient.lgpd_consent && (
                         <Badge className="bg-white/20 text-white border border-white/30"><ShieldCheck className="w-3 h-3 mr-1" />LGPD OK</Badge>
                       )}
                     </div>
-                    {!!(viewClient as any).tags?.length && (
+                    {!!viewClient.tags?.length && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
-                        {(viewClient as any).tags.map((t: string) => (
+                        {viewClient.tags.map((t: string) => (
                           <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white">
                             <Tag className="w-2.5 h-2.5" />{t}
                           </span>
@@ -2246,7 +2246,7 @@ export function ClientsPage() {
                   <DetailField icon={MapPin} label="Cidade" value={viewClient.cidade} />
                   <DetailField icon={Scale} label="Área do Direito" value={viewClient.area_direito} />
                   {viewClient.area_direito?.trim().toLowerCase() === 'previdenciário' && (
-                    <DetailField icon={Scale} label="Benefício Previdenciário" value={(viewClient as any).beneficio_previdenciario} />
+                    <DetailField icon={Scale} label="Benefício Previdenciário" value={viewClient.beneficio_previdenciario} />
                   )}
                   <DetailField icon={Calendar} label="Data de Entrada" value={viewClient.entry_date ? formatDate(viewClient.entry_date) : null} />
                   <DetailField icon={Calendar} label="Cadastrado em" value={formatDate(viewClient.created_at)} />

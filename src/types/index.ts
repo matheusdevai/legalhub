@@ -8,13 +8,24 @@ export interface Profile {
   role: 'admin' | 'lawyer' | 'intern' | 'financial' | 'super_admin'
   avatar: string | null
   city: string | null
+  phone: string | null
   oab_number: string | null
   oab_seccional: string | null
   onboarding_completed: boolean | null
   subscription_status: string | null
   subscription_plan: string | null
+  notification_prefs: NotificationPrefs | null
   created_at: string
   updated_at: string
+}
+
+export interface NotificationPrefs {
+  new_tasks: boolean
+  task_due: boolean
+  new_processes: boolean
+  new_publications: boolean
+  financial_due: boolean
+  new_clients: boolean
 }
 
 export interface Tenant {
@@ -56,6 +67,23 @@ export interface Client {
   tags: string[] | null
   lgpd_consent: boolean | null
   lgpd_consent_date: string | null
+  origem: string | null
+  pais: string | null
+  rg: string | null
+  birth_date: string | null
+  marital_status: string | null
+  profession: string | null
+  gender: string | null
+  nationality: string | null
+  celular: string | null
+  cep: string | null
+  state: string | null
+  bairro: string | null
+  pis_pasep: string | null
+  ctps: string | null
+  cid: string | null
+  nome_mae: string | null
+  avatar_url: string | null
 }
 
 export interface Process {
