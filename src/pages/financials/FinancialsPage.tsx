@@ -12,6 +12,7 @@ import {
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM } from '@/components/financials/FinancialDrawer'
+import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
@@ -120,6 +121,7 @@ export function FinancialsPage() {
   // Drawer (lançamento)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerInitial, setDrawerInitial] = useState<Partial<FinancialDrawerForm>>(DRAWER_EMPTY_FORM)
+  const [reconcileTarget, setReconcileTarget] = useState<{ id: string; name: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
 
@@ -178,6 +180,7 @@ export function FinancialsPage() {
   const location = useLocation()
   useEffect(() => {
     if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
+    if ((location.state as any)?.prefillSearch) { setLancSearch((location.state as any).prefillSearch); window.history.replaceState({}, '') }
   }, [location.state])
 
   // ── Computed values ─────────────────────────────────────────────────────────
@@ -222,6 +225,17 @@ export function FinancialsPage() {
   useEffect(() => { setLancPage(0) }, [lancMonth, lancYear, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, onlyOverdue, pageSize])
   const lancTotalPages = Math.max(1, Math.ceil(lancFiltered.length / pageSize))
   const lancPageItems = lancFiltered.slice(lancPage * pageSize, (lancPage + 1) * pageSize)
+
+  // Gastos (payable) ainda não descontados de honorários, somados por cliente
+  const pendingExpensesByClient = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const f of financials) {
+      if (f.type === 'payable' && !f.reconciled && f.client_id) {
+        map[f.client_id] = (map[f.client_id] || 0) + Number(f.amount)
+      }
+    }
+    return map
+  }, [financials])
 
   // Total stats (all time)
   const totalReceivablePaid = financials.filter(f => f.type === 'receivable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
@@ -1344,7 +1358,20 @@ export function FinancialsPage() {
         processes={processes.map(p => ({ id: p.id, number: p.number, title: p.title }))}
         accounts={accounts.map(a => ({ id: a.id, name: a.name }))}
         saving={saving}
+        pendingExpensesByClient={pendingExpensesByClient}
+        onReconcile={(clientId, clientName) => { setDrawerOpen(false); setReconcileTarget({ id: clientId, name: clientName }) }}
       />
+
+      {/* ── Modal: Descontar gastos do cliente do honorário ── */}
+      {reconcileTarget && (
+        <ReconcileExpensesModal
+          open={!!reconcileTarget}
+          onClose={() => setReconcileTarget(null)}
+          clientId={reconcileTarget.id}
+          clientName={reconcileTarget.name}
+          onDone={() => { setReconcileTarget(null); load() }}
+        />
+      )}
 
       {/* ── Modal: Lançamentos recorrentes ativos ── */}
       <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title="Lançamentos recorrentes ativos" size="md">

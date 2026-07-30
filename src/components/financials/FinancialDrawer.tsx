@@ -69,6 +69,9 @@ type Props = {
   processes?: Process[]
   accounts?: Account[]
   saving?: boolean
+  /** Total de gastos (payable) ainda não descontados, por client_id — usado para avisar ao lançar um honorário */
+  pendingExpensesByClient?: Record<string, number>
+  onReconcile?: (clientId: string, clientName: string) => void
 }
 
 function formatAmountDisplay(raw: string): string {
@@ -77,7 +80,7 @@ function formatAmountDisplay(raw: string): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n)
 }
 
-export function FinancialDrawer({ open, onClose, onSave, initial, editId, clients = [], processes = [], accounts = [], saving = false }: Props) {
+export function FinancialDrawer({ open, onClose, onSave, initial, editId, clients = [], processes = [], accounts = [], saving = false, pendingExpensesByClient = {}, onReconcile }: Props) {
   const [form, setForm] = useState<FinancialDrawerForm>({ ...DRAWER_EMPTY_FORM, ...initial })
   const firstInput = useRef<HTMLInputElement>(null)
 
@@ -203,6 +206,24 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
               </button>
             ))}
           </div>
+
+          {/* Aviso de gastos pendentes de desconto (só ao lançar receita para um cliente) */}
+          {isReceita && form.client_id && (pendingExpensesByClient[form.client_id] || 0) > 0 && (
+            <div className="flex items-center justify-between gap-3 p-3 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Este cliente tem <strong>{formatAmountDisplay(String(pendingExpensesByClient[form.client_id]))}</strong> em gastos pendentes de desconto.
+              </p>
+              {onReconcile && (
+                <button
+                  type="button"
+                  onClick={() => onReconcile(form.client_id, form.client_name)}
+                  className="flex-shrink-0 text-xs font-semibold text-amber-700 dark:text-amber-400 underline hover:text-amber-900 dark:hover:text-amber-200"
+                >
+                  Descontar
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Categoria */}
           <div>

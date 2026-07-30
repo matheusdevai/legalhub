@@ -175,6 +175,8 @@ export interface Financial {
   recurrence_interval: 'weekly' | 'monthly' | 'yearly' | null
   recurrence_end_date: string | null
   generated_from_id: string | null
+  reconciled: boolean | null
+  reconciled_in_id: string | null
 }
 
 export interface FinancialAccount {

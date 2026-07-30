@@ -6,15 +6,17 @@ import {
   UserCheck, Briefcase, MapPin, Scale, Calendar, Edit3,
   FileText, X, CheckCircle2, Clock, CheckSquare, ChevronDown,
   AlertCircle, Info, MessageCircle, Sparkles, Tag, ShieldCheck,
-  CalendarPlus, IdCard, KeyRound, Copy,
+  CalendarPlus, IdCard, KeyRound, Copy, Receipt, DollarSign,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { Client, Colaborador, Process, Profile } from '@/types'
+import { Client, Colaborador, Process, Profile, Financial } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
+import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
+import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -177,6 +179,11 @@ export function ClientsPage() {
   const [portalSaving, setPortalSaving] = useState(false)
   const [portalError, setPortalError] = useState('')
   const [portalCredentials, setPortalCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [clientExpenses, setClientExpenses] = useState<Financial[]>([])
+  const [expensesLoading, setExpensesLoading] = useState(false)
+  const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false)
+  const [reconcileModalOpen, setReconcileModalOpen] = useState(false)
+  const [savingExpense, setSavingExpense] = useState(false)
   const [form, setForm] = useState(EMPTY_CLIENT)
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -575,6 +582,40 @@ export function ClientsPage() {
   }, [filtered, colaboradores])
 
   function openNew() { setEditId(null); setForm(EMPTY_CLIENT); setAvatarPreview(''); setModalOpen(true) }
+
+  async function loadClientExpenses(clientId: string) {
+    setExpensesLoading(true)
+    const { data } = await supabase
+      .from('financials')
+      .select('*')
+      .eq('client_id', clientId)
+      .eq('type', 'payable')
+      .is('deleted_at', null)
+      .order('due_date', { ascending: false })
+    setClientExpenses((data || []) as Financial[])
+    setExpensesLoading(false)
+  }
+
+  useEffect(() => {
+    if (viewClient) loadClientExpenses(viewClient.id)
+    else setClientExpenses([])
+  }, [viewClient?.id])
+
+  async function saveExpense(form: FinancialDrawerForm) {
+    if (!viewClient) return
+    setSavingExpense(true)
+    await supabase.from('financials').insert({
+      type: 'payable', category: form.category, description: form.description,
+      amount: parseFloat(form.amount), due_date: form.due_date || null, paid_date: form.paid_date || null,
+      status: form.status, notes: form.notes || null,
+      client_id: viewClient.id, client_name: viewClient.name,
+      process_id: form.process_id || null, process_number: form.process_number || null,
+    })
+    setSavingExpense(false)
+    setExpenseDrawerOpen(false)
+    loadClientExpenses(viewClient.id)
+  }
+
   async function createPortalAccess() {
     if (!portalAccessClient) return
     if (!portalEmail.trim() || portalPassword.length < 6) {
@@ -2339,6 +2380,66 @@ export function ClientsPage() {
                     </div>
                   </div>
                 )}
+                <div className="pt-3 border-t border-gray-100 dark:border-dark-700">
+                  {(() => {
+                    const pending = clientExpenses.filter(e => !e.reconciled)
+                    const reconciled = clientExpenses.filter(e => e.reconciled)
+                    const pendingTotal = pending.reduce((s, e) => s + Number(e.amount), 0)
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                            <Receipt className="w-4 h-4 text-primary-600" />Gastos com o Cliente
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setExpenseDrawerOpen(true)}>
+                              <Plus className="w-3.5 h-3.5" />Registrar gasto
+                            </Button>
+                            {pending.length > 0 && (
+                              <Button variant="outline" size="sm" onClick={() => setReconcileModalOpen(true)}>
+                                <DollarSign className="w-3.5 h-3.5" />Lançar honorário descontando gastos
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {expensesLoading ? (
+                          <p className="text-xs text-gray-400 py-2">Carregando...</p>
+                        ) : clientExpenses.length === 0 ? (
+                          <p className="text-xs text-gray-400 bg-gray-50 dark:bg-dark-700 rounded-xl px-3 py-3">
+                            Nenhum gasto registrado para este cliente ainda.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            {pending.length > 0 && (
+                              <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
+                                <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Pendente de desconto ({pending.length})</span>
+                                <span className="text-sm font-bold text-amber-700 dark:text-amber-400">{formatCurrency(pendingTotal)}</span>
+                              </div>
+                            )}
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                              {clientExpenses.map(e => (
+                                <div key={e.id} className="flex items-center gap-3 bg-white dark:bg-dark-800 rounded-lg border border-gray-200 dark:border-dark-600 px-3 py-2">
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{e.description}</p>
+                                    <p className="text-[11px] text-gray-400">{e.due_date ? formatDate(e.due_date) : '—'}</p>
+                                  </div>
+                                  <Badge className={e.reconciled ? 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}>
+                                    {e.reconciled ? 'Descontado' : 'Pendente'}
+                                  </Badge>
+                                  <span className="text-sm font-semibold text-red-500 flex-shrink-0">-{formatCurrency(e.amount)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            {reconciled.length > 0 && (
+                              <p className="text-[11px] text-gray-400">{reconciled.length} gasto(s) já descontado(s) de honorários anteriores.</p>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
+                </div>
                 <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-100 dark:border-dark-700">
                   {viewClient.phone && waLink(viewClient.phone) && (
                     <a
@@ -2374,6 +2475,9 @@ export function ClientsPage() {
                   <Button variant="outline" size="sm" onClick={() => { const vc = viewClient; setViewClient(null); openEdit(vc) }}><Edit3 className="w-3.5 h-3.5" />Editar</Button>
                   <Button variant="outline" size="sm" onClick={() => { setPortalAccessClient(viewClient); setPortalEmail(viewClient.email || ''); setPortalPassword(''); setPortalCredentials(null) }}>
                     <KeyRound className="w-3.5 h-3.5" />Portal do Cliente
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => navigate('/financeiro', { state: { prefillSearch: viewClient.name } })}>
+                    <DollarSign className="w-3.5 h-3.5" />Ver no Financeiro
                   </Button>
                   <Button size="sm" onClick={() => setViewClient(null)}>Fechar</Button>
                 </div>
@@ -2425,6 +2529,28 @@ export function ClientsPage() {
           )
         )}
       </Modal>
+
+      {/* ══ Registrar gasto do cliente ══ */}
+      {viewClient && (
+        <FinancialDrawer
+          open={expenseDrawerOpen}
+          onClose={() => setExpenseDrawerOpen(false)}
+          onSave={saveExpense}
+          initial={{ ...DRAWER_EMPTY_FORM, type: 'payable', category: 'costs', client_id: viewClient.id, client_name: viewClient.name }}
+          saving={savingExpense}
+        />
+      )}
+
+      {/* ══ Lançar honorário descontando gastos ══ */}
+      {viewClient && (
+        <ReconcileExpensesModal
+          open={reconcileModalOpen}
+          onClose={() => setReconcileModalOpen(false)}
+          clientId={viewClient.id}
+          clientName={viewClient.name}
+          onDone={() => { setReconcileModalOpen(false); loadClientExpenses(viewClient.id) }}
+        />
+      )}
 
       {/* ══ MODAL TAREFA — Etapa 2 ══ */}
       <Modal open={taskModalOpen} onClose={closeTaskModal} title="" size="md">
