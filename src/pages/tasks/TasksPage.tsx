@@ -26,6 +26,7 @@ type TaskForm = {
   show_agenda: boolean; inform_end: boolean; all_day: boolean;
   tag_importante: boolean; tag_urgente: boolean; tag_futura: boolean;
   tag_recorrente: boolean; tag_privada: boolean; tag_retroativa: boolean;
+  recurrence_interval: 'weekly' | 'monthly' | 'yearly'; recurrence_end_date: string;
 }
 const EMPTY_FORM: TaskForm = {
   title: '', description: '', process_id: '', assigned_name: '', assigned_to: '',
@@ -34,6 +35,7 @@ const EMPTY_FORM: TaskForm = {
   show_agenda: false, inform_end: false, all_day: false,
   tag_importante: false, tag_urgente: false, tag_futura: false,
   tag_recorrente: false, tag_privada: false, tag_retroativa: false,
+  recurrence_interval: 'monthly', recurrence_end_date: '',
 }
 
 type ProcessForm = {
@@ -176,6 +178,8 @@ export function TasksPage() {
   const location = useLocation()
 
   const [tasks, setTasks] = useState<Task[]>([])
+  const [recurringTemplates, setRecurringTemplates] = useState<Task[]>([])
+  const [recurringModalOpen, setRecurringModalOpen] = useState(false)
   const [processes, setProcesses] = useState<Process[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
@@ -217,11 +221,13 @@ export function TasksPage() {
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('profiles').select('id,user_id,name,display_name,role').order('name'),
     ])
-    let taskList = t || []
+    const allTasks = (t || []) as Task[]
+    let taskList = allTasks.filter(task => !task.recurring)
     if (profile?.role === 'lawyer' || profile?.role === 'intern') {
       taskList = taskList.filter(task => task.assigned_to === profile.user_id)
     }
     setTasks(taskList)
+    setRecurringTemplates(allTasks.filter(task => task.recurring))
     setProcesses((p || []) as Process[])
     setClients((c || []) as Client[])
     setColaboradores(col || [])
@@ -333,6 +339,7 @@ export function TasksPage() {
       show_agenda: false, inform_end: false, all_day: false,
       tag_importante: t.priority === 'high', tag_urgente: t.priority === 'urgent',
       tag_futura: false, tag_recorrente: false, tag_privada: false, tag_retroativa: false,
+      recurrence_interval: t.recurrence_interval || 'monthly', recurrence_end_date: t.recurrence_end_date || '',
     })
     setModalOpen(true)
   }
@@ -346,6 +353,7 @@ export function TasksPage() {
       : null
     const { due_time, deadline_date, location, show_agenda, inform_end, all_day,
       tag_importante, tag_urgente, tag_futura, tag_recorrente, tag_privada, tag_retroativa,
+      recurrence_interval, recurrence_end_date,
       ...rest } = form
     const payload = {
       ...rest, priority: derivedPriority,
@@ -353,6 +361,9 @@ export function TasksPage() {
       assigned_to: form.assigned_to || null,
       assigned_name: form.assigned_name || null,
       due_date: dueDateFull,
+      recurring: tag_recorrente,
+      recurrence_interval: tag_recorrente ? recurrence_interval : null,
+      recurrence_end_date: tag_recorrente ? (recurrence_end_date || null) : null,
     }
     let error: any = null
     if (editId) {
@@ -381,6 +392,11 @@ export function TasksPage() {
     await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', taskId)
     setTasks(prev => prev.filter(t => t.id !== taskId))
     setDeletingTaskId(null)
+  }
+
+  async function stopRecurrence(templateId: string) {
+    await supabase.from('tasks').update({ recurring: false }).eq('id', templateId)
+    setRecurringTemplates(prev => prev.filter(t => t.id !== templateId))
   }
 
   function requestComplete(t: Task) {
@@ -475,7 +491,14 @@ export function TasksPage() {
     <Layout
       title="Atividades"
       actions={
-        <Button onClick={() => openNew()}><Plus className="w-4 h-4" /> Nova tarefa</Button>
+        <div className="flex items-center gap-2">
+          {recurringTemplates.length > 0 && (
+            <Button variant="outline" onClick={() => setRecurringModalOpen(true)}>
+              <RefreshCw className="w-4 h-4" /> Recorrentes ({recurringTemplates.length})
+            </Button>
+          )}
+          <Button onClick={() => openNew()}><Plus className="w-4 h-4" /> Nova tarefa</Button>
+        </div>
       }
     >
       {!loading && (
@@ -987,6 +1010,20 @@ export function TasksPage() {
               </label>
             ))}
           </div>
+
+          {form.tag_recorrente && (
+            <div className="grid grid-cols-2 gap-3 p-3 bg-primary-50/50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/30">
+              <Select label="Repetir a cada" value={form.recurrence_interval} onChange={e => setForm({ ...form, recurrence_interval: e.target.value as TaskForm['recurrence_interval'] })}>
+                <option value="weekly">Semana</option>
+                <option value="monthly">Mês</option>
+                <option value="yearly">Ano</option>
+              </Select>
+              <Input label="Repetir até (opcional)" type="date" value={form.recurrence_end_date} onChange={e => setForm({ ...form, recurrence_end_date: e.target.value })} />
+              <p className="col-span-2 text-[11px] text-gray-400 dark:text-gray-500">
+                Uma nova tarefa idêntica será criada automaticamente na data de vencimento, a partir da próxima geração diária (roda às 6h).
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-dark-700">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
@@ -1318,6 +1355,28 @@ export function TasksPage() {
           </div>
         </div>
       )}
+
+      <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title="Tarefas recorrentes ativas" size="md">
+        <div className="space-y-2">
+          {recurringTemplates.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-6">Nenhuma recorrência ativa.</p>
+          ) : recurringTemplates.map(t => (
+            <div key={t.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-100 dark:border-dark-700">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{t.title}</p>
+                <p className="text-xs text-gray-400">
+                  A cada {t.recurrence_interval === 'weekly' ? 'semana' : t.recurrence_interval === 'yearly' ? 'ano' : 'mês'} · próxima em {formatDate(t.due_date)}
+                  {t.recurrence_end_date && ` · até ${formatDate(t.recurrence_end_date)}`}
+                </p>
+              </div>
+              <button onClick={() => stopRecurrence(t.id)}
+                className="flex-shrink-0 text-xs font-medium text-red-500 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                Parar
+              </button>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </Layout>
   )
 }

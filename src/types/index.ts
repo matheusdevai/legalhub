@@ -143,6 +143,10 @@ export interface Task {
   created_at: string | null
   completed_at: string | null
   deleted_at: string | null
+  recurring: boolean | null
+  recurrence_interval: 'weekly' | 'monthly' | 'yearly' | null
+  recurrence_end_date: string | null
+  generated_from_id: string | null
 }
 
 export interface Financial {
@@ -166,6 +170,10 @@ export interface Financial {
   installment_group_id: string | null
   installment_number: number | null
   installment_total: number | null
+  recurring: boolean | null
+  recurrence_interval: 'weekly' | 'monthly' | 'yearly' | null
+  recurrence_end_date: string | null
+  generated_from_id: string | null
 }
 
 export interface FinancialAccount {

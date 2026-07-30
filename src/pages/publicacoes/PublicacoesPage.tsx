@@ -1,15 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ChevronDown, Filter, Printer, CheckCircle2, ChevronLeft, ChevronRight,
-  ChevronsLeft, ChevronsRight, RefreshCw, AlertCircle, Download, Search, X,
+  ChevronsLeft, ChevronsRight, RefreshCw, AlertCircle, Download, Search, X, Clock,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Spinner, EmptyState } from '@/components/ui'
+import { Spinner, EmptyState, Modal, Input, Select, Button } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
+import { computePrazo } from '@/lib/prazoUtils'
 
 interface CnjMovimento {
   codigo?: number
@@ -48,6 +50,15 @@ function saveStatus(id: string, s: 'Lida' | 'Cumprida') {
   localStorage.setItem(STATUS_KEY, JSON.stringify(m))
 }
 
+const PRAZO_KEY = 'lh_intimacao_prazo'
+function getPrazoMap(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(PRAZO_KEY) || '{}') } catch { return {} }
+}
+function savePrazoCriado(id: string, dueDate: string) {
+  const m = getPrazoMap(); m[id] = dueDate
+  localStorage.setItem(PRAZO_KEY, JSON.stringify(m))
+}
+
 function isIntimacao(movimento: CnjMovimento): boolean {
   const nome = (movimento.nome || '').toLowerCase()
   return nome.includes('intima') || nome.includes('citação') || nome.includes('citacao')
@@ -73,6 +84,12 @@ export function PublicacoesPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [statusMap, setStatusMap] = useState<Record<string, 'Lida' | 'Cumprida'>>(getStatusMap)
   const [oabSyncOpen, setOabSyncOpen] = useState(false)
+  const [prazoMap, setPrazoMap] = useState<Record<string, string>>(getPrazoMap)
+  const [prazoItem, setPrazoItem] = useState<Intimacao | null>(null)
+  const [prazoDias, setPrazoDias] = useState(15)
+  const [prazoUnidade, setPrazoUnidade] = useState<'uteis' | 'corridos'>('uteis')
+  const [prazoSaving, setPrazoSaving] = useState(false)
+  const navigate = useNavigate()
 
   async function load() {
     setLoading(true)
@@ -168,6 +185,35 @@ export function PublicacoesPage() {
   function markStatus(id: string, s: 'Lida' | 'Cumprida') {
     saveStatus(id, s)
     setStatusMap(m => ({ ...m, [id]: s }))
+  }
+
+  function openPrazoModal(item: Intimacao) {
+    setPrazoItem(item)
+    setPrazoDias(15)
+    setPrazoUnidade('uteis')
+  }
+
+  const prazoPreview = prazoItem
+    ? computePrazo(new Date(`${prazoItem.publicacao || new Date().toISOString().slice(0, 10)}T12:00:00`), prazoDias, prazoUnidade)
+    : null
+
+  async function criarTarefaPrazo() {
+    if (!prazoItem || !prazoPreview) return
+    setPrazoSaving(true)
+    const dueDateStr = prazoPreview.toISOString().slice(0, 10)
+    await supabase.from('tasks').insert({
+      title: `Prazo: ${prazoItem.conteudo || 'Intimação'} — ${prazoItem.numero_processo}`,
+      description: `Gerado a partir da intimação de ${prazoItem.tribunal} publicada em ${formatDate(prazoItem.publicacao)}. Prazo calculado: ${prazoDias} dias ${prazoUnidade === 'uteis' ? 'úteis' : 'corridos'} (não considera feriados — confirme antes de protocolar).`,
+      process_id: prazoItem.process_id || null,
+      due_date: dueDateStr,
+      priority: 'high',
+      status: 'pending',
+      type: 'deadline',
+    })
+    savePrazoCriado(prazoItem.id, dueDateStr)
+    setPrazoMap(m => ({ ...m, [prazoItem.id]: dueDateStr }))
+    setPrazoSaving(false)
+    setPrazoItem(null)
   }
 
   async function handleSync() {
@@ -419,19 +465,33 @@ export function PublicacoesPage() {
                         </span>
                       </td>
                       <td className="px-2 py-3.5">
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {item.situacao !== 'Lida' && (
-                            <button onClick={() => markStatus(item.id, 'Lida')}
-                              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-emerald-600 transition-colors" title="Marcar como lida">
-                              <CheckCircle2 className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1">
+                          {prazoMap[item.id] ? (
+                            <button onClick={() => navigate('/tarefas')}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 whitespace-nowrap transition-colors"
+                              title={`Tarefa de prazo criada para ${formatDate(prazoMap[item.id])} — clique para ver em Atividades`}>
+                              <Clock className="w-3 h-3" /> {formatDate(prazoMap[item.id])}
+                            </button>
+                          ) : (
+                            <button onClick={() => openPrazoModal(item)}
+                              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-all" title="Criar tarefa de prazo">
+                              <Clock className="w-3.5 h-3.5" />
                             </button>
                           )}
-                          {item.situacao !== 'Cumprida' && (
-                            <button onClick={() => markStatus(item.id, 'Cumprida')}
-                              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors" title="Marcar como cumprida">
-                              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {item.situacao !== 'Lida' && (
+                              <button onClick={() => markStatus(item.id, 'Lida')}
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-emerald-600 transition-colors" title="Marcar como lida">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                            {item.situacao !== 'Cumprida' && (
+                              <button onClick={() => markStatus(item.id, 'Cumprida')}
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors" title="Marcar como cumprida">
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -465,6 +525,52 @@ export function PublicacoesPage() {
       </div>
 
       {oabSyncOpen && <OabSyncModal onDone={() => { setOabSyncOpen(false); load() }} />}
+
+      {/* Criar tarefa de prazo */}
+      {prazoItem && (
+        <Modal open onClose={() => setPrazoItem(null)} title="Criar tarefa de prazo" size="sm">
+          <div className="space-y-4">
+            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Cálculo automático não considera feriados nacionais/locais. Confira o prazo legal antes de protocolar.
+              </p>
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              <strong>{prazoItem.numero_processo}</strong> — {prazoItem.conteudo}
+              <br />
+              <span className="text-xs text-gray-400">Publicado em {formatDate(prazoItem.publicacao)} ({prazoItem.tribunal})</span>
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Dias"
+                type="number"
+                min={1}
+                value={prazoDias}
+                onChange={e => setPrazoDias(Math.max(1, Number(e.target.value) || 1))}
+              />
+              <Select label="Contagem" value={prazoUnidade} onChange={e => setPrazoUnidade(e.target.value as 'uteis' | 'corridos')}>
+                <option value="uteis">Dias úteis</option>
+                <option value="corridos">Dias corridos</option>
+              </Select>
+            </div>
+            {prazoPreview && (
+              <div className="flex items-center gap-2 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-xl">
+                <Clock className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />
+                <p className="text-sm font-semibold text-primary-700 dark:text-primary-400">
+                  Vencimento: {formatDate(prazoPreview.toISOString().slice(0, 10))}
+                </p>
+              </div>
+            )}
+            <div className="flex justify-end gap-3 pt-1">
+              <button onClick={() => setPrazoItem(null)}
+                className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                Cancelar
+              </button>
+              <Button onClick={criarTarefaPrazo} loading={prazoSaving}>Criar tarefa</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </Layout>
   )
 }

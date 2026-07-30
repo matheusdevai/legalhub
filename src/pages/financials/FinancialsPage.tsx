@@ -74,6 +74,8 @@ export function FinancialsPage() {
   const navigate = useNavigate()
 
   const [financials, setFinancials] = useState<Financial[]>([])
+  const [recurringTemplates, setRecurringTemplates] = useState<Financial[]>([])
+  const [recurringModalOpen, setRecurringModalOpen] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [processes, setProcesses] = useState<Process[]>([])
   const [expenses, setExpenses] = useState<UserExpense[]>([])
@@ -140,7 +142,9 @@ export function FinancialsPage() {
       promises.push(supabase.from('user_expenses').select('*').eq('user_id', currentUserId).is('deleted_at', null).order('expense_date', { ascending: false }))
     }
     const results = await Promise.all(promises)
-    let financialsData: Financial[] = results[0].data || []
+    const allFinancials: Financial[] = results[0].data || []
+    let financialsData: Financial[] = allFinancials.filter(f => !f.recurring)
+    setRecurringTemplates(allFinancials.filter(f => f.recurring))
     setClients(results[1].data || [])
     setProcesses(results[2].data || [])
     setColaboradores(results[3].data || [])
@@ -357,7 +361,7 @@ export function FinancialsPage() {
     setSaving(true)
     const selectedClient = clients.find(c => c.id === form.client_id)
     const selectedProcess = processes.find(p => p.id === form.process_id)
-    const { installments: installmentsStr, ...rest } = form
+    const { installments: installmentsStr, recurring, recurrence_interval, recurrence_end_date, ...rest } = form
     const basePayload = {
       ...rest, amount: parseFloat(form.amount),
       client_name: selectedClient?.name || form.client_name,
@@ -365,11 +369,16 @@ export function FinancialsPage() {
       client_id: form.client_id || null, process_id: form.process_id || null,
       account_id: form.account_id || null,
       due_date: form.due_date || null, paid_date: form.paid_date || null,
+      recurring,
+      recurrence_interval: recurring ? recurrence_interval : null,
+      recurrence_end_date: recurring ? (recurrence_end_date || null) : null,
     }
     const installments = Math.max(1, parseInt(installmentsStr || '1', 10) || 1)
 
     if (editId) {
       await supabase.from('financials').update(basePayload).eq('id', editId)
+    } else if (recurring) {
+      await supabase.from('financials').insert(basePayload)
     } else if (installments > 1) {
       const groupId = crypto.randomUUID()
       const rows = Array.from({ length: installments }, (_, i) => ({
@@ -392,6 +401,11 @@ export function FinancialsPage() {
     if (!confirm('Deseja excluir este lançamento?')) return
     await supabase.from('financials').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
+  }
+
+  async function stopRecurrence(templateId: string) {
+    await supabase.from('financials').update({ recurring: false }).eq('id', templateId)
+    setRecurringTemplates(prev => prev.filter(f => f.id !== templateId))
   }
 
   function openNewExpense() {
@@ -891,6 +905,14 @@ export function FinancialsPage() {
               )}
             </div>
 
+            {recurringTemplates.length > 0 && (
+              <button
+                onClick={() => setRecurringModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Recorrentes ({recurringTemplates.length})
+              </button>
+            )}
             <button
               onClick={exportLancamentos}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
@@ -1323,6 +1345,31 @@ export function FinancialsPage() {
         accounts={accounts.map(a => ({ id: a.id, name: a.name }))}
         saving={saving}
       />
+
+      {/* ── Modal: Lançamentos recorrentes ativos ── */}
+      <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title="Lançamentos recorrentes ativos" size="md">
+        <div className="space-y-2">
+          {recurringTemplates.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">Nenhuma recorrência ativa.</p>
+          ) : recurringTemplates.map(f => (
+            <div key={f.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100 dark:border-dark-700">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
+                  {f.description} · {formatCurrency(f.amount)}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {f.type === 'receivable' ? 'Receita' : 'Despesa'} · a cada {f.recurrence_interval === 'weekly' ? 'semana' : f.recurrence_interval === 'yearly' ? 'ano' : 'mês'} · próxima em {formatDate(f.due_date)}
+                  {f.recurrence_end_date && ` · até ${formatDate(f.recurrence_end_date)}`}
+                </p>
+              </div>
+              <button onClick={() => stopRecurrence(f.id)}
+                className="flex-shrink-0 text-xs font-medium text-red-500 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                Parar
+              </button>
+            </div>
+          ))}
+        </div>
+      </Modal>
 
       {/* ── Modal: Despesa pessoal ── */}
       <Modal open={expenseModalOpen} onClose={() => setExpenseModalOpen(false)} title={editExpenseId ? 'Editar Despesa' : 'Nova Despesa'} size="md">

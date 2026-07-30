@@ -18,6 +18,10 @@ export type FinancialDrawerForm = {
   account_id: string
   /** Quantidade de parcelas — só usado ao criar (ignorado em edição), gerado como N lançamentos */
   installments: string
+  /** Recorrência aberta (sem fim definido, ou até recurrence_end_date) — mutuamente exclusiva com parcelamento */
+  recurring: boolean
+  recurrence_interval: 'weekly' | 'monthly' | 'yearly'
+  recurrence_end_date: string
 }
 
 export const DRAWER_EMPTY_FORM: FinancialDrawerForm = {
@@ -35,6 +39,9 @@ export const DRAWER_EMPTY_FORM: FinancialDrawerForm = {
   notes: '',
   account_id: '',
   installments: '1',
+  recurring: false,
+  recurrence_interval: 'monthly',
+  recurrence_end_date: '',
 }
 
 const CATEGORIES = [
@@ -250,8 +257,8 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             </div>
           </div>
 
-          {/* Parcelamento — só ao criar */}
-          {!editId && (
+          {/* Parcelamento — só ao criar, e só se não for recorrente */}
+          {!editId && !form.recurring && (
             <div>
               <label htmlFor="drawer-installments" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                 <Layers className="w-3.5 h-3.5" /> Parcelas
@@ -270,6 +277,49 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
                 <p className="text-[11px] text-slate-400 mt-1">
                   Gera {form.installments} lançamentos de {formatAmountDisplay(form.amount)} cada, um por mês a partir do vencimento
                 </p>
+              )}
+            </div>
+          )}
+
+          {/* Recorrência — só ao criar, e só se não houver parcelamento definido */}
+          {!editId && parseInt(form.installments || '1', 10) <= 1 && (
+            <div>
+              <label className="flex items-center gap-2 cursor-pointer select-none mb-1.5">
+                <input
+                  type="checkbox"
+                  data-testid="field-recurring"
+                  checked={form.recurring}
+                  onChange={e => set('recurring', e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  <Layers className="w-3.5 h-3.5" /> Lançamento recorrente
+                </span>
+              </label>
+              {form.recurring && (
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                  <select
+                    data-testid="field-recurrence-interval"
+                    value={form.recurrence_interval}
+                    onChange={e => set('recurrence_interval', e.target.value as FinancialDrawerForm['recurrence_interval'])}
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                  >
+                    <option value="weekly">A cada semana</option>
+                    <option value="monthly">A cada mês</option>
+                    <option value="yearly">A cada ano</option>
+                  </select>
+                  <input
+                    type="date"
+                    data-testid="field-recurrence-end-date"
+                    value={form.recurrence_end_date}
+                    onChange={e => set('recurrence_end_date', e.target.value)}
+                    placeholder="Até (opcional)"
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                  />
+                  <p className="col-span-2 text-[11px] text-slate-400">
+                    Um novo lançamento idêntico é criado automaticamente no vencimento, a partir da próxima geração diária (roda às 6h).
+                  </p>
+                </div>
               )}
             </div>
           )}
