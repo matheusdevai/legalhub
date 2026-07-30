@@ -5,7 +5,7 @@ export interface Profile {
   display_name: string
   email: string | null
   tenant_id: string | null
-  role: 'admin' | 'lawyer' | 'intern' | 'financial' | 'super_admin'
+  role: 'admin' | 'lawyer' | 'intern' | 'financial' | 'super_admin' | 'client'
   avatar: string | null
   city: string | null
   phone: string | null
@@ -15,6 +15,7 @@ export interface Profile {
   subscription_status: string | null
   subscription_plan: string | null
   notification_prefs: NotificationPrefs | null
+  client_id: string | null
   created_at: string
   updated_at: string
 }

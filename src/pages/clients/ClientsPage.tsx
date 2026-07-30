@@ -6,7 +6,7 @@ import {
   UserCheck, Briefcase, MapPin, Scale, Calendar, Edit3,
   FileText, X, CheckCircle2, Clock, CheckSquare, ChevronDown,
   AlertCircle, Info, MessageCircle, Sparkles, Tag, ShieldCheck,
-  CalendarPlus, IdCard,
+  CalendarPlus, IdCard, KeyRound, Copy,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
@@ -171,6 +171,12 @@ export function ClientsPage() {
   const PAGE_SIZE = 15
   const [modalOpen, setModalOpen] = useState(false)
   const [viewClient, setViewClient] = useState<Client | null>(null)
+  const [portalAccessClient, setPortalAccessClient] = useState<Client | null>(null)
+  const [portalEmail, setPortalEmail] = useState('')
+  const [portalPassword, setPortalPassword] = useState('')
+  const [portalSaving, setPortalSaving] = useState(false)
+  const [portalError, setPortalError] = useState('')
+  const [portalCredentials, setPortalCredentials] = useState<{ email: string; password: string } | null>(null)
   const [form, setForm] = useState(EMPTY_CLIENT)
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -569,6 +575,37 @@ export function ClientsPage() {
   }, [filtered, colaboradores])
 
   function openNew() { setEditId(null); setForm(EMPTY_CLIENT); setAvatarPreview(''); setModalOpen(true) }
+  async function createPortalAccess() {
+    if (!portalAccessClient) return
+    if (!portalEmail.trim() || portalPassword.length < 6) {
+      setPortalError('Informe um e-mail e uma senha com pelo menos 6 caracteres.')
+      return
+    }
+    setPortalError('')
+    setPortalSaving(true)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token
+      if (!accessToken) { setPortalError('Sessão expirada. Faça login novamente.'); return }
+
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({
+          email: portalEmail.trim(), password: portalPassword,
+          name: portalAccessClient.name, role: 'client', client_id: portalAccessClient.id,
+        }),
+      })
+      const resData = await res.json().catch(() => ({ error: 'Resposta inválida do servidor' }))
+      if (!res.ok) { setPortalError(resData.error || 'Erro ao criar acesso.'); return }
+      setPortalCredentials({ email: portalEmail.trim(), password: portalPassword })
+    } catch (err: unknown) {
+      setPortalError(err instanceof Error ? err.message : 'Erro de conexão.')
+    } finally {
+      setPortalSaving(false)
+    }
+  }
+
   function openEdit(c: Client) {
     setEditId(c.id)
     const matchedUser = systemUsers.find(u => (u.name || u.display_name) === c.assigned_lawyer)
@@ -2335,12 +2372,58 @@ export function ClientsPage() {
                     })}
                   ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button>
                   <Button variant="outline" size="sm" onClick={() => { const vc = viewClient; setViewClient(null); openEdit(vc) }}><Edit3 className="w-3.5 h-3.5" />Editar</Button>
+                  <Button variant="outline" size="sm" onClick={() => { setPortalAccessClient(viewClient); setPortalEmail(viewClient.email || ''); setPortalPassword(''); setPortalCredentials(null) }}>
+                    <KeyRound className="w-3.5 h-3.5" />Portal do Cliente
+                  </Button>
                   <Button size="sm" onClick={() => setViewClient(null)}>Fechar</Button>
                 </div>
               </div>
             </div>
           )
         })()}
+      </Modal>
+
+      {/* ══ MODAL: Portal do Cliente ══ */}
+      <Modal open={!!portalAccessClient} onClose={() => setPortalAccessClient(null)} title="Acesso ao Portal do Cliente" size="sm">
+        {portalAccessClient && (
+          portalCredentials ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                <p className="text-sm text-emerald-700 dark:text-emerald-400">Acesso criado com sucesso!</p>
+              </div>
+              <div className="p-3 bg-gray-50 dark:bg-dark-700 rounded-xl space-y-1">
+                <p className="text-sm text-gray-700 dark:text-gray-300"><strong>E-mail:</strong> {portalCredentials.email}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300"><strong>Senha:</strong> {portalCredentials.password}</p>
+              </div>
+              <p className="text-xs text-gray-400">Compartilhe essas credenciais com {portalAccessClient.name} por um canal seguro. Ele poderá acompanhar processos, financeiro e documentos em <strong>{window.location.origin}/login</strong>.</p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { navigator.clipboard.writeText(`Email: ${portalCredentials.email}\nSenha: ${portalCredentials.password}`) }}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                  <Copy className="w-3.5 h-3.5" /> Copiar
+                </button>
+                <Button size="sm" onClick={() => setPortalAccessClient(null)}>Concluir</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Crie um login para <strong className="text-gray-700 dark:text-gray-200">{portalAccessClient.name}</strong> acompanhar seus processos, financeiro e documentos.
+              </p>
+              <Input label="E-mail" type="email" value={portalEmail} onChange={e => setPortalEmail(e.target.value)} placeholder="cliente@email.com" />
+              <Input label="Senha" type="password" value={portalPassword} onChange={e => setPortalPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
+              {portalError && <p className="text-sm text-red-500 dark:text-red-400">{portalError}</p>}
+              <div className="flex justify-end gap-3 pt-1">
+                <button onClick={() => setPortalAccessClient(null)}
+                  className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                  Cancelar
+                </button>
+                <Button onClick={createPortalAccess} loading={portalSaving}>Criar acesso</Button>
+              </div>
+            </div>
+          )
+        )}
       </Modal>
 
       {/* ══ MODAL TAREFA — Etapa 2 ══ */}

@@ -24,7 +24,10 @@ const ReportsPage      = lazy(() => import('@/pages/reports/ReportsPage').then(m
 const UsersPage        = lazy(() => import('@/pages/users/UsersPage').then(m => ({ default: m.UsersPage })))
 const DocumentsPage    = lazy(() => import('@/pages/documents/DocumentsPage').then(m => ({ default: m.DocumentsPage })))
 const PublicacoesPage  = lazy(() => import('@/pages/publicacoes/PublicacoesPage').then(m => ({ default: m.PublicacoesPage })))
+const ClientPortalPage = lazy(() => import('@/pages/portal/ClientPortalPage').then(m => ({ default: m.ClientPortalPage })))
 
+// Rotas de equipe (escritório) — nunca acessíveis a um login de cliente (role 'client'),
+// que fica restrito ao Portal do Cliente em /portal.
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { session, loading, profile, refreshProfile } = useAuth()
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -39,6 +42,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) return <LoadingScreen />
   if (!session) return <Navigate to="/login" replace />
+  if (profile?.role === 'client') return <Navigate to="/portal" replace />
   return (
     <Suspense fallback={<LoadingScreen />}>
       {children}
@@ -52,6 +56,14 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth()
   return profile?.role === 'super_admin' ? <>{children}</> : <Navigate to="/dashboard" replace />
+}
+
+function ClientPortalRoute({ children }: { children: React.ReactNode }) {
+  const { session, loading, profile } = useAuth()
+  if (loading) return <LoadingScreen />
+  if (!session) return <Navigate to="/login" replace />
+  if (profile?.role !== 'client') return <Navigate to="/dashboard" replace />
+  return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
 }
 
 function AppRoutes() {
@@ -75,6 +87,7 @@ function AppRoutes() {
       <Route path="/documentos" element={<PrivateRoute><DocumentsPage /></PrivateRoute>} />
       <Route path="/publicacoes" element={<PrivateRoute><PublicacoesPage /></PrivateRoute>} />
       <Route path="/admin" element={<PrivateRoute><AdminRoute><AdminPage /></AdminRoute></PrivateRoute>} />
+      <Route path="/portal" element={<ClientPortalRoute><ClientPortalPage /></ClientPortalRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )

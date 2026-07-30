@@ -45,10 +45,19 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json()
-    const { email, password, name, role, tenant_id } = body
+    const { email, password, name, role, tenant_id, client_id } = body
 
     if (!email || !password || !name) {
       return new Response(JSON.stringify({ error: 'email, password e name são obrigatórios' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+    if (role === 'client' && !client_id) {
+      return new Response(JSON.stringify({ error: 'client_id é obrigatório para acesso do tipo client' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+    if (role === 'client') {
+      const { data: clientRow } = await supabaseAdmin.from('clients').select('id, tenant_id').eq('id', client_id).maybeSingle()
+      if (!clientRow || clientRow.tenant_id !== callerProfile.tenant_id) {
+        return new Response(JSON.stringify({ error: 'Cliente não encontrado neste escritório' }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+      }
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -70,6 +79,7 @@ Deno.serve(async (req: Request) => {
       email,
       role,
       tenant_id: tenant_id || callerProfile.tenant_id,
+      client_id: role === 'client' ? client_id : null,
     }, { onConflict: 'id' })
 
     if (profileError) {

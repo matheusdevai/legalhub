@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react'
 import {
   User, Lock, Bell, Building2, CreditCard, Palette, Globe,
   CheckCircle2, AlertCircle, Eye, EyeOff, Shield, Smartphone, Mail,
+  History, Plus, Pencil, Trash2,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Input, Select } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { NotificationPrefs } from '@/types'
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -25,7 +26,7 @@ const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; icon: any; label: stri
   { key: 'new_clients',      icon: User,       label: 'Novos clientes',           desc: 'Quando um cliente é cadastrado' },
 ]
 
-type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'plan'
+type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'plan' | 'audit'
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'profile',       label: 'Perfil',         icon: User },
@@ -34,6 +35,32 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'appearance',    label: 'Aparência',       icon: Palette },
   { id: 'plan',          label: 'Plano',           icon: CreditCard },
 ]
+
+interface AuditLogEntry {
+  id: string
+  entity_type: string
+  entity_id: string
+  action: 'create' | 'update' | 'delete'
+  entity_label: string | null
+  changes: Record<string, { de: unknown; para: unknown }> | null
+  user_id: string | null
+  user_name: string | null
+  created_at: string
+}
+
+const ENTITY_LABELS: Record<string, string> = {
+  clients: 'Cliente', processes: 'Processo', tasks: 'Tarefa', financials: 'Financeiro',
+}
+const FIELD_LABELS: Record<string, string> = {
+  status: 'Status', priority: 'Prioridade', due_date: 'Vencimento', amount: 'Valor',
+  title: 'Título', name: 'Nome', description: 'Descrição', assigned_to: 'Responsável',
+  type: 'Tipo', category: 'Categoria',
+}
+const ACTION_META: Record<string, { label: string; icon: any; color: string }> = {
+  create: { label: 'Criou', icon: Plus, color: 'text-emerald-600 dark:text-emerald-400' },
+  update: { label: 'Editou', icon: Pencil, color: 'text-blue-600 dark:text-blue-400' },
+  delete: { label: 'Excluiu', icon: Trash2, color: 'text-red-500 dark:text-red-400' },
+}
 
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
@@ -46,6 +73,10 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [notifPrefs, setNotifPrefs] = useState<NotificationPrefs>(profile?.notification_prefs || DEFAULT_NOTIFICATION_PREFS)
   const [savingNotifKey, setSavingNotifKey] = useState<string | null>(null)
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
+  const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([])
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [auditEntityFilter, setAuditEntityFilter] = useState('')
 
   useEffect(() => {
     if (!profile) return
@@ -81,6 +112,19 @@ export function SettingsPage() {
     await refreshProfile()
     setSavingNotifKey(null)
   }
+
+  async function loadAuditLog() {
+    setAuditLoading(true)
+    let query = supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(200)
+    if (auditEntityFilter) query = query.eq('entity_type', auditEntityFilter)
+    const { data } = await query
+    setAuditLog((data || []) as AuditLogEntry[])
+    setAuditLoading(false)
+  }
+
+  useEffect(() => {
+    if (tab === 'audit' && isAdmin) loadAuditLog()
+  }, [tab, auditEntityFilter, isAdmin])
 
   async function changePassword() {
     if (!newPassword || newPassword.length < 6) {
@@ -120,7 +164,7 @@ export function SettingsPage() {
           {/* Sidebar tabs */}
           <div className="w-full lg:w-52 flex-shrink-0">
             <Card className="p-2 overflow-hidden">
-              {TABS.map(t => {
+              {[...TABS, ...(isAdmin ? [{ id: 'audit' as Tab, label: 'Auditoria', icon: History }] : [])].map(t => {
                 const Icon = t.icon
                 return (
                   <button
@@ -442,6 +486,62 @@ export function SettingsPage() {
                   </div>
                 </Card>
               </div>
+            )}
+
+            {/* AUDIT TAB */}
+            {tab === 'audit' && isAdmin && (
+              <Card className="overflow-hidden">
+                <div className="px-6 py-5 border-b border-gray-100 dark:border-dark-700 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900 dark:text-white">Log de Auditoria</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Quem criou, editou ou excluiu registros no sistema</p>
+                  </div>
+                  <select
+                    value={auditEntityFilter}
+                    onChange={e => setAuditEntityFilter(e.target.value)}
+                    className="px-3 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300"
+                  >
+                    <option value="">Todas as entidades</option>
+                    <option value="clients">Clientes</option>
+                    <option value="processes">Processos</option>
+                    <option value="tasks">Tarefas</option>
+                    <option value="financials">Financeiro</option>
+                  </select>
+                </div>
+                <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-50 dark:divide-dark-700">
+                  {auditLoading ? (
+                    <p className="text-sm text-gray-400 text-center py-10">Carregando...</p>
+                  ) : auditLog.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-10">Nenhum registro de auditoria ainda.</p>
+                  ) : auditLog.map(entry => {
+                    const meta = ACTION_META[entry.action]
+                    const Icon = meta.icon
+                    return (
+                      <div key={entry.id} className="px-6 py-3.5 flex items-start gap-3">
+                        <Icon className={cn('w-4 h-4 mt-0.5 flex-shrink-0', meta.color)} />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm text-gray-700 dark:text-gray-300">
+                            <span className="font-semibold text-gray-900 dark:text-white">{entry.user_name || 'Sistema (automático)'}</span>
+                            {' '}{meta.label.toLowerCase()}{' '}
+                            <span className="font-medium">{ENTITY_LABELS[entry.entity_type] || entry.entity_type}</span>
+                            {entry.entity_label && <> — <span className="italic">{entry.entity_label}</span></>}
+                          </p>
+                          {entry.changes && Object.keys(entry.changes).length > 0 && (
+                            <ul className="mt-1 space-y-0.5">
+                              {Object.entries(entry.changes).map(([field, diff]) => (
+                                <li key={field} className="text-xs text-gray-400 dark:text-gray-500">
+                                  {FIELD_LABELS[field] || field}: <span className="line-through">{String(diff.de ?? '—')}</span> → <span className="text-gray-600 dark:text-gray-300">{String(diff.para ?? '—')}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{formatDate(entry.created_at, "dd/MM/yyyy 'às' HH:mm")}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
             )}
 
           </div>
