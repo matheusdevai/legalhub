@@ -109,6 +109,7 @@ export interface Process {
   updated_at: string | null
   deleted_at: string | null
   data_protocolo: string | null
+  numero_protocolo: string | null
   modalidade: 'judicial' | 'administrativo' | null
   colaborador_id: string | null
   cnj_source: boolean | null

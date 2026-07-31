@@ -438,6 +438,7 @@ export function ProcessesPage() {
     function processRow(p: Process) {
       return [
         { text: p.number, mono: true, bold: true },
+        { text: p.numero_protocolo || '—', mono: true },
         { text: p.title },
         { text: p.client_name || '—' },
         { text: p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—', badge: (p.modalidade === 'judicial' ? 'purple' : 'cyan') as any },
@@ -448,13 +449,13 @@ export function ProcessesPage() {
       ]
     }
 
-    const columns = ['Número', 'Título', 'Cliente', 'Modalidade', 'Área', 'Vara', 'Status', 'Próximo Prazo']
+    const columns = ['Número', 'Requerimento', 'Título', 'Cliente', 'Modalidade', 'Área', 'Vara', 'Status', 'Próximo Prazo']
 
     if (scope !== 'all') {
       const parceiroNome = scope === 'sem-parceiro' ? 'Sem parceiro' : (colaboradores.find(c => c.id === scope)?.nome || 'Parceiro')
-      const csvLines = ['Número,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
+      const csvLines = ['Número,Requerimento,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
       for (const p of scoped) {
-        csvLines.push(`"${p.number}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+        csvLines.push(`"${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
       }
       openExportWindow({
         title: 'Relatório de Processos',
@@ -486,14 +487,14 @@ export function ProcessesPage() {
     ].filter(g => g.rows.length > 0)
 
     // CSV com seções por parceiro
-    const csvLines = ['Parceiro,Número,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
+    const csvLines = ['Parceiro,Número,Requerimento,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
     for (const col of colaboradores) {
       for (const p of filtered.filter(x => x.colaborador_id === col.id)) {
-        csvLines.push(`"${col.nome}","${p.number}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+        csvLines.push(`"${col.nome}","${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
       }
     }
     for (const p of filtered.filter(x => !x.colaborador_id)) {
-      csvLines.push(`"Sem parceiro","${p.number}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+      csvLines.push(`"Sem parceiro","${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
     }
 
     openExportWindow({
@@ -998,6 +999,7 @@ export function ProcessesPage() {
                       </th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tipo de Ação</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Requerimento</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Cadastro</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Último Andamento</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Andamento</th>
@@ -1035,6 +1037,9 @@ export function ProcessesPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.number}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.numero_protocolo || '—'}</span>
                         </td>
                         <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
                           {formatDate(p.created_at)}
@@ -1127,6 +1132,7 @@ export function ProcessesPage() {
                                   </td>
                                   <td className="px-4 py-3"><span className="text-xs text-gray-600 dark:text-gray-300">{p.area || p.type || '—'}</span></td>
                                   <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.number}</span></td>
+                                  <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.numero_protocolo || '—'}</span></td>
                                   <td className="px-4 py-3">
                                     <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', PROCESS_STATUS_COLORS[p.status || 'active'])}>
                                       {PROCESS_STATUS_LABELS[p.status || 'active']}
@@ -1654,7 +1660,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
     modalidade: p.modalidade || '',
     ano_ajuizamento: p.created_at ? new Date(p.created_at).getFullYear().toString() : '',
     segmento: '', comarca: '', vara: p.court || '', tribunal: '',
-    sistema_eletronico: '', numero_protocolo: '', processo_originario: '',
+    sistema_eletronico: '', numero_protocolo: p.numero_protocolo || '', processo_originario: '',
     pasta_caso: '', data_requerimento: p.data_protocolo || '',
     valor_causa: '', valor_honorarios: '', percentual_honorarios: '',
     contingenciamento: '', data_fechamento: '', transito_julgado: '',
@@ -1836,6 +1842,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       area: form.area,
       type: form.type,
       data_protocolo: form.data_protocolo || form.data_requerimento || null,
+      numero_protocolo: form.numero_protocolo || null,
       next_deadline: form.next_deadline || null,
       next_hearing: form.next_hearing || null,
       colaborador_id: form.colaborador_id || null,
@@ -1900,6 +1907,11 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
             {p.number && (
               <p className="text-[11px] text-gray-400 dark:text-gray-500 font-mono mt-0.5 flex items-center gap-1">
                 <Hash className="w-3 h-3" />{p.number}
+              </p>
+            )}
+            {p.numero_protocolo && (
+              <p className="text-[11px] text-gray-400 dark:text-gray-500 font-mono mt-0.5 flex items-center gap-1">
+                <FileText className="w-3 h-3" />{p.numero_protocolo}
               </p>
             )}
           </div>
@@ -2367,6 +2379,19 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
             value={form.number}
             onChange={f('number')}
             placeholder="9999999-99.9999.9.99.9999"
+            className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 font-mono placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
+          />
+        </div>
+
+        {/* Número do requerimento/protocolo */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+            Número do requerimento
+          </label>
+          <input
+            value={form.numero_protocolo}
+            onChange={f('numero_protocolo')}
+            placeholder="Número do protocolo/requerimento"
             className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 font-mono placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
           />
         </div>
