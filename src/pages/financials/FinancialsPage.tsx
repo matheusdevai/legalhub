@@ -6,7 +6,7 @@ import {
   Wallet, Plane, Coffee, Car, Bed, Receipt, Scale,
   Edit3, CheckCircle2, Clock, Users, UserCheck,
   ChevronLeft, ChevronRight, RefreshCw, Filter, ArrowUpDown, Download,
-  ChevronDown, Minus, BarChart2, ArrowDownRight, ArrowUpRight,
+  ChevronDown, Minus, ArrowDownRight, ArrowUpRight,
   MessageCircle, Sparkles, Landmark, Layers, X, SlidersHorizontal,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
@@ -564,11 +564,8 @@ export function FinancialsPage() {
         {/* ── 4 Top stat cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Saldo */}
-          <Card className="p-4">
-            <div className="flex items-start justify-between">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Saldo</p>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
+          <Card className="p-4 border-l-4 border-primary-500">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Saldo</p>
             <div className="flex items-end gap-2 mt-1.5">
               <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(saldo)}</p>
               {pctSaldo !== 0 && (
@@ -583,11 +580,8 @@ export function FinancialsPage() {
           </Card>
 
           {/* Receita mensal prevista */}
-          <Card className="p-4">
-            <div className="flex items-start justify-between">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Receita mensal prevista</p>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
+          <Card className="p-4 border-l-4 border-green-500">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Receita mensal prevista</p>
             <div className="flex items-end gap-2 mt-1.5">
               <p className="text-2xl font-bold text-slate-900 dark:text-white">{formatCurrency(receitaMensalPrevista)}</p>
               {pctReceita !== 0 && (
@@ -602,11 +596,8 @@ export function FinancialsPage() {
           </Card>
 
           {/* Despesa mensal prevista */}
-          <Card className="p-4">
-            <div className="flex items-start justify-between">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Despesa mensal prevista</p>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
+          <Card className="p-4 border-l-4 border-red-500">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Despesa mensal prevista</p>
             <div className="flex items-end gap-2 mt-1.5">
               <p className={cn('text-2xl font-bold', despesaMensalPrevista > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white')}>
                 {despesaMensalPrevista > 0 ? `-${formatCurrency(despesaMensalPrevista)}` : formatCurrency(0)}
@@ -623,11 +614,8 @@ export function FinancialsPage() {
           </Card>
 
           {/* Pagamentos atrasados */}
-          <Card className="p-4">
-            <div className="flex items-start justify-between">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pagamentos atrasados</p>
-              <ChevronDown className="w-4 h-4 text-slate-400" />
-            </div>
+          <Card className="p-4 border-l-4 border-orange-500">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Pagamentos atrasados</p>
             <p className={cn('text-2xl font-bold mt-1.5', pagamentosAtrasados > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white')}>
               {pagamentosAtrasados > 0 ? `-${formatCurrency(pagamentosAtrasados)}` : formatCurrency(0)}
             </p>
@@ -697,12 +685,6 @@ export function FinancialsPage() {
                 title="Nova despesa"
               >
                 <Minus className="w-4 h-4" />
-              </button>
-              <button
-                className="w-9 h-9 flex items-center justify-center bg-slate-100 dark:bg-dark-700 hover:bg-slate-200 dark:hover:bg-dark-600 text-slate-600 dark:text-slate-300 rounded-lg transition-colors"
-                title="Expandir"
-              >
-                <BarChart2 className="w-4 h-4" />
               </button>
             </div>
 
