@@ -1,24 +1,25 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Check, Trash2,
-  CheckCircle2, User, ChevronDown, X as XIcon,
-  ArrowLeft, ArrowRight, Target, List, RefreshCw, SlidersHorizontal, Download,
+  CheckCircle2, User, ChevronDown, X as XIcon, Briefcase,
+  ArrowLeft, ArrowRight, Target, LayoutGrid, List, RefreshCw, SlidersHorizontal, Download,
   AlarmClock, Gavel, FileText, Users, CircleDot,
   Flame, Zap, CalendarClock, Inbox, PartyPopper,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { Task, Process, Client, Colaborador, Profile } from '@/types'
+import { Task, Process, Client, Profile, Colaborador } from '@/types'
 import { formatDate, PRIORITY_LABELS, TASK_STATUS_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
+import { markTaskDone, notifyTaskAssignment } from '@/lib/taskActions'
 
 type TaskForm = {
-  title: string; description: string; process_id: string;
+  title: string; description: string; process_id: string; client_id: string;
   assigned_name: string; assigned_to: string;
   due_date: string; due_time: string; deadline_date: string;
   priority: string; status: string; type: string;
@@ -29,7 +30,7 @@ type TaskForm = {
   recurrence_interval: 'weekly' | 'monthly' | 'yearly'; recurrence_end_date: string;
 }
 const EMPTY_FORM: TaskForm = {
-  title: '', description: '', process_id: '', assigned_name: '', assigned_to: '',
+  title: '', description: '', process_id: '', client_id: '', assigned_name: '', assigned_to: '',
   due_date: '', due_time: '', deadline_date: '', priority: 'medium', status: 'pending', type: 'custom',
   location: '',
   show_agenda: false, inform_end: false, all_day: false,
@@ -176,14 +177,15 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export function TasksPage() {
   const { profile } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [recurringTemplates, setRecurringTemplates] = useState<Task[]>([])
   const [recurringModalOpen, setRecurringModalOpen] = useState(false)
   const [processes, setProcesses] = useState<Process[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [systemUsers, setSystemUsers] = useState<Profile[]>([])
+  const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [loading, setLoading] = usePageLoadingState()
   const [refreshing, setRefreshing] = useState(false)
 
@@ -191,6 +193,7 @@ export function TasksPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [priorityFilter, setPriorityFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [assignedFilter, setAssignedFilter] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
 
   const [viewMode, setViewMode] = useState<'list' | 'foco'>('foco')
@@ -214,12 +217,12 @@ export function TasksPage() {
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
-    const [{ data: t }, { data: p }, { data: c }, { data: col }, { data: usr }] = await Promise.all([
+    const [{ data: t }, { data: p }, { data: c }, { data: usr }, { data: col }] = await Promise.all([
       supabase.from('tasks').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('processes').select('id,number,title,modalidade,client_id').is('deleted_at', null).order('title'),
       supabase.from('clients').select('id,name,colaborador_id').is('deleted_at', null).order('name'),
-      supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('profiles').select('id,user_id,name,display_name,role').order('name'),
+      supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
     ])
     const allTasks = (t || []) as Task[]
     let taskList = allTasks.filter(task => !task.recurring)
@@ -230,8 +233,8 @@ export function TasksPage() {
     setRecurringTemplates(allTasks.filter(task => task.recurring))
     setProcesses((p || []) as Process[])
     setClients((c || []) as Client[])
-    setColaboradores(col || [])
     setSystemUsers((usr || []) as Profile[])
+    setColaboradores((col || []) as Colaborador[])
     setLoading(false)
   }
 
@@ -246,23 +249,35 @@ export function TasksPage() {
     if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
   }, [location.state])
 
+  // ── Workload por responsável (tarefas abertas) ───────────────────────────
+  const workloadByUser = useMemo(() => {
+    const map: Record<string, number> = {}
+    tasks.forEach(t => {
+      if (!t.assigned_to) return
+      if (t.status === 'done' || t.status === 'cancelled') return
+      map[t.assigned_to] = (map[t.assigned_to] || 0) + 1
+    })
+    return map
+  }, [tasks])
+
   // ── Modo Foco: categorização mutuamente exclusiva ────────────────────────
   const matchesFilters = (t: Task) => {
     const q = search.toLowerCase()
     const matchSearch = !search || t.title.toLowerCase().includes(q) || t.assigned_name?.toLowerCase().includes(q)
     const matchPriority = !priorityFilter || (t.priority || 'medium') === priorityFilter
     const matchType = !typeFilter || (t.type || 'custom') === typeFilter
-    return matchSearch && matchPriority && matchType
+    const matchAssigned = !assignedFilter || t.assigned_to === assignedFilter
+    return matchSearch && matchPriority && matchType && matchAssigned
   }
 
   const filteredActive = useMemo(() => tasks.filter(t =>
     t.status !== 'done' && t.status !== 'cancelled' && matchesFilters(t)
-  ), [tasks, search, priorityFilter, typeFilter])
+  ), [tasks, search, priorityFilter, typeFilter, assignedFilter])
 
   // Agenda de hoje — inclui concluídas de hoje, para o anel de progresso
   const todayAllTasks = useMemo(
     () => tasks.filter(t => t.due_date?.slice(0, 10) === today && t.status !== 'cancelled' && matchesFilters(t)),
-    [tasks, search, priorityFilter, typeFilter, today]
+    [tasks, search, priorityFilter, typeFilter, assignedFilter, today]
   )
   const todayOpenTasks = useMemo(() => todayAllTasks.filter(t => t.status !== 'done'), [todayAllTasks])
   const todayDoneTasks = useMemo(() => todayAllTasks.filter(t => t.status === 'done'), [todayAllTasks])
@@ -305,8 +320,9 @@ export function TasksPage() {
     const matchStatus = !statusFilter || (t.status || 'pending') === statusFilter
     const matchPriority = !priorityFilter || (t.priority || 'medium') === priorityFilter
     const matchType = !typeFilter || (t.type || 'custom') === typeFilter
-    return matchSearch && matchStatus && matchPriority && matchType
-  }), [tasks, search, statusFilter, priorityFilter, typeFilter])
+    const matchAssigned = !assignedFilter || t.assigned_to === assignedFilter
+    return matchSearch && matchStatus && matchPriority && matchType && matchAssigned
+  }), [tasks, search, statusFilter, priorityFilter, typeFilter, assignedFilter])
 
   const paginatedTasks = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
@@ -318,7 +334,7 @@ export function TasksPage() {
     doneToday: tasks.filter(t => t.status === 'done' && t.completed_at?.slice(0, 10) === today).length,
   }), [tasks, today])
 
-  const filterCount = [priorityFilter, typeFilter, statusFilter].filter(Boolean).length
+  const filterCount = [priorityFilter, typeFilter, statusFilter, assignedFilter].filter(Boolean).length
 
   // ── Actions ──────────────────────────────────────────────────────────────
   function openNew() {
@@ -330,15 +346,14 @@ export function TasksPage() {
   function openEdit(t: Task) {
     setEditId(t.id)
     setForm({
-      title: t.title, description: t.description || '', process_id: t.process_id || '',
+      title: t.title, description: t.description || '', process_id: t.process_id || '', client_id: t.client_id || '',
       assigned_name: t.assigned_name || '', assigned_to: t.assigned_to || '',
-      due_date: t.due_date?.slice(0, 10) || '', due_time: '', deadline_date: '',
+      due_date: t.due_date?.slice(0, 10) || '', due_time: '', deadline_date: t.deadline_date?.slice(0, 10) || '',
       priority: (t.priority as any) || 'medium', status: (t.status as any) || 'pending',
       type: (t.type as any) || 'custom',
-      location: '',
-      show_agenda: false, inform_end: false, all_day: false,
+      location: t.location || '', show_agenda: false, inform_end: false, all_day: !!t.all_day,
       tag_importante: t.priority === 'high', tag_urgente: t.priority === 'urgent',
-      tag_futura: false, tag_recorrente: false, tag_privada: false, tag_retroativa: false,
+      tag_futura: false, tag_recorrente: !!t.recurring, tag_privada: false, tag_retroativa: false,
       recurrence_interval: t.recurrence_interval || 'monthly', recurrence_end_date: t.recurrence_end_date || '',
     })
     setModalOpen(true)
@@ -351,20 +366,26 @@ export function TasksPage() {
     const dueDateFull = form.due_date
       ? (form.due_time ? `${form.due_date}T${form.due_time}:00` : form.due_date)
       : null
-    const { due_time, deadline_date, location, show_agenda, inform_end, all_day,
+    const derivedClientId = form.process_id
+      ? (processes.find(p => p.id === form.process_id)?.client_id || form.client_id || null)
+      : (form.client_id || null)
+    const { due_time, show_agenda, inform_end,
       tag_importante, tag_urgente, tag_futura, tag_recorrente, tag_privada, tag_retroativa,
-      recurrence_interval, recurrence_end_date,
+      recurrence_interval, recurrence_end_date, client_id,
       ...rest } = form
     const payload = {
       ...rest, priority: derivedPriority,
       process_id: form.process_id || null,
+      client_id: derivedClientId,
       assigned_to: form.assigned_to || null,
       assigned_name: form.assigned_name || null,
       due_date: dueDateFull,
+      deadline_date: form.deadline_date || null,
       recurring: tag_recorrente,
       recurrence_interval: tag_recorrente ? recurrence_interval : null,
       recurrence_end_date: tag_recorrente ? (recurrence_end_date || null) : null,
     }
+    const previousAssignedTo = editId ? tasks.find(t => t.id === editId)?.assigned_to || null : null
     let error: any = null
     if (editId) {
       const res = await supabase.from('tasks').update(payload).eq('id', editId)
@@ -375,17 +396,22 @@ export function TasksPage() {
     }
     setSaving(false)
     if (error) { alert(`Erro ao salvar tarefa: ${error.message}`); return }
+    if (payload.assigned_to && payload.assigned_to !== previousAssignedTo) {
+      await notifyTaskAssignment(payload.assigned_to, form.title)
+    }
     setModalOpen(false)
     load(true)
   }
 
   async function markDone(taskId: string) {
-    const now = new Date().toISOString()
+    const task = tasks.find(t => t.id === taskId)
+    if (!task) return
+    const { completed_at } = await markTaskDone(task)
     setTasks(prev => prev.map(t => t.id === taskId
-      ? { ...t, status: 'done' as Task['status'], completed_at: now }
+      ? { ...t, status: 'done' as Task['status'], completed_at }
       : t
     ))
-    await supabase.from('tasks').update({ status: 'done', completed_at: now }).eq('id', taskId)
+    if (task.recurring) load(true)
   }
 
   async function softDeleteTask(taskId: string) {
@@ -456,10 +482,16 @@ export function TasksPage() {
     const pendentes = filtered.filter(t => t.status === 'pending').length
     const vencidas = filtered.filter(t => t.due_date && String(t.due_date).slice(0, 10) < todayStr && t.status !== 'done' && t.status !== 'cancelled').length
     const concluidas = filtered.filter(t => t.status === 'done').length
+    const processInfo = (t: Task) => processes.find(p => p.id === t.process_id)
+    const clientName = (t: Task) => {
+      const proc = processInfo(t)
+      if (proc?.client_name) return proc.client_name
+      return clients.find(c => c.id === t.client_id)?.name || ''
+    }
     const csvContent = [
-      'Título,Tipo,Prioridade,Status,Responsável,Vencimento',
+      'Título,Tipo,Prioridade,Status,Responsável,Processo,Cliente,Vencimento',
       ...filtered.map(t =>
-        `"${t.title}","${TYPE_LABEL[t.type || 'custom'] ?? t.type ?? '—'}","${PRIORITY_LABELS[t.priority || 'medium']}","${TASK_STATUS_LABELS[t.status || 'pending']}","${t.assigned_name || '—'}","${t.due_date ? formatDate(t.due_date) : '—'}"`
+        `"${t.title}","${TYPE_LABEL[t.type || 'custom'] ?? t.type ?? '—'}","${PRIORITY_LABELS[t.priority || 'medium']}","${TASK_STATUS_LABELS[t.status || 'pending']}","${t.assigned_name || '—'}","${processInfo(t)?.number || '—'}","${clientName(t) || '—'}","${t.due_date ? formatDate(t.due_date) : '—'}"`
       ),
     ].join('\n')
     openExportWindow({
@@ -471,15 +503,18 @@ export function TasksPage() {
         { value: vencidas, label: 'Vencidas', accent: '#dc2626' },
         { value: concluidas, label: 'Concluídas', accent: '#16a34a' },
       ],
-      columns: ['Título', 'Tipo', 'Prioridade', 'Status', 'Responsável', 'Vencimento'],
+      columns: ['Título', 'Tipo', 'Prioridade', 'Status', 'Responsável', 'Processo', 'Cliente', 'Vencimento'],
       rows: filtered.map(t => {
         const isOverdue = !!t.due_date && String(t.due_date).slice(0, 10) < todayStr && t.status !== 'done' && t.status !== 'cancelled'
+        const proc = processInfo(t)
         return [
           { text: t.title, bold: true },
           { text: TYPE_LABEL[t.type || 'custom'] ?? t.type ?? '—' },
           { text: PRIORITY_LABELS[t.priority || 'medium'], badge: PRIORITY_BADGE[t.priority || 'medium'] ?? 'blue' },
           { text: TASK_STATUS_LABELS[t.status || 'pending'], badge: STATUS_BADGE[t.status || 'pending'] ?? 'gray' },
           { text: t.assigned_name || '—' },
+          { text: proc?.number || '—', sub: proc?.title },
+          { text: clientName(t) || '—' },
           { text: t.due_date ? formatDate(t.due_date) : '—', danger: isOverdue },
         ]
       }),
@@ -627,9 +662,21 @@ export function TasksPage() {
                     <option value="cancelled">Cancelada</option>
                   </select>
                 )}
+                <select
+                  value={assignedFilter}
+                  onChange={e => { setAssignedFilter(e.target.value); setPage(1) }}
+                  className="text-sm border border-gray-200 dark:border-dark-600 rounded-lg px-3 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none"
+                >
+                  <option value="">Todos os responsáveis</option>
+                  {systemUsers.map(u => (
+                    <option key={u.user_id} value={u.user_id}>
+                      {u.name || u.display_name} ({workloadByUser[u.user_id] || 0} aberta{(workloadByUser[u.user_id] || 0) !== 1 ? 's' : ''})
+                    </option>
+                  ))}
+                </select>
                 {filterCount > 0 && (
                   <button
-                    onClick={() => { setPriorityFilter(''); setTypeFilter(''); setStatusFilter('') }}
+                    onClick={() => { setPriorityFilter(''); setTypeFilter(''); setStatusFilter(''); setAssignedFilter('') }}
                     className="text-sm text-red-500 hover:text-red-600 transition-colors"
                   >
                     Limpar filtros
@@ -756,6 +803,7 @@ export function TasksPage() {
                       </th>
                       <th className="w-8 px-2 py-3"></th>
                       <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tarefa</th>
+                      <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Processo</th>
                       <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tipo</th>
                       <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Prioridade</th>
                       <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Vencimento</th>
@@ -767,7 +815,7 @@ export function TasksPage() {
                   <tbody className="divide-y divide-gray-50 dark:divide-dark-700">
                     {paginatedTasks.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
+                        <td colSpan={10} className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
                           Nenhuma tarefa encontrada
                         </td>
                       </tr>
@@ -791,7 +839,7 @@ export function TasksPage() {
                           </td>
                           <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
                             <button
-                              onClick={() => t.status !== 'done' && requestComplete(t)}
+                              onClick={() => t.status !== 'done' && markDone(t.id)}
                               className={cn('w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all', t.status === 'done' ? 'border-green-500 bg-green-500' : 'border-gray-300 dark:border-dark-500 hover:border-primary-500')}
                             >
                               {t.status === 'done' && <Check className="w-2.5 h-2.5 text-white" />}
@@ -801,6 +849,17 @@ export function TasksPage() {
                             <span className={cn('font-semibold text-gray-900 dark:text-white', t.status === 'done' && 'line-through text-gray-400 dark:text-gray-500')}>
                               {t.title}
                             </span>
+                          </td>
+                          <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                            {t.process_id ? (
+                              <button
+                                onClick={() => navigate('/processos', { state: { openProcessId: t.process_id } })}
+                                className="flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                              >
+                                <Briefcase className="w-3 h-3 flex-shrink-0" />
+                                {processes.find(p => p.id === t.process_id)?.number || 'Processo'}
+                              </button>
+                            ) : <span className="text-gray-300 dark:text-gray-600">—</span>}
                           </td>
                           <td className="px-3 py-3">
                             <span className={cn('inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium', TYPE_META[t.type || 'custom']?.chip)}>
@@ -896,12 +955,25 @@ export function TasksPage() {
       {/* ── Form Modal ── */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Editar Tarefa' : 'Criar nova tarefa'} size="lg">
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Processo ou caso</label>
-            <Select value={form.process_id} onChange={e => setForm({ ...form, process_id: e.target.value })}>
-              <option value="">Nome do cliente ou número do processo</option>
-              {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Processo ou caso</label>
+              <Select value={form.process_id} onChange={e => setForm({ ...form, process_id: e.target.value })}>
+                <option value="">Nome do cliente ou número do processo</option>
+                {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
+              <Select
+                value={form.client_id}
+                onChange={e => setForm({ ...form, client_id: e.target.value })}
+                disabled={!!form.process_id}
+              >
+                <option value="">{form.process_id ? 'Definido pelo processo' : 'Vincular a um cliente (opcional)'}</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </Select>
+            </div>
           </div>
 
           <div>
@@ -954,21 +1026,15 @@ export function TasksPage() {
           </div>
 
           <div className="flex items-center gap-5">
-            {[
-              { key: 'show_agenda', label: 'Mostrar na agenda' },
-              { key: 'inform_end', label: 'Informar término' },
-              { key: 'all_day', label: 'Dia inteiro' },
-            ].map(({ key, label }) => (
-              <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={(form as any)[key]}
-                  onChange={e => setForm({ ...form, [key]: e.target.checked })}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
-              </label>
-            ))}
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={form.all_day}
+                onChange={e => setForm({ ...form, all_day: e.target.checked })}
+                className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-xs text-gray-600 dark:text-gray-400">Dia inteiro</span>
+            </label>
           </div>
 
           <div className="hidden">
@@ -990,11 +1056,10 @@ export function TasksPage() {
             <Textarea label="" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Adicione um comentário..." />
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-4">
             {[
               { key: 'tag_importante', label: 'Importante' },
               { key: 'tag_urgente', label: 'Urgente' },
-              { key: 'tag_futura', label: 'Futura' },
               { key: 'tag_recorrente', label: 'Recorrente' },
               { key: 'tag_privada', label: 'Privada' },
               { key: 'tag_retroativa', label: 'Retroativa' },

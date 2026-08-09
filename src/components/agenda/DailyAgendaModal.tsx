@@ -33,7 +33,7 @@ const KIND_META = {
   },
   task: {
     icon: CheckSquare,
-    sectionTitle: 'Tarefas com prazo hoje',
+    sectionTitle: 'Tarefas com prazo hoje ou atrasadas',
     accent: 'bg-emerald-500',
     iconBg: 'bg-emerald-50 dark:bg-emerald-900/30',
     iconColor: 'text-emerald-600 dark:text-emerald-400',
@@ -92,9 +92,9 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
         .order('time'),
       supabase
         .from('tasks')
-        .select('id,title,assigned_name')
+        .select('id,title,assigned_name,due_date')
         .eq('tenant_id', profile!.tenant_id!)
-        .eq('due_date', today)
+        .lte('due_date', today)
         .neq('status', 'done')
         .neq('status', 'cancelled')
         .is('deleted_at', null),
@@ -120,7 +120,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
         id: t.id,
         kind: 'task' as const,
         title: t.title,
-        subtitle: t.assigned_name || undefined,
+        subtitle: [t.assigned_name, t.due_date && t.due_date < today ? 'Atrasada' : null].filter(Boolean).join(' · ') || undefined,
         link: '/tarefas',
       })),
       ...(processes || []).map(p => ({

@@ -3,6 +3,9 @@
 // Gera uma janela de exportação estilizada, consistente em todas as páginas.
 // ─────────────────────────────────────────────────────────────────────────────
 
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+
 export interface ExportStat {
   value: string | number
   label: string
@@ -99,6 +102,50 @@ function renderTable(columns: string[], rows: ExportCell[][], startIndex = 0): s
   </table>`
 }
 
+// ─── Versão em HTML simples (para conversão no Google Docs) ────────────────────
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function renderPlainCell(cell: ExportCell): string {
+  const text = escapeHtml(cell.text) + (cell.sub ? ` (${escapeHtml(cell.sub)})` : '')
+  const style = `border:1px solid #cbd5e1;padding:6px 10px;${cell.right ? 'text-align:right;' : ''}${cell.danger ? 'color:#dc2626;' : ''}`
+  return `<td style="${style}">${cell.bold ? `<b>${text}</b>` : text}</td>`
+}
+
+function renderPlainTable(columns: string[], rows: ExportCell[][]): string {
+  return `<table style="border-collapse:collapse;width:100%;margin-bottom:20px">
+    <thead><tr style="background:#f1f5f9">
+      <th style="border:1px solid #cbd5e1;padding:6px 10px;text-align:left">#</th>
+      ${columns.map(c => `<th style="border:1px solid #cbd5e1;padding:6px 10px;text-align:left">${escapeHtml(c)}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      ${rows.length === 0
+        ? `<tr><td colspan="${columns.length + 1}" style="padding:16px;text-align:center;color:#94a3b8">Nenhum registro encontrado</td></tr>`
+        : rows.map((row, i) => `<tr><td style="border:1px solid #cbd5e1;padding:6px 10px">${i + 1}</td>${row.map(renderPlainCell).join('')}</tr>`).join('')}
+    </tbody>
+  </table>`
+}
+
+function buildDocsHtml(opts: ExportOptions, date: string): string {
+  const { title, subtitle, stats, columns, rows, groups, sections } = opts
+  const statsLine = stats.length
+    ? `<p style="font-family:Arial,sans-serif;color:#374151">${stats.map(s => `<b>${escapeHtml(String(s.value))}</b> ${escapeHtml(s.label)}`).join(' &nbsp;&middot;&nbsp; ')}</p>`
+    : ''
+  const body = sections
+    ? sections.map(s => `<h3 style="font-family:Arial,sans-serif;color:#1e40af">${escapeHtml(s.title)} (${s.rows.length})</h3>${renderPlainTable(s.columns, s.rows)}`).join('')
+    : groups
+    ? groups.map(g => `<h3 style="font-family:Arial,sans-serif;color:#1e40af">${escapeHtml(g.label)} (${g.rows.length})</h3>${renderPlainTable(columns, g.rows)}`).join('')
+    : renderPlainTable(columns, rows)
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>
+    <h1 style="font-family:Arial,sans-serif;color:#0f2550">${escapeHtml(title)}</h1>
+    ${subtitle ? `<p style="font-family:Arial,sans-serif;color:#64748b">${escapeHtml(subtitle)}</p>` : ''}
+    <p style="font-family:Arial,sans-serif;color:#94a3b8;font-size:12px">Gerado em ${date}</p>
+    ${statsLine}
+    ${body}
+  </body></html>`
+}
+
 // ─── CSS compartilhado ────────────────────────────────────────────────────────
 const SHARED_CSS = `
 *{box-sizing:border-box;margin:0;padding:0}
@@ -110,11 +157,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .header-right{text-align:right}
 .report-title{font-size:18px;font-weight:700;color:#fff}
 .report-sub{font-size:12px;color:rgba(255,255,255,.65);margin-top:3px}
-.actions{background:#fff;padding:14px 40px;display:flex;align-items:center;gap:10px;border-bottom:2px solid #e2e8f0;position:sticky;top:0;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.actions{background:#fff;padding:14px 40px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:2px solid #e2e8f0;position:sticky;top:0;z-index:10;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .actions-label{font-size:13px;color:#64748b;margin-right:4px}
 .btn{padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;display:inline-flex;align-items:center;gap:7px;text-decoration:none;transition:all .15s}
+.btn:disabled{opacity:.6;cursor:default}
 .btn-blue{background:#2563eb;color:#fff}.btn-blue:hover{background:#1d4ed8}
 .btn-gray{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}.btn-gray:hover{background:#e2e8f0}
+.btn-green{background:#0f9d58;color:#fff}.btn-green:hover{background:#0b8043}
+.btn-docs{background:#2b7de9;color:#fff}.btn-docs:hover{background:#1a5fc4}
+.g-status{font-size:12px;color:#64748b;margin-left:2px}
 .container{padding:28px 40px}
 .stats{display:grid;gap:14px;margin-bottom:28px}
 .stat{background:#fff;border-radius:14px;padding:18px 22px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.04)}
@@ -152,12 +203,246 @@ tbody tr:hover td{background:#f8fafc}
 @media print{.actions{display:none!important}body{background:#fff}.container{padding:16px 20px}.header{padding:20px}.group-block{break-inside:avoid}}
 `
 
+// ─── Exportação para o Google Drive ─────────────────────────────────────────────
+// Roda inteiramente na janela principal do app (não no popup do relatório, que é
+// aberto via window.open('', ...) e por isso nunca navega para uma URL real — sua
+// origem efetiva não é a origem registrada no Google Cloud Console, então o GIS
+// rejeitaria o token com "origin_mismatch" se a autenticação rodasse lá dentro).
+// O popup só recebe, via `win.exportToSheets`/`win.exportToDocs`, closures já
+// prontas para atualizar seu próprio DOM (status, botões).
+const BADGE_COLORS: Record<string, { bg: string; fg: string }> = {
+  green:  { bg: '#dcfce7', fg: '#15803d' },
+  gray:   { bg: '#f1f5f9', fg: '#64748b' },
+  blue:   { bg: '#dbeafe', fg: '#1d4ed8' },
+  red:    { bg: '#fee2e2', fg: '#dc2626' },
+  amber:  { bg: '#fef3c7', fg: '#d97706' },
+  purple: { bg: '#f3e8ff', fg: '#7c3aed' },
+  cyan:   { bg: '#cffafe', fg: '#0e7490' },
+  rose:   { bg: '#ffe4e6', fg: '#e11d48' },
+  orange: { bg: '#ffedd5', fg: '#c2410c' },
+}
+
+function hexToRgb(hex: string) {
+  const h = hex.replace('#', '')
+  return { red: parseInt(h.substr(0, 2), 16) / 255, green: parseInt(h.substr(2, 2), 16) / 255, blue: parseInt(h.substr(4, 2), 16) / 255 }
+}
+const THIN_BORDER = { style: 'SOLID', color: hexToRgb('#e2e8f0') }
+const ALL_BORDERS = { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, right: THIN_BORDER }
+
+interface SheetCellOpts { bold?: boolean; fontSize?: number; bg?: string; fg?: string; align?: string; border?: boolean }
+
+function sheetCell(text: string | number, opts: SheetCellOpts = {}): any {
+  const fmt: any = {
+    wrapStrategy: 'WRAP',
+    verticalAlignment: 'MIDDLE',
+    textFormat: { bold: !!opts.bold, fontSize: opts.fontSize || 10 },
+  }
+  if (opts.border !== false) fmt.borders = ALL_BORDERS
+  if (opts.bg) fmt.backgroundColor = hexToRgb(opts.bg)
+  if (opts.fg) fmt.textFormat.foregroundColor = hexToRgb(opts.fg)
+  if (opts.align) fmt.horizontalAlignment = opts.align
+  return { userEnteredValue: { stringValue: String(text ?? '') }, userEnteredFormat: fmt }
+}
+
+function sheetDataCell(cell: ExportCell, zebraBg?: string) {
+  const text = cell.text + (cell.sub ? `\n${cell.sub}` : '')
+  const badge = cell.badge ? BADGE_COLORS[cell.badge] : undefined
+  return sheetCell(text, {
+    bold: !!cell.bold,
+    align: cell.right ? 'RIGHT' : 'LEFT',
+    bg: badge ? badge.bg : zebraBg,
+    fg: cell.danger ? '#dc2626' : badge?.fg,
+  })
+}
+
+function sheetHeaderRow(cols: string[]) {
+  return { values: [sheetCell('#', { bold: true, bg: '#1e40af', fg: '#ffffff', align: 'CENTER' }), ...cols.map(c => sheetCell(c, { bold: true, bg: '#1e40af', fg: '#ffffff' }))] }
+}
+
+function sheetDataRow(idx: number, row: ExportCell[], zebraBg?: string) {
+  return { values: [sheetCell(idx, { align: 'CENTER', fg: '#94a3b8', fontSize: 9, bg: zebraBg }), ...row.map(c => sheetDataCell(c, zebraBg))] }
+}
+
+function sheetTableRows(cols: string[], rows: ExportCell[][]) {
+  const out = [sheetHeaderRow(cols)]
+  if (!rows.length) out.push({ values: [sheetCell('Nenhum registro encontrado', { fg: '#94a3b8', align: 'CENTER' })] })
+  else rows.forEach((r, i) => out.push(sheetDataRow(i + 1, r, i % 2 === 1 ? '#f8fafc' : '#ffffff')))
+  return out
+}
+
+function buildSheetBody(opts: ExportOptions, fileName: string, date: string) {
+  const { title, subtitle, stats, columns, rows, groups, sections } = opts
+  const maxCols = sections ? Math.max(...sections.map(s => s.columns.length + 1)) : columns.length + 1
+
+  const rowData: any[] = []
+  const merges: any[] = []
+  let frozenRowCount = 0
+  let firstTable = true
+
+  function pushMergedRow(text: string, size: number, bg: string, fg: string) {
+    const values = [sheetCell(text, { bold: true, fontSize: size, bg, fg, border: false })]
+    for (let i = 1; i < maxCols; i++) values.push(sheetCell('', { bg, border: false }))
+    rowData.push({ values })
+    merges.push({ startRowIndex: rowData.length - 1, endRowIndex: rowData.length, startColumnIndex: 0, endColumnIndex: maxCols })
+  }
+
+  function emitTable(cols: string[], rowsIn: ExportCell[][]) {
+    if (firstTable) { frozenRowCount = rowData.length + 1; firstTable = false }
+    sheetTableRows(cols, rowsIn).forEach(r => rowData.push(r))
+  }
+
+  pushMergedRow(title, 14, '#0f2550', '#ffffff')
+  pushMergedRow(`${subtitle ? subtitle + '  ·  ' : ''}Gerado em ${date}`, 9, '#f1f5f9', '#64748b')
+  if (stats.length) pushMergedRow(stats.map(s => `${s.value} ${s.label}`).join('   ·   '), 10, '#eff6ff', '#1e40af')
+  rowData.push({ values: [] })
+
+  if (sections) {
+    sections.forEach(sec => {
+      pushMergedRow(`${sec.title} (${sec.rows.length})`, 11, '#eff6ff', '#1e40af')
+      emitTable(sec.columns, sec.rows)
+      rowData.push({ values: [] })
+    })
+  } else if (groups) {
+    groups.forEach(g => {
+      pushMergedRow(`${g.label} (${g.rows.length})`, 11, '#eff6ff', '#1e40af')
+      emitTable(columns, g.rows)
+      rowData.push({ values: [] })
+    })
+  } else {
+    emitTable(columns, rows)
+  }
+
+  return {
+    maxCols,
+    body: {
+      properties: { title: fileName },
+      sheets: [{
+        properties: { title: 'Relatório', gridProperties: { frozenRowCount, hideGridlines: true } },
+        data: [{ startRow: 0, startColumn: 0, rowData }],
+        merges,
+      }],
+    },
+  }
+}
+
+function loadGis(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ready = () => !!(window as any).google?.accounts?.oauth2
+    if (ready()) { resolve(); return }
+    if (!document.getElementById('gis-script')) {
+      const s = document.createElement('script')
+      s.id = 'gis-script'; s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true
+      document.body.appendChild(s)
+    }
+    const interval = setInterval(() => { if (ready()) { clearInterval(interval); resolve() } }, 100)
+    setTimeout(() => { clearInterval(interval); if (!ready()) reject(new Error('Falha ao carregar biblioteca do Google')) }, 10_000)
+  })
+}
+
+function getGoogleToken(): Promise<string> {
+  return loadGis().then(() => new Promise<string>((resolve, reject) => {
+    const g = (window as any).google
+    const client = g.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: (resp: any) => {
+        if (resp.error) { reject(new Error(resp.error)); return }
+        resolve(resp.access_token)
+      },
+    })
+    client.requestAccessToken()
+  }))
+}
+
+async function driveUpload(token: string, fileName: string, mimeType: string, contentType: string, content: string) {
+  const boundary = `lawfy-export-${Date.now()}`
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name: fileName, mimeType }) + `\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: ${contentType}; charset=UTF-8\r\n\r\n` +
+    content + `\r\n` +
+    `--${boundary}--`
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': `multipart/related; boundary="${boundary}"` },
+    body,
+  })
+  if (!res.ok) throw new Error(`Falha ao enviar (HTTP ${res.status})`)
+  return res.json()
+}
+
+async function createFormattedSheet(token: string, opts: ExportOptions, fileName: string, date: string) {
+  const built = buildSheetBody(opts, fileName, date)
+  const res = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(built.body),
+  })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e?.error?.message || `HTTP ${res.status}`) }
+  const sheet = await res.json()
+  const sheetId = sheet.sheets[0].properties.sheetId
+  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheet.spreadsheetId}:batchUpdate`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests: [{ autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: built.maxCols } } }] }),
+  }).catch(() => {})
+  return sheet
+}
+
+function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, date: string) {
+  loadGis().catch(() => {}) // pré-carrega para o clique não esperar o script
+
+  function setStatus(text: string, isError = false) {
+    const el = win.document.getElementById('gStatus')
+    if (!el) return
+    el.textContent = text
+    ;(el as HTMLElement).style.color = isError ? '#dc2626' : '#64748b'
+  }
+
+  ;(win as any).exportToSheets = async () => {
+    const btn = win.document.getElementById('btnSheets') as HTMLButtonElement | null
+    if (btn) btn.disabled = true
+    setStatus('Conectando ao Google...')
+    try {
+      const token = await getGoogleToken()
+      setStatus('Criando planilha formatada...')
+      const sheet = await createFormattedSheet(token, opts, fileName, date)
+      setStatus('✓ Planilha criada no Google Drive')
+      window.open(sheet.spreadsheetUrl, '_blank')
+    } catch (err: any) {
+      setStatus(`Erro: ${err.message}`, true)
+    } finally {
+      if (btn) btn.disabled = false
+    }
+  }
+
+  ;(win as any).exportToDocs = async () => {
+    const btn = win.document.getElementById('btnDocs') as HTMLButtonElement | null
+    if (btn) btn.disabled = true
+    setStatus('Conectando ao Google...')
+    try {
+      const token = await getGoogleToken()
+      setStatus('Enviando para o Google Drive...')
+      const file = await driveUpload(token, fileName, 'application/vnd.google-apps.document', 'text/html', buildDocsHtml(opts, date))
+      setStatus('✓ Documento criado no Google Drive')
+      window.open(file.webViewLink, '_blank')
+    } catch (err: any) {
+      setStatus(`Erro: ${err.message}`, true)
+    } finally {
+      if (btn) btn.disabled = false
+    }
+  }
+}
+
 // ─── Função principal ─────────────────────────────────────────────────────────
 export function openExportWindow(opts: ExportOptions): void {
   const { title, subtitle, filename, stats, columns, rows, csvContent, groups, sections } = opts
   const date = new Date().toLocaleString('pt-BR')
   const csvBase64 = btoa(unescape(encodeURIComponent(csvContent)))
   const logoUrl = window.location.origin + '/logomarca.png'
+  const driveFileName = `${filename}-${new Date().toISOString().slice(0, 10)}`
 
   const statsCols = Math.min(stats.length, 4)
   const statsHtml = `
@@ -216,6 +501,11 @@ export function openExportWindow(opts: ExportOptions): void {
   <span class="actions-label">Exportar:</span>
   <button class="btn btn-blue" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
   <a class="btn btn-gray" href="data:text/csv;charset=utf-8;base64,${csvBase64}" download="${filename}-${new Date().toISOString().slice(0, 10)}.csv">⬇️ Baixar CSV</a>
+  ${CLIENT_ID ? `
+  <button class="btn btn-green" id="btnSheets" onclick="exportToSheets()">📊 Planilha Google</button>
+  <button class="btn btn-docs" id="btnDocs" onclick="exportToDocs()">📄 Docs Google</button>
+  <span class="g-status" id="gStatus"></span>
+  ` : ''}
 </div>
 <div class="container">
   ${statsHtml}
@@ -226,7 +516,11 @@ export function openExportWindow(opts: ExportOptions): void {
 </html>`
 
   const win = window.open('', '_blank')
-  if (win) { win.document.write(html); win.document.close() }
+  if (win) {
+    win.document.write(html)
+    win.document.close()
+    if (CLIENT_ID) attachGoogleExport(win, opts, driveFileName, date)
+  }
 }
 
 // ─── vCard ──────────────────────────────────────────────────────────────────

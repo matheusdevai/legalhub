@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
+import { ensureProcessDeadlineTask, markTaskDone } from '@/lib/taskActions'
 
 /** Cria/atualiza/remove os eventos de Agenda vinculados a um processo (prazo e audiência) */
 async function syncProcessCalendarEvents(opts: {
@@ -199,6 +200,14 @@ export function ProcessesPage() {
       window.history.replaceState({}, '')
     }
   }, [location.state])
+  useEffect(() => {
+    const openProcessId = (location.state as any)?.openProcessId
+    if (openProcessId && processes.length) {
+      const p = processes.find(pr => pr.id === openProcessId)
+      if (p) setViewProcess(p)
+      window.history.replaceState({}, '')
+    }
+  }, [location.state, processes])
 
   const filtered = useMemo(() => {
     const result = processes.filter(p => {
@@ -389,8 +398,16 @@ export function ProcessesPage() {
     let error: any = null
     let processId = editId
     if (editId) {
+      const previous = processes.find(p => p.id === editId)
       const res = await supabase.from('processes').update(payload).eq('id', editId)
       error = res.error
+      if (!error) {
+        await ensureProcessDeadlineTask(
+          { id: editId, number: payload.number, assigned_lawyer: form.assigned_lawyer || null, client_id: payload.client_id || null },
+          previous?.next_deadline || null,
+          payload.next_deadline
+        )
+      }
     } else {
       const res = await supabase.from('processes').insert(payload).select('id').single()
       error = res.error
@@ -1822,9 +1839,15 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
   }
 
   async function toggleTaskStatus(taskId: string, current: string) {
-    const next = current === 'done' ? 'pending' : 'done'
-    await supabase.from('tasks').update({ status: next, completed_at: next === 'done' ? new Date().toISOString() : null }).eq('id', taskId)
-    setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: next as any, completed_at: next === 'done' ? new Date().toISOString() : null } : t))
+    if (current === 'done') {
+      await supabase.from('tasks').update({ status: 'pending', completed_at: null }).eq('id', taskId)
+      setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'pending', completed_at: null } : t))
+      return
+    }
+    const task = tabTasks.find(t => t.id === taskId)
+    if (!task) return
+    const { completed_at } = await markTaskDone(task)
+    setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'done', completed_at } : t))
   }
 
   const f = (k: keyof PanelForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
@@ -1832,6 +1855,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
 
   async function handleSave() {
     setSaving(true)
+    const newDeadline = form.next_deadline || null
     await supabase.from('processes').update({
       number: form.number,
       court: form.court || form.vara,
@@ -1843,7 +1867,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       type: form.type,
       data_protocolo: form.data_protocolo || form.data_requerimento || null,
       numero_protocolo: form.numero_protocolo || null,
-      next_deadline: form.next_deadline || null,
+      next_deadline: newDeadline,
       next_hearing: form.next_hearing || null,
       colaborador_id: form.colaborador_id || null,
       status: form.status as any,
@@ -1852,8 +1876,13 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
     await syncProcessCalendarEvents({
       processId: p.id, title: [p.client_name, form.counterparty].filter(Boolean).join(' x ') || p.title,
       clientName: p.client_name, processNumber: form.number,
-      nextDeadline: form.next_deadline || null, nextHearing: form.next_hearing || null,
+      nextDeadline: newDeadline, nextHearing: form.next_hearing || null,
     })
+    await ensureProcessDeadlineTask(
+      { id: p.id, number: form.number, assigned_lawyer: form.assigned_lawyer || null, client_id: p.client_id },
+      p.next_deadline,
+      newDeadline
+    )
     setSaving(false)
     onSaved()
   }

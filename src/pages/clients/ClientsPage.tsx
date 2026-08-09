@@ -15,6 +15,7 @@ import { Client, Colaborador, Process, Profile, Financial } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
+import { notifyTaskAssignment } from '@/lib/taskActions'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 
@@ -226,9 +227,11 @@ export function ClientsPage() {
       priority: taskForm.priority || 'medium',
       type: taskForm.type || 'custom',
       status: 'pending',
+      client_id: savedClientId,
       assigned_to: taskForm.assigned_to || null,
       assigned_name: taskForm.assigned_name || null,
     })
+    if (taskForm.assigned_to) await notifyTaskAssignment(taskForm.assigned_to, taskForm.title)
     setSaving(false)
     closeTaskModal()
   }
