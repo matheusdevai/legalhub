@@ -104,11 +104,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function DetailField({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: React.ReactNode }) {
   return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold mb-1 flex items-center gap-1">
-        <Icon className="w-3 h-3" /> {label}
-      </p>
-      <p className="text-sm text-gray-900 dark:text-white">{value || '—'}</p>
+    <div className="flex items-start gap-3">
+      <div className="w-8 h-8 rounded-lg bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
+        <Icon className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" />
+      </div>
+      <div className="min-w-0 pt-0.5">
+        <p className="text-[10px] uppercase tracking-wider text-gray-400 dark:text-gray-500 font-semibold mb-0.5">{label}</p>
+        <div className="text-sm text-gray-900 dark:text-white font-medium break-words">{value ?? '—'}</div>
+      </div>
     </div>
   )
 }
@@ -2277,29 +2280,37 @@ export function ClientsPage() {
           const col = colaboradores.find(x => x.id === viewClient.colaborador_id)
           return (
             <div className="-mx-6 -mt-6">
-              <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-6">
-                <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
-                <div className="relative flex items-start gap-4">
-                  <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/20 flex items-center justify-center text-2xl font-bold flex-shrink-0 overflow-hidden">
+              <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 pt-6 pb-7">
+                <div className="absolute -right-8 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+                <div className="absolute -left-10 bottom-0 w-32 h-32 bg-white/5 rounded-full blur-2xl" />
+                <button
+                  onClick={() => setViewClient(null)}
+                  className="absolute top-4 right-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+                  aria-label="Fechar"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <div className="relative flex items-start gap-4 pr-8">
+                  <div className="w-16 h-16 rounded-2xl bg-white/15 ring-2 ring-white/25 shadow-lg flex items-center justify-center text-2xl font-bold flex-shrink-0 overflow-hidden">
                     {viewClient.avatar_url
                       ? <img src={viewClient.avatar_url} alt={viewClient.name} className="w-full h-full object-cover" />
                       : viewClient.name[0]?.toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-xl font-bold">{viewClient.name}</h3>
-                    {viewClient.cpf_cnpj && <p className="text-xs text-white/75 font-mono mt-0.5">{formatCPFCNPJ(viewClient.cpf_cnpj)}</p>}
-                    <div className="flex items-center gap-2 mt-3 flex-wrap">
-                      <Badge className="bg-white/20 text-white border border-white/30">{viewClient.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</Badge>
+                    <h3 className="text-xl font-bold leading-tight">{viewClient.name}</h3>
+                    {viewClient.cpf_cnpj && <p className="text-xs text-white/70 font-mono mt-1">{formatCPFCNPJ(viewClient.cpf_cnpj)}</p>}
+                    <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                      <Badge className="bg-white/15 text-white border border-white/25">{viewClient.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}</Badge>
                       <Badge className={STATUS_COLORS[viewClient.status || 'active']}>{STATUS_LABELS[viewClient.status || 'active']}</Badge>
-                      {col && <Badge className="bg-white/20 text-white border border-white/30"><UserCheck className="w-3 h-3 mr-1" />{col.nome}</Badge>}
+                      {col && <Badge className="bg-white/15 text-white border border-white/25"><UserCheck className="w-3 h-3 mr-1" />{col.nome}</Badge>}
                       {viewClient.lgpd_consent && (
-                        <Badge className="bg-white/20 text-white border border-white/30"><ShieldCheck className="w-3 h-3 mr-1" />LGPD OK</Badge>
+                        <Badge className="bg-white/15 text-white border border-white/25"><ShieldCheck className="w-3 h-3 mr-1" />LGPD OK</Badge>
                       )}
                     </div>
                     {!!viewClient.tags?.length && (
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {viewClient.tags.map((t: string) => (
-                          <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/15 text-white">
+                          <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-white/10 text-white/90">
                             <Tag className="w-2.5 h-2.5" />{t}
                           </span>
                         ))}
@@ -2308,40 +2319,43 @@ export function ClientsPage() {
                   </div>
                 </div>
               </div>
-              <div className="px-6 py-5 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <DetailField icon={Phone} label="Telefone" value={viewClient.phone ? (
-                    <span className="inline-flex items-center gap-2">
-                      <a href={`tel:${viewClient.phone}`} className="text-primary-600 hover:underline">{formatPhone(viewClient.phone)}</a>
-                      {waLink(viewClient.phone) && (
-                        <a href={waLink(viewClient.phone)!} target="_blank" rel="noreferrer" title="Abrir no WhatsApp" className="text-green-500 hover:text-green-600">
-                          <MessageCircle className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </span>
-                  ) : null} />
-                  <DetailField icon={Mail} label="Email" value={viewClient.email ? <a href={`mailto:${viewClient.email}`} className="text-primary-600 hover:underline">{viewClient.email}</a> : null} />
-                  <DetailField icon={MapPin} label="Cidade" value={viewClient.cidade} />
-                  <DetailField icon={Scale} label="Área do Direito" value={viewClient.area_direito} />
-                  {viewClient.area_direito?.trim().toLowerCase() === 'previdenciário' && (
-                    <DetailField icon={Scale} label="Benefício Previdenciário" value={viewClient.beneficio_previdenciario} />
-                  )}
-                  <DetailField icon={Calendar} label="Data de Entrada" value={viewClient.entry_date ? formatDate(viewClient.entry_date) : null} />
-                  <DetailField icon={Calendar} label="Cadastrado em" value={formatDate(viewClient.created_at)} />
-                  <DetailField icon={FileText} label="Total Faturado" value={<span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(viewClient.total_billed ?? 0)}</span>} />
-                  {viewClient.modalidade && (
-                    <div>
-                      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Modalidade</p>
-                      <Badge className={viewClient.modalidade === 'judicial' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}>
-                        {viewClient.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}
-                      </Badge>
-                    </div>
-                  )}
+
+              <div className="px-6 py-5 space-y-5">
+                <div className="rounded-2xl bg-gray-50/70 dark:bg-dark-900/40 border border-gray-100 dark:border-dark-700/50 p-4 sm:p-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+                    <DetailField icon={Phone} label="Telefone" value={viewClient.phone ? (
+                      <span className="inline-flex items-center gap-2">
+                        <a href={`tel:${viewClient.phone}`} className="text-primary-600 dark:text-primary-400 hover:underline">{formatPhone(viewClient.phone)}</a>
+                        {waLink(viewClient.phone) && (
+                          <a href={waLink(viewClient.phone)!} target="_blank" rel="noreferrer" title="Abrir no WhatsApp" className="text-green-500 hover:text-green-600">
+                            <MessageCircle className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </span>
+                    ) : null} />
+                    <DetailField icon={Mail} label="Email" value={viewClient.email ? <a href={`mailto:${viewClient.email}`} className="text-primary-600 dark:text-primary-400 hover:underline">{viewClient.email}</a> : null} />
+                    <DetailField icon={MapPin} label="Cidade" value={viewClient.cidade} />
+                    <DetailField icon={Scale} label="Área do Direito" value={viewClient.area_direito} />
+                    {viewClient.area_direito?.trim().toLowerCase() === 'previdenciário' && (
+                      <DetailField icon={Scale} label="Benefício Previdenciário" value={viewClient.beneficio_previdenciario} />
+                    )}
+                    <DetailField icon={Calendar} label="Data de Entrada" value={viewClient.entry_date ? formatDate(viewClient.entry_date) : null} />
+                    <DetailField icon={Calendar} label="Cadastrado em" value={formatDate(viewClient.created_at)} />
+                    <DetailField icon={FileText} label="Total Faturado" value={<span className="font-semibold text-green-600 dark:text-green-400">{formatCurrency(viewClient.total_billed ?? 0)}</span>} />
+                    {viewClient.modalidade && (
+                      <DetailField icon={Briefcase} label="Modalidade" value={
+                        <Badge className={viewClient.modalidade === 'judicial' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}>
+                          {viewClient.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}
+                        </Badge>
+                      } />
+                    )}
+                  </div>
                 </div>
+
                 {viewClient.colaborador_id && col && (
-                  <div className="pt-3 border-t border-gray-100 dark:border-dark-700">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold mb-2">Pagamento ao Colaborador</p>
-                    <div className={cn('flex items-center gap-3 rounded-xl px-4 py-3 border', viewClient.colaborador_pago ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800')}>
+                  <div>
+                    <SectionLabel>Pagamento ao Colaborador</SectionLabel>
+                    <div className={cn('flex items-center gap-3 rounded-xl px-4 py-3 border mt-2', viewClient.colaborador_pago ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800')}>
                       {viewClient.colaborador_pago
                         ? <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />
                         : <Clock className="w-5 h-5 text-orange-500 flex-shrink-0" />}
@@ -2359,10 +2373,23 @@ export function ClientsPage() {
                     </div>
                   </div>
                 )}
-                {viewClient.address && <div className="pt-3 border-t border-gray-100 dark:border-dark-700"><p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Endereço</p><p className="text-sm text-gray-900 dark:text-white">{viewClient.address}</p></div>}
-                {viewClient.notes && <div className="pt-3 border-t border-gray-100 dark:border-dark-700"><p className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1">Observações</p><p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap">{viewClient.notes}</p></div>}
+
+                {viewClient.address && (
+                  <div>
+                    <SectionLabel>Endereço</SectionLabel>
+                    <p className="text-sm text-gray-900 dark:text-white mt-2">{viewClient.address}</p>
+                  </div>
+                )}
+
+                {viewClient.notes && (
+                  <div>
+                    <SectionLabel>Observações</SectionLabel>
+                    <p className="text-sm text-gray-900 dark:text-white whitespace-pre-wrap mt-2">{viewClient.notes}</p>
+                  </div>
+                )}
+
                 {procs.length > 0 && (
-                  <div className="pt-3 border-t border-gray-100 dark:border-dark-700">
+                  <div>
                     <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2"><Briefcase className="w-4 h-4 text-primary-600" />Processos ({procs.length})</p>
                     <div className="space-y-1.5">
                       {procs.map(p => (
@@ -2380,14 +2407,15 @@ export function ClientsPage() {
                     </div>
                   </div>
                 )}
-                <div className="pt-3 border-t border-gray-100 dark:border-dark-700">
+
+                <div>
                   {(() => {
                     const pending = clientExpenses.filter(e => !e.reconciled)
                     const reconciled = clientExpenses.filter(e => e.reconciled)
                     const pendingTotal = pending.reduce((s, e) => s + Number(e.amount), 0)
                     return (
                       <>
-                        <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                           <p className="text-sm font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                             <Receipt className="w-4 h-4 text-primary-600" />Gastos com o Cliente
                           </p>
@@ -2440,47 +2468,48 @@ export function ClientsPage() {
                     )
                   })()}
                 </div>
-                <div className="flex flex-wrap justify-end gap-2 pt-3 border-t border-gray-100 dark:border-dark-700">
-                  {viewClient.phone && waLink(viewClient.phone) && (
-                    <a
-                      href={waLink(viewClient.phone)!} target="_blank" rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-green-200 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
-                    >
-                      <MessageCircle className="w-3.5 h-3.5" />WhatsApp
-                    </a>
-                  )}
-                  <Button
-                    variant="outline" size="sm"
-                    onClick={() => downloadVCard({
-                      name: viewClient.name,
-                      phone: viewClient.phone || undefined,
-                      email: viewClient.email || undefined,
-                      address: [viewClient.address, viewClient.cidade].filter(Boolean).join(', ') || undefined,
-                      notes: viewClient.area_direito || undefined,
-                    })}
-                  ><IdCard className="w-3.5 h-3.5" />vCard</Button>
-                  <Button
-                    variant="outline" size="sm"
-                    onClick={() => navigate('/agenda', { state: { openNew: true, clientName: viewClient.name } })}
-                  ><CalendarPlus className="w-3.5 h-3.5" />Agendar reunião</Button>
-                  <Button
-                    variant="outline" size="sm"
-                    onClick={() => navigate('/dashboard', {
-                      state: {
-                        openTab: 'ia',
-                        prefillQuestion: `Me dê um resumo sobre o contato ${viewClient.name}: processos, pendências financeiras e tarefas relacionadas.`,
-                      },
-                    })}
-                  ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button>
-                  <Button variant="outline" size="sm" onClick={() => { const vc = viewClient; setViewClient(null); openEdit(vc) }}><Edit3 className="w-3.5 h-3.5" />Editar</Button>
-                  <Button variant="outline" size="sm" onClick={() => { setPortalAccessClient(viewClient); setPortalEmail(viewClient.email || ''); setPortalPassword(''); setPortalCredentials(null) }}>
-                    <KeyRound className="w-3.5 h-3.5" />Portal do Cliente
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => navigate('/financeiro', { state: { prefillSearch: viewClient.name } })}>
-                    <DollarSign className="w-3.5 h-3.5" />Ver no Financeiro
-                  </Button>
-                  <Button size="sm" onClick={() => setViewClient(null)}>Fechar</Button>
-                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2 px-6 py-4 border-t border-gray-100 dark:border-dark-700/50">
+                {viewClient.phone && waLink(viewClient.phone) && (
+                  <a
+                    href={waLink(viewClient.phone)!} target="_blank" rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-green-200 dark:border-green-800 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />WhatsApp
+                  </a>
+                )}
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => downloadVCard({
+                    name: viewClient.name,
+                    phone: viewClient.phone || undefined,
+                    email: viewClient.email || undefined,
+                    address: [viewClient.address, viewClient.cidade].filter(Boolean).join(', ') || undefined,
+                    notes: viewClient.area_direito || undefined,
+                  })}
+                ><IdCard className="w-3.5 h-3.5" />vCard</Button>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => navigate('/agenda', { state: { openNew: true, clientName: viewClient.name } })}
+                ><CalendarPlus className="w-3.5 h-3.5" />Agendar reunião</Button>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={() => navigate('/dashboard', {
+                    state: {
+                      openTab: 'ia',
+                      prefillQuestion: `Me dê um resumo sobre o contato ${viewClient.name}: processos, pendências financeiras e tarefas relacionadas.`,
+                    },
+                  })}
+                ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button>
+                <Button variant="outline" size="sm" onClick={() => { const vc = viewClient; setViewClient(null); openEdit(vc) }}><Edit3 className="w-3.5 h-3.5" />Editar</Button>
+                <Button variant="outline" size="sm" onClick={() => { setPortalAccessClient(viewClient); setPortalEmail(viewClient.email || ''); setPortalPassword(''); setPortalCredentials(null) }}>
+                  <KeyRound className="w-3.5 h-3.5" />Portal do Cliente
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate('/financeiro', { state: { prefillSearch: viewClient.name } })}>
+                  <DollarSign className="w-3.5 h-3.5" />Ver no Financeiro
+                </Button>
+                <Button size="sm" onClick={() => setViewClient(null)}>Fechar</Button>
               </div>
             </div>
           )
