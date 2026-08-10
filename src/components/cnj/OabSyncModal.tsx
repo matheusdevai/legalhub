@@ -21,6 +21,17 @@ const UF_TO_TJ: Record<string, string> = {
   SE: 'tjse', SP: 'tjsp', TO: 'tjto',
 }
 
+// Troca o TJ da seccional anterior pelo novo na lista de tribunais marcados,
+// em vez de só acumular — evita que o tribunal do estado antigo continue
+// sendo consultado silenciosamente depois que o usuário troca a UF da OAB.
+export function swapSeccionalTribunal(current: string[], prevUf: string, nextUf: string): string[] {
+  const prevTj = UF_TO_TJ[prevUf]
+  const nextTj = UF_TO_TJ[nextUf]
+  let next = prevTj && prevTj !== nextTj ? current.filter(t => t !== prevTj) : current
+  if (nextTj && !next.includes(nextTj)) next = [nextTj, ...next]
+  return next
+}
+
 const TRFS_CNJ = [
   { code: 'trf1', label: 'TRF1' },
   { code: 'trf2', label: 'TRF2' },
@@ -246,9 +257,8 @@ export function OabSyncModal({ onDone }: Props) {
               value={oabSeccional}
               onChange={e => {
                 const uf = e.target.value
+                setTribunais(prev => swapSeccionalTribunal(prev, oabSeccional, uf))
                 setOabSeccional(uf)
-                const tj = UF_TO_TJ[uf]
-                if (tj) setTribunais(prev => prev.includes(tj) ? prev : [tj, ...prev])
               }}
             >
               <option value="">Selecione</option>

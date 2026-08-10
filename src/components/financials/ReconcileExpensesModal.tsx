@@ -34,7 +34,8 @@ export function ReconcileExpensesModal({ open, onClose, clientId, clientName, on
         .select('*')
         .eq('client_id', clientId)
         .eq('type', 'payable')
-        .eq('reconciled', false)
+        .not('reconciled', 'is', true)
+        .neq('status', 'cancelled')
         .is('deleted_at', null)
         .order('due_date', { ascending: false })
       const rows = (data || []) as Financial[]

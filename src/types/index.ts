@@ -211,6 +211,16 @@ export interface UserExpense {
   deleted_at: string | null
 }
 
+export interface ExpenseBudget {
+  id: string
+  tenant_id: string
+  user_id: string
+  category: 'process' | 'travel' | 'food' | 'transport' | 'accommodation' | 'other'
+  monthly_limit: number
+  created_at: string | null
+  updated_at: string | null
+}
+
 export interface CalendarEvent {
   id: string
   tenant_id: string

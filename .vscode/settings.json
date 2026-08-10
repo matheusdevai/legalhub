@@ -4,5 +4,9 @@
       "fileMatch": ["package-lock.json"],
       "schema": { "type": "object" }
     }
-  ]
+  ],
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true,
+  "deno.config": "supabase/functions/deno.json",
+  "typescript.tsdk": "node_modules/typescript/lib"
 }

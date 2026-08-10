@@ -201,7 +201,7 @@ export function PublicacoesPage() {
     if (!prazoItem || !prazoPreview) return
     setPrazoSaving(true)
     const dueDateStr = prazoPreview.toISOString().slice(0, 10)
-    await supabase.from('tasks').insert({
+    const { error } = await supabase.from('tasks').insert({
       title: `Prazo: ${prazoItem.conteudo || 'Intimação'} — ${prazoItem.numero_processo}`,
       description: `Gerado a partir da intimação de ${prazoItem.tribunal} publicada em ${formatDate(prazoItem.publicacao)}. Prazo calculado: ${prazoDias} dias ${prazoUnidade === 'uteis' ? 'úteis' : 'corridos'} (não considera feriados — confirme antes de protocolar).`,
       process_id: prazoItem.process_id || null,
@@ -210,9 +210,10 @@ export function PublicacoesPage() {
       status: 'pending',
       type: 'deadline',
     })
+    setPrazoSaving(false)
+    if (error) { alert(`Erro ao criar tarefa de prazo: ${error.message}`); return }
     savePrazoCriado(prazoItem.id, dueDateStr)
     setPrazoMap(m => ({ ...m, [prazoItem.id]: dueDateStr }))
-    setPrazoSaving(false)
     setPrazoItem(null)
   }
 

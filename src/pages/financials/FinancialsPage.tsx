@@ -8,17 +8,19 @@ import {
   ChevronLeft, ChevronRight, RefreshCw, Filter, ArrowUpDown, Download,
   ChevronDown, Minus, ArrowDownRight, ArrowUpRight,
   MessageCircle, Sparkles, Landmark, X, SlidersHorizontal,
+  Paperclip, CheckSquare, Square,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM, computeInstallmentAmounts } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 import { supabase } from '@/lib/supabase'
-import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount } from '@/types'
+import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount, ExpenseBudget } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
+import { dateParts, groupExpensesByMonth } from '@/lib/expenseUtils'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, BarChart, Bar,
@@ -29,12 +31,12 @@ type ExpenseCategory = 'process' | 'travel' | 'food' | 'transport' | 'accommodat
 type ExpenseForm = {
   category: ExpenseCategory; description: string; amount: string
   expense_date: string; process_id: string; trip_destination: string
-  reimbursable: boolean; reimbursed: boolean; notes: string
+  reimbursable: boolean; reimbursed: boolean; notes: string; receipt_url: string
 }
 const EMPTY_EXPENSE: ExpenseForm = {
   category: 'process', description: '', amount: '',
   expense_date: new Date().toISOString().slice(0, 10),
-  process_id: '', trip_destination: '', reimbursable: true, reimbursed: false, notes: '',
+  process_id: '', trip_destination: '', reimbursable: true, reimbursed: false, notes: '', receipt_url: '',
 }
 
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -103,7 +105,6 @@ export function FinancialsPage() {
   const [comissaoSearch, setComissaoSearch] = useState('')
   const [expSearch, setExpSearch] = useState('')
   const [expCategory, setExpCategory] = useState('')
-  const [expPeriod, setExpPeriod] = useState<'all' | 'this_month' | 'last_month' | 'this_year'>('this_month')
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
 
   // Contas bancárias accordion
@@ -122,6 +123,16 @@ export function FinancialsPage() {
   const [expenseModalOpen, setExpenseModalOpen] = useState(false)
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(EMPTY_EXPENSE)
   const [savingExpense, setSavingExpense] = useState(false)
+  const [uploadingReceipt, setUploadingReceipt] = useState(false)
+  const [receiptError, setReceiptError] = useState('')
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set())
+  const [bulkReimbursing, setBulkReimbursing] = useState(false)
+  const [expenseBudgets, setExpenseBudgets] = useState<ExpenseBudget[]>([])
+  const [budgetModalOpen, setBudgetModalOpen] = useState(false)
+  const [budgetForm, setBudgetForm] = useState<Record<ExpenseCategory, string>>({
+    process: '', travel: '', food: '', transport: '', accommodation: '', other: '',
+  })
+  const [savingBudgets, setSavingBudgets] = useState(false)
   const [editExpenseId, setEditExpenseId] = useState<string | null>(null)
 
   // ── Load ────────────────────────────────────────────────────────────────────
@@ -136,6 +147,7 @@ export function FinancialsPage() {
     ]
     if (currentUserId) {
       promises.push(supabase.from('user_expenses').select('*').eq('user_id', currentUserId).is('deleted_at', null).order('expense_date', { ascending: false }))
+      promises.push(supabase.from('expense_budgets').select('*').eq('user_id', currentUserId))
     }
     const results = await Promise.all(promises)
     const allFinancials: Financial[] = results[0].data || []
@@ -146,6 +158,7 @@ export function FinancialsPage() {
     setColaboradores(results[3].data || [])
     setAccounts(results[4].data || [])
     if (results[5]) setExpenses(results[5].data || [])
+    if (results[6]) setExpenseBudgets(results[6].data || [])
 
     // Sincroniza status "vencido" — pendentes com vencimento no passado deixam de depender de cálculo manual
     const todayStr = new Date().toISOString().slice(0, 10)
@@ -224,7 +237,7 @@ export function FinancialsPage() {
   const pendingExpensesByClient = useMemo(() => {
     const map: Record<string, number> = {}
     for (const f of financials) {
-      if (f.type === 'payable' && !f.reconciled && f.client_id) {
+      if (f.type === 'payable' && !f.reconciled && f.status !== 'cancelled' && f.client_id) {
         map[f.client_id] = (map[f.client_id] || 0) + Number(f.amount)
       }
     }
@@ -319,22 +332,64 @@ export function FinancialsPage() {
 
   // Expense computed
   const filteredExpenses = useMemo(() => expenses.filter(e => {
-    const d = new Date(e.expense_date)
-    let ok = true
-    if (expPeriod === 'this_month') ok = d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    else if (expPeriod === 'last_month') ok = d.getMonth() === prevMonth && d.getFullYear() === prevYear
-    else if (expPeriod === 'this_year') ok = d.getFullYear() === currentYear
     const q = expSearch.toLowerCase()
-    return ok && (!expCategory || e.category === expCategory) &&
+    return (!expCategory || e.category === expCategory) &&
       (!expSearch || e.description.toLowerCase().includes(q) || e.process_number?.toLowerCase().includes(q))
-  }), [expenses, expSearch, expCategory, expPeriod, currentMonth, currentYear, prevMonth, prevYear])
+  }), [expenses, expSearch, expCategory])
+
+  // Agrupa as despesas por mês/ano — planilha mensal, sempre exibindo todos os
+  // meses de todos os anos em que houver despesa registrada (mais recente primeiro).
+  const expensesByMonth = useMemo(() => groupExpensesByMonth(filteredExpenses), [filteredExpenses])
 
   const monthExpTotal = expenses.filter(e => {
-    const d = new Date(e.expense_date)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
+    const d = dateParts(e.expense_date)
+    return d && d.month === currentMonth && d.year === currentYear
   }).reduce((s, e) => s + Number(e.amount), 0)
   const pendingReimb = expenses.filter(e => e.reimbursable && !e.reimbursed).reduce((s, e) => s + Number(e.amount), 0)
   const alreadyReimb = expenses.filter(e => e.reimbursed).reduce((s, e) => s + Number(e.amount), 0)
+
+  // Metas de orçamento — gasto do mês corrente por categoria, comparado ao
+  // teto opcional definido em expense_budgets.
+  const spentThisMonthByCategory = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const e of expenses) {
+      const d = dateParts(e.expense_date)
+      if (!d || d.month !== currentMonth || d.year !== currentYear) continue
+      map[e.category] = (map[e.category] || 0) + Number(e.amount)
+    }
+    return map
+  }, [expenses, currentMonth, currentYear])
+  const budgetsWithSpend = expenseBudgets
+    .map(b => ({ ...b, spent: spentThisMonthByCategory[b.category] || 0 }))
+    .filter(b => b.monthly_limit > 0)
+
+  function openBudgetModal() {
+    const next: Record<ExpenseCategory, string> = { process: '', travel: '', food: '', transport: '', accommodation: '', other: '' }
+    for (const b of expenseBudgets) next[b.category] = String(b.monthly_limit)
+    setBudgetForm(next)
+    setBudgetModalOpen(true)
+  }
+  async function saveBudgets() {
+    if (!currentUserId || !profile?.tenant_id) return
+    setSavingBudgets(true)
+    const categories = Object.keys(budgetForm) as ExpenseCategory[]
+    const toUpsert = categories
+      .filter(cat => budgetForm[cat].trim() !== '' && !Number.isNaN(parseFloat(budgetForm[cat])))
+      .map(cat => ({
+        tenant_id: profile.tenant_id, user_id: currentUserId, category: cat,
+        monthly_limit: parseFloat(budgetForm[cat]),
+      }))
+    const toDelete = categories.filter(cat => budgetForm[cat].trim() === '')
+    if (toUpsert.length > 0) {
+      await supabase.from('expense_budgets').upsert(toUpsert, { onConflict: 'user_id,category' })
+    }
+    if (toDelete.length > 0) {
+      await supabase.from('expense_budgets').delete().eq('user_id', currentUserId).in('category', toDelete)
+    }
+    setSavingBudgets(false)
+    setBudgetModalOpen(false)
+    load()
+  }
 
   // Commissions
   const clientsWithCol = clients.filter(c => c.colaborador_id)
@@ -394,6 +449,7 @@ export function FinancialsPage() {
           status: form.installmentPlan.downPaymentPaid ? 'paid' : 'pending',
           notes: form.notes || null,
           installment_group_id: groupId, installment_number: 0, installment_total: count,
+          reconciled: false,
         })
       }
 
@@ -411,6 +467,7 @@ export function FinancialsPage() {
           status: 'pending',
           notes: form.notes || null,
           installment_group_id: groupId, installment_number: i + 1, installment_total: count,
+          reconciled: false,
         })
       })
 
@@ -436,7 +493,7 @@ export function FinancialsPage() {
     if (editId) {
       await supabase.from('financials').update(payload).eq('id', editId)
     } else {
-      await supabase.from('financials').insert(payload)
+      await supabase.from('financials').insert({ ...payload, reconciled: false })
     }
     setSaving(false)
     setDrawerOpen(false)
@@ -461,20 +518,38 @@ export function FinancialsPage() {
     setRecurringTemplates(prev => prev.filter(f => f.id !== templateId))
   }
 
-  function openNewExpense() {
+  function openNewExpense(prefillDate?: string) {
     setEditExpenseId(null)
-    setExpenseForm({ ...EMPTY_EXPENSE, expense_date: new Date().toISOString().slice(0, 10) })
+    setReceiptError('')
+    setExpenseForm({ ...EMPTY_EXPENSE, expense_date: prefillDate || new Date().toISOString().slice(0, 10) })
     setExpenseModalOpen(true)
   }
   function openEditExpense(e: UserExpense) {
     setEditExpenseId(e.id)
+    setReceiptError('')
     setExpenseForm({
       category: e.category, description: e.description, amount: String(e.amount),
       expense_date: e.expense_date, process_id: e.process_id || '',
       trip_destination: e.trip_destination || '', reimbursable: !!e.reimbursable,
-      reimbursed: !!e.reimbursed, notes: e.notes || '',
+      reimbursed: !!e.reimbursed, notes: e.notes || '', receipt_url: e.receipt_url || '',
     })
     setExpenseModalOpen(true)
+  }
+  async function uploadReceipt(file: File) {
+    if (!profile?.tenant_id) return
+    setUploadingReceipt(true)
+    setReceiptError('')
+    try {
+      const path = `${profile.tenant_id}/receipts/${Date.now()}_${file.name.replace(/\s+/g, '_')}`
+      const { error: uploadErr } = await supabase.storage.from('documents').upload(path, file)
+      if (uploadErr) throw uploadErr
+      const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
+      setExpenseForm(f => ({ ...f, receipt_url: publicUrl }))
+    } catch (err: any) {
+      setReceiptError(err.message || 'Erro ao enviar comprovante')
+    } finally {
+      setUploadingReceipt(false)
+    }
   }
   async function saveExpense() {
     if (!expenseForm.description.trim() || !expenseForm.amount || !currentUserId) return
@@ -488,6 +563,7 @@ export function FinancialsPage() {
       reimbursable: expenseForm.reimbursable,
       reimbursed: expenseForm.reimbursable ? expenseForm.reimbursed : false,
       notes: expenseForm.notes || null,
+      receipt_url: expenseForm.receipt_url || null,
     }
     if (editExpenseId) await supabase.from('user_expenses').update(payload).eq('id', editExpenseId)
     else await supabase.from('user_expenses').insert(payload)
@@ -498,6 +574,22 @@ export function FinancialsPage() {
   async function deleteExpense(id: string) {
     if (!confirm('Deseja excluir esta despesa?')) return
     await supabase.from('user_expenses').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    load()
+  }
+
+  function toggleSelectExpense(id: string) {
+    setSelectedExpenseIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+  async function bulkMarkReimbursed() {
+    if (selectedExpenseIds.size === 0) return
+    setBulkReimbursing(true)
+    await supabase.from('user_expenses').update({ reimbursed: true }).in('id', Array.from(selectedExpenseIds))
+    setBulkReimbursing(false)
+    setSelectedExpenseIds(new Set())
     load()
   }
 
@@ -586,6 +678,45 @@ export function FinancialsPage() {
         { text: `${f.type === 'receivable' ? '' : '−'}${formatCurrency(f.amount)}`, right: true, danger: f.type === 'payable' },
         { text: STATUS_LABEL[f.status || 'pending'] ?? f.status ?? '—', badge: STATUS_BADGE[f.status || 'pending'] ?? 'gray' },
       ]),
+      csvContent,
+    })
+  }
+
+  function exportExpenses() {
+    const total = expensesByMonth.reduce((s, g) => s + g.total, 0)
+    const totalCount = expensesByMonth.reduce((s, g) => s + g.items.length, 0)
+    const csvContent = [
+      'Mês,Dia,Descrição,Categoria,Valor,Reembolsável,Reembolsado',
+      ...expensesByMonth.flatMap(g => g.items.map(e => {
+        const day = dateParts(e.expense_date)?.day ?? ''
+        return `"${MONTHS_PT[g.month]}/${g.year}","${day}","${e.description}","${CATEGORY_META[e.category].label}","-${formatCurrency(e.amount)}","${e.reimbursable ? 'Sim' : 'Não'}","${e.reimbursed ? 'Sim' : 'Não'}"`
+      })),
+    ].join('\n')
+    openExportWindow({
+      title: 'Minhas Despesas',
+      subtitle: expCategory ? `Categoria: ${CATEGORY_META[expCategory as ExpenseCategory].label}` : 'Todos os meses',
+      filename: 'minhas-despesas',
+      stats: [
+        { value: totalCount, label: 'Despesas', accent: '#2563eb' },
+        { value: formatCurrency(total), label: 'Total gasto', accent: '#dc2626' },
+        { value: formatCurrency(pendingReimb), label: 'A reembolsar', accent: '#f97316' },
+        { value: formatCurrency(alreadyReimb), label: 'Reembolsado', accent: '#16a34a' },
+      ],
+      columns: ['Dia', 'Descrição', 'Categoria', 'Valor', 'Reembolso'],
+      rows: [],
+      groups: expensesByMonth.map(g => ({
+        label: `${MONTHS_PT[g.month]} de ${g.year}`,
+        rows: g.items.map(e => {
+          const day = dateParts(e.expense_date)?.day
+          return [
+            { text: day != null ? String(day).padStart(2, '0') : '—' },
+            { text: e.description, bold: true },
+            { text: CATEGORY_META[e.category].label },
+            { text: `-${formatCurrency(e.amount)}`, right: true, danger: true },
+            { text: e.reimbursable ? (e.reimbursed ? 'Reembolsado' : 'A reembolsar') : '—', badge: e.reimbursable ? (e.reimbursed ? 'green' : 'amber') : 'gray' },
+          ]
+        }),
+      })),
       csvContent,
     })
   }
@@ -1244,17 +1375,53 @@ export function FinancialsPage() {
                 <p className="text-xl font-bold text-green-600 mt-1">{formatCurrency(alreadyReimb)}</p>
               </Card>
             </div>
+            {budgetsWithSpend.length > 0 && (
+              <Card className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Metas do mês por categoria</h3>
+                  <button onClick={openBudgetModal} className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">Editar metas</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {budgetsWithSpend.map(b => {
+                    const meta = CATEGORY_META[b.category]
+                    const pct = Math.min(100, Math.round((b.spent / b.monthly_limit) * 100))
+                    const over = b.spent > b.monthly_limit
+                    return (
+                      <div key={b.id}>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="font-medium text-slate-700 dark:text-slate-300">{meta.label}</span>
+                          <span className={cn('font-semibold', over ? 'text-red-600' : 'text-slate-500 dark:text-slate-400')}>
+                            {formatCurrency(b.spent)} / {formatCurrency(b.monthly_limit)}
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-100 dark:bg-dark-700 overflow-hidden">
+                          <div className={cn('h-full rounded-full transition-all', over ? 'bg-red-500' : meta.bar)} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </Card>
+            )}
             <div className="flex gap-2 flex-wrap">
-              <Button onClick={openNewExpense} size="sm"><Plus className="w-3.5 h-3.5" /> Nova Despesa</Button>
+              <Button onClick={() => openNewExpense()} size="sm"><Plus className="w-3.5 h-3.5" /> Nova Despesa</Button>
+              <button
+                onClick={exportExpenses}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 hover:bg-slate-50 dark:hover:bg-dark-700 rounded-lg transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" /> Exportar
+              </button>
+              {budgetsWithSpend.length === 0 && (
+                <button
+                  onClick={openBudgetModal}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 hover:bg-slate-50 dark:hover:bg-dark-700 rounded-lg transition-colors"
+                >
+                  <Landmark className="w-3.5 h-3.5" /> Definir metas
+                </button>
+              )}
               <select className="px-3 py-2 text-sm border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300" value={expCategory} onChange={e => setExpCategory(e.target.value)}>
                 <option value="">Todas as categorias</option>
                 {(Object.keys(CATEGORY_META) as ExpenseCategory[]).map(k => <option key={k} value={k}>{CATEGORY_META[k].label}</option>)}
-              </select>
-              <select className="px-3 py-2 text-sm border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300" value={expPeriod} onChange={e => setExpPeriod(e.target.value as any)}>
-                <option value="all">Todas</option>
-                <option value="this_month">Este mês</option>
-                <option value="last_month">Mês passado</option>
-                <option value="this_year">Este ano</option>
               </select>
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1262,44 +1429,114 @@ export function FinancialsPage() {
                   placeholder="Buscar..." value={expSearch} onChange={e => setExpSearch(e.target.value)} />
               </div>
             </div>
-            {filteredExpenses.length === 0 ? (
-              <EmptyState icon={Wallet} title="Nenhuma despesa registrada" />
+            {selectedExpenseIds.size > 0 && (
+              <div className="flex items-center gap-2 px-4 py-2 rounded-xl border border-primary-100 dark:border-primary-800/40 bg-primary-50/60 dark:bg-primary-900/10 flex-wrap">
+                <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">
+                  {selectedExpenseIds.size} selecionada{selectedExpenseIds.size !== 1 ? 's' : ''}
+                </span>
+                <button onClick={bulkMarkReimbursed} disabled={bulkReimbursing}
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-50">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Marcar como reembolsado
+                </button>
+                <button onClick={() => setSelectedExpenseIds(new Set())} className="ml-auto text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300">
+                  Limpar seleção
+                </button>
+              </div>
+            )}
+            {/* Planilha mensal — um cartão por mês/ano, do mais recente ao mais antigo,
+                sempre mostrando todos os meses em que houver alguma despesa registrada. */}
+            {expensesByMonth.length === 0 ? (
+              <EmptyState icon={Wallet} title="Nenhuma despesa registrada" description="Clique em “Nova Despesa” para começar a registrar." />
             ) : (
-              <div className="space-y-2">
-                {filteredExpenses.map(e => {
-                  const meta = CATEGORY_META[e.category]
-                  const Icon = meta.icon
-                  return (
-                    <Card key={e.id} className="p-4 hover:shadow-card-hover transition-shadow">
-                      <div className="flex items-start gap-3">
-                        <div className={cn('w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0', meta.badge)}>
-                          <Icon className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0 flex-1">
-                              <p className="font-medium text-slate-900 dark:text-white text-sm truncate">{e.description}</p>
-                              <div className="flex items-center gap-2 mt-1 flex-wrap text-[11px]">
-                                <Badge className={meta.badge}>{meta.label}</Badge>
-                                {e.reimbursable && (e.reimbursed
-                                  ? <Badge className="bg-green-100 text-green-700">Reembolsado</Badge>
-                                  : <Badge className="bg-orange-100 text-orange-700">A reembolsar</Badge>)}
-                                <span className="text-slate-400">{formatDate(e.expense_date)}</span>
-                              </div>
-                            </div>
-                            <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                              <span className="font-bold text-red-600 text-sm">-{formatCurrency(e.amount)}</span>
-                              <div className="flex gap-1">
-                                <button onClick={() => openEditExpense(e)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400"><Edit3 className="w-3.5 h-3.5" /></button>
-                                <button onClick={() => deleteExpense(e.id)} className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
+              <div className="space-y-4">
+                {expensesByMonth.map(g => (
+                  <Card key={g.key} className="overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 bg-slate-50 dark:bg-dark-700/30 border-b border-slate-100 dark:border-dark-700/50">
+                      <div className="min-w-0">
+                        <h3 className="font-semibold text-slate-900 dark:text-white text-sm truncate">
+                          {MONTHS_PT[g.month]} de {g.year}
+                        </h3>
+                        <p className="text-[11px] text-slate-400">{g.items.length} despesa{g.items.length !== 1 ? 's' : ''}</p>
                       </div>
-                    </Card>
-                  )
-                })}
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <span className="font-bold text-red-600 dark:text-red-400 text-sm">-{formatCurrency(g.total)}</span>
+                        <button
+                          onClick={() => {
+                            const day = (g.year === currentYear && g.month === currentMonth) ? now.getDate() : 1
+                            openNewExpense(`${g.year}-${String(g.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+                          }}
+                          title="Registrar despesa neste mês"
+                          className="p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100 dark:border-dark-700/50">
+                            <th className="px-3 py-2 w-8" />
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-14">Dia</th>
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Descrição</th>
+                            <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 hidden sm:table-cell">Categoria</th>
+                            <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Valor</th>
+                            <th className="px-4 py-2 w-16" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 dark:divide-dark-700/30">
+                          {g.items.map(e => {
+                            const meta = CATEGORY_META[e.category]
+                            const Icon = meta.icon
+                            const day = dateParts(e.expense_date)?.day
+                            const canBulkSelect = e.reimbursable && !e.reimbursed
+                            return (
+                              <tr key={e.id} className="hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors group">
+                                <td className="px-3 py-2.5" onClick={ev => ev.stopPropagation()}>
+                                  {canBulkSelect && (
+                                    <button onClick={() => toggleSelectExpense(e.id)} className="text-slate-300 hover:text-primary-600 dark:text-dark-500 dark:hover:text-primary-400">
+                                      {selectedExpenseIds.has(e.id) ? <CheckSquare className="w-4 h-4 text-primary-600 dark:text-primary-400" /> : <Square className="w-4 h-4" />}
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">{day != null ? String(day).padStart(2, '0') : '—'}</td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="font-medium text-slate-900 dark:text-white truncate max-w-[220px]">{e.description}</p>
+                                    {e.receipt_url && (
+                                      <a href={e.receipt_url} target="_blank" rel="noreferrer" title="Ver comprovante" onClick={ev => ev.stopPropagation()}
+                                        className="text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex-shrink-0">
+                                        <Paperclip className="w-3 h-3" />
+                                      </a>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 mt-0.5 sm:hidden">
+                                    <Badge className={meta.badge}>{meta.label}</Badge>
+                                  </div>
+                                  {e.reimbursable && (
+                                    <span className={cn('inline-block mt-0.5 text-[10px] font-semibold', e.reimbursed ? 'text-green-600' : 'text-orange-500')}>
+                                      {e.reimbursed ? 'Reembolsado' : 'A reembolsar'}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 hidden sm:table-cell">
+                                  <Badge className={meta.badge}><Icon className="w-3 h-3 mr-1 inline" />{meta.label}</Badge>
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-bold text-red-600 dark:text-red-400 whitespace-nowrap">-{formatCurrency(e.amount)}</td>
+                                <td className="px-4 py-2.5">
+                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+                                    <button onClick={() => openEditExpense(e)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400"><Edit3 className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => deleteExpense(e.id)} className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
           </div>
@@ -1466,10 +1703,61 @@ export function FinancialsPage() {
             )}
           </div>
           <Textarea label="Observações" value={expenseForm.notes} onChange={e => setExpenseForm({ ...expenseForm, notes: e.target.value })} rows={2} />
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Comprovante</label>
+            {expenseForm.receipt_url ? (
+              <div className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-dark-600 bg-slate-50 dark:bg-dark-700">
+                <Paperclip className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <a href={expenseForm.receipt_url} target="_blank" rel="noreferrer" className="text-sm text-primary-600 dark:text-primary-400 hover:underline truncate flex-1">
+                  Ver comprovante anexado
+                </a>
+                <button type="button" onClick={() => setExpenseForm(f => ({ ...f, receipt_url: '' }))}
+                  className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 flex-shrink-0">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className={cn(
+                'flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer transition-colors text-sm',
+                uploadingReceipt
+                  ? 'border-slate-200 dark:border-dark-600 text-slate-400'
+                  : 'border-slate-300 dark:border-dark-600 text-slate-500 dark:text-slate-400 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400'
+              )}>
+                {uploadingReceipt
+                  ? <><div className="w-3.5 h-3.5 border-2 border-slate-300 border-t-primary-500 rounded-full animate-spin" /> Enviando...</>
+                  : <><Paperclip className="w-3.5 h-3.5" /> Anexar recibo/nota (PDF ou imagem)</>}
+                <input type="file" accept="image/*,application/pdf" className="hidden" disabled={uploadingReceipt}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) uploadReceipt(f); e.target.value = '' }} />
+              </label>
+            )}
+            {receiptError && <p className="text-xs text-red-500 mt-1">{receiptError}</p>}
+          </div>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={() => setExpenseModalOpen(false)}>Cancelar</Button>
           <Button onClick={saveExpense} loading={savingExpense}>Salvar</Button>
+        </div>
+      </Modal>
+
+      {/* ── Modal: Metas de orçamento por categoria ── */}
+      <Modal open={budgetModalOpen} onClose={() => setBudgetModalOpen(false)} title="Metas mensais por categoria" size="md">
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Defina um teto mensal opcional para cada categoria de despesa pessoal. Deixe em branco para não acompanhar.
+          </p>
+          {(Object.keys(CATEGORY_META) as ExpenseCategory[]).map(cat => (
+            <Input
+              key={cat}
+              label={CATEGORY_META[cat].label}
+              type="number" step="0.01" min="0" placeholder="Sem meta"
+              value={budgetForm[cat]}
+              onChange={e => setBudgetForm(f => ({ ...f, [cat]: e.target.value }))}
+            />
+          ))}
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={() => setBudgetModalOpen(false)}>Cancelar</Button>
+          <Button onClick={saveBudgets} loading={savingBudgets}>Salvar metas</Button>
         </div>
       </Modal>
     </Layout>

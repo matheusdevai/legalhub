@@ -271,6 +271,15 @@ export function LeadsPage() {
     if (lead.converted_client_id) { navigate('/clientes'); return }
     if (!confirm(`Converter "${lead.name}" em contato? Um novo cadastro será criado em Contatos.`)) return
     setConverting(true)
+    // Contatos guardam o responsável pelo NOME (assigned_lawyer), enquanto o
+    // lead guarda o user_id (assigned_to) — resolve o nome antes de converter
+    // para o vínculo de responsável não se perder na conversão.
+    let assignedLawyerName: string | null = null
+    if (lead.assigned_to) {
+      const { data: assignedProfile } = await supabase
+        .from('profiles').select('name, display_name').eq('user_id', lead.assigned_to).maybeSingle()
+      assignedLawyerName = assignedProfile?.name || assignedProfile?.display_name || null
+    }
     const { data, error } = await supabase.from('clients').insert({
       type: 'pf',
       name: lead.name,
@@ -279,6 +288,7 @@ export function LeadsPage() {
       area_direito: lead.area || null,
       origem: LEAD_SOURCE_TO_ORIGEM[lead.source || 'other'] || 'outro',
       status: 'prospect',
+      assigned_lawyer: assignedLawyerName,
       notes: `Convertido do lead em ${new Date().toLocaleDateString('pt-BR')}.${lead.notes ? ` ${lead.notes}` : ''}`,
     }).select('id').single()
     setConverting(false)

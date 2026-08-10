@@ -77,6 +77,9 @@ export function SettingsPage() {
   const [auditLog, setAuditLog] = useState<AuditLogEntry[]>([])
   const [auditLoading, setAuditLoading] = useState(false)
   const [auditEntityFilter, setAuditEntityFilter] = useState('')
+  const AUDIT_PAGE_SIZE = 200
+  const [auditLimit, setAuditLimit] = useState(AUDIT_PAGE_SIZE)
+  const [auditHasMore, setAuditHasMore] = useState(false)
 
   useEffect(() => {
     if (!profile) return
@@ -113,17 +116,27 @@ export function SettingsPage() {
     setSavingNotifKey(null)
   }
 
-  async function loadAuditLog() {
+  async function loadAuditLog(limit = auditLimit) {
     setAuditLoading(true)
-    let query = supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(200)
+    // Busca 1 registro a mais que o limite só para saber se existe mais
+    // conteúdo além da página atual, sem precisar de um COUNT separado.
+    let query = supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit + 1)
     if (auditEntityFilter) query = query.eq('entity_type', auditEntityFilter)
     const { data } = await query
-    setAuditLog((data || []) as AuditLogEntry[])
+    const rows = (data || []) as AuditLogEntry[]
+    setAuditHasMore(rows.length > limit)
+    setAuditLog(rows.slice(0, limit))
     setAuditLoading(false)
   }
 
+  function loadMoreAuditLog() {
+    const next = auditLimit + AUDIT_PAGE_SIZE
+    setAuditLimit(next)
+    loadAuditLog(next)
+  }
+
   useEffect(() => {
-    if (tab === 'audit' && isAdmin) loadAuditLog()
+    if (tab === 'audit' && isAdmin) { setAuditLimit(AUDIT_PAGE_SIZE); loadAuditLog(AUDIT_PAGE_SIZE) }
   }, [tab, auditEntityFilter, isAdmin])
 
   async function changePassword() {
@@ -541,6 +554,16 @@ export function SettingsPage() {
                     )
                   })}
                 </div>
+                {!auditLoading && auditHasMore && (
+                  <div className="px-6 py-3 border-t border-gray-50 dark:border-dark-700 text-center">
+                    <button
+                      onClick={loadMoreAuditLog}
+                      className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                    >
+                      Carregar mais registros
+                    </button>
+                  </div>
+                )}
               </Card>
             )}
 

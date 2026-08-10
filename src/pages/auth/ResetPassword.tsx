@@ -16,11 +16,18 @@ export function ResetPassword() {
   const [done,      setDone]      = useState(false)
 
   useEffect(() => {
+    // Supabase inclui `type=recovery` na URL de retorno do e-mail de redefinição
+    // de senha. Só tratamos a tela como "pronta" a partir de um link de
+    // recuperação de fato — nunca por já existir uma sessão ativa qualquer,
+    // senão qualquer usuário logado que abrisse /reset-password diretamente
+    // (aba antiga, link salvo) conseguiria trocar a senha sem ter clicado
+    // no link do e-mail.
+    const isRecoveryLink = window.location.hash.includes('type=recovery') || window.location.search.includes('type=recovery')
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') setReady(true)
     })
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setReady(true)
+      if (session && isRecoveryLink) setReady(true)
       setChecking(false)
     })
     return () => subscription.unsubscribe()

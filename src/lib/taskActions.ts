@@ -4,14 +4,16 @@ import { Task } from '@/types'
 export const RECURRENCE_LABELS: Record<string, string> = {
   weekly: 'Semanalmente',
   monthly: 'Mensalmente',
+  yearly: 'Anualmente',
 }
 
 // ─── Recorrência ──────────────────────────────────────────────────────────────
 export function nextRecurrenceDueDate(dueDate: string, interval: string | null): string | null {
-  if (interval !== 'weekly' && interval !== 'monthly') return null
+  if (interval !== 'weekly' && interval !== 'monthly' && interval !== 'yearly') return null
   const d = new Date(`${dueDate.slice(0, 10)}T00:00:00`)
   if (Number.isNaN(d.getTime())) return null
   if (interval === 'weekly') d.setDate(d.getDate() + 7)
+  else if (interval === 'yearly') d.setFullYear(d.getFullYear() + 1)
   else d.setMonth(d.getMonth() + 1)
   return d.toISOString().slice(0, 10)
 }
@@ -23,7 +25,8 @@ export async function markTaskDone(task: Task): Promise<{ completed_at: string }
 
   if (task.recurring && task.due_date) {
     const nextDueDate = nextRecurrenceDueDate(task.due_date, task.recurrence_interval)
-    if (nextDueDate) {
+    const pastEnd = !!task.recurrence_end_date && !!nextDueDate && nextDueDate > task.recurrence_end_date.slice(0, 10)
+    if (nextDueDate && !pastEnd) {
       await supabase.from('tasks').insert({
         title: task.title,
         description: task.description,
@@ -39,6 +42,7 @@ export async function markTaskDone(task: Task): Promise<{ completed_at: string }
         all_day: task.all_day,
         recurring: true,
         recurrence_interval: task.recurrence_interval,
+        recurrence_end_date: task.recurrence_end_date,
       })
     }
   }

@@ -225,11 +225,21 @@ export function DocumentsPage() {
 
   function openEdit(doc: Document) {
     setEditId(doc.id)
+    setEditingLibrary(false)
     setForm({
       title: doc.title, type: doc.type, category: doc.category || '',
       content: doc.content || '', tags: (doc.tags || []).join(', '),
     })
     setModalOpen(true)
+  }
+
+  // Ponto único de fechamento do modal de criação/edição — garante que
+  // `editingLibrary` (que decide em qual tabela `save()` grava) nunca fique
+  // "grudado" de uma sessão anterior do modal, seja qual for o caminho usado
+  // para fechar (botão Cancelar, X, clique no backdrop).
+  function closeDocModal() {
+    setModalOpen(false)
+    setEditingLibrary(false)
   }
 
   const filterLabel = FILTER_OPTIONS.find(f => f.id === typeFilter)?.label || 'Todos os modelos'
@@ -453,7 +463,7 @@ export function DocumentsPage() {
       </div>
 
       {/* Create/Edit Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={
+      <Modal open={modalOpen} onClose={closeDocModal} title={
         editingLibrary ? (editId ? 'Editar Modelo Público' : 'Novo Modelo Público') : (editId ? 'Editar Documento' : 'Novo Documento')
       } size="lg">
         <div className="space-y-4">
@@ -479,7 +489,7 @@ export function DocumentsPage() {
           )}
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={() => setModalOpen(false)}
+          <button onClick={closeDocModal}
             className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
             Cancelar
           </button>

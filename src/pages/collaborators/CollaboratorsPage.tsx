@@ -225,8 +225,11 @@ export function CollaboratorsPage() {
     // Processos ativos vinculados a parceiros — antes contava TODOS os status apesar do rótulo "(ativos)"
     const totalProcessosAtivos = Object.values(activeProcessCounts).reduce((a, b) => a + b, 0)
     const totalIndicacoes = Object.values(indicacoesCounts).reduce((a, b) => a + b, 0)
-    // Antes: contagem de processos de parceiros ativos (redundante/confuso). Agora: soma de processos ativos.
-    const demandaEscritorio = totalProcessosAtivos
+    // "Demanda do escritório" soma só os processos ativos de COLABORADORES ATIVOS,
+    // para bater com a lista de detalhamento (que só lista `stats.ativos`) — se
+    // somasse `totalProcessosAtivos` (todos, incluindo inativos com processo ainda
+    // vinculado), o número do card ficava maior que a soma da lista expandida.
+    const demandaEscritorio = ativos.reduce((s, c) => s + (activeProcessCounts[c.id] || 0), 0)
     // Antes: contagem de parceiros inativos (não tinha relação com "demanda"). Agora: comissões pendentes de pagamento.
     const comissoesPendentesCount = Object.values(pendingCommissionCounts).reduce((a, b) => a + b, 0)
     const comissoesPendentesValor = Object.values(pendingCommissionValue).reduce((a, b) => a + b, 0)

@@ -33,19 +33,24 @@ export function ClientPortalPage() {
 
   useEffect(() => {
     async function load() {
+      const clientId = profile?.client_id
+      if (!clientId) { setLoading(false); return }
       setLoading(true)
-      const [{ data: p }, { data: f }, { data: d }] = await Promise.all([
-        supabase.from('processes').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
-        supabase.from('financials').select('*').is('deleted_at', null).order('due_date', { ascending: false }),
-        supabase.from('documents').select('id, title, file_url, file_name, created_at').is('deleted_at', null).order('created_at', { ascending: false }),
-      ])
-      setProcesses((p || []) as Process[])
-      setFinancials((f || []) as Financial[])
-      setDocuments((d || []) as PortalDocument[])
-      setLoading(false)
+      try {
+        const [{ data: p }, { data: f }, { data: d }] = await Promise.all([
+          supabase.from('processes').select('*').eq('client_id', clientId).is('deleted_at', null).order('created_at', { ascending: false }),
+          supabase.from('financials').select('*').eq('client_id', clientId).is('deleted_at', null).order('due_date', { ascending: false }),
+          supabase.from('documents').select('id, title, file_url, file_name, created_at').eq('client_id', clientId).is('deleted_at', null).order('created_at', { ascending: false }),
+        ])
+        setProcesses((p || []) as Process[])
+        setFinancials((f || []) as Financial[])
+        setDocuments((d || []) as PortalDocument[])
+      } finally {
+        setLoading(false)
+      }
     }
     load()
-  }, [])
+  }, [profile?.client_id])
 
   const TABS: { id: Tab; label: string; icon: any }[] = [
     { id: 'processos', label: 'Meus Processos', icon: Briefcase },

@@ -15,6 +15,7 @@ import { Client, Colaborador, Process, Profile, Financial } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
+import { buildClientImportPreview } from '@/lib/clientImportUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
@@ -194,6 +195,7 @@ export function ClientsPage() {
   const [activeProcessFilter, setActiveProcessFilter] = useState<'all' | 'with' | 'without'>('all')
   const [avatarPreview, setAvatarPreview] = useState<string>('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const [notesExpanded, setNotesExpanded] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [cepLoading, setCepLoading] = useState(false)
   const [cepError, setCepError] = useState('')
@@ -357,12 +359,15 @@ export function ClientsPage() {
         label: existing.name,
         sub: `Possível contato duplicado (mesmo ${normalizeForCompare(existing.name) === nameNorm ? 'nome' : 'telefone'}) — clique para preencher com os dados existentes`,
         fields: {
+          // cpf_cnpj é propositalmente omitido: o match acima é por nome/telefone
+          // (não pelo próprio documento), então nunca preenchemos automaticamente
+          // o CPF/CNPJ de outra pessoa — o risco de transplantar o documento de
+          // um contato errado é maior que a conveniência de autopreencher.
           name: existing.name, email: existing.email || '', phone: existing.phone || '',
           celular: existing.celular || '', address: existing.address || '',
           bairro: existing.bairro || '', cidade: existing.cidade || '',
           state: existing.state || '', cep: existing.cep || '',
           notes: existing.notes || '', type: existing.type, area_direito: existing.area_direito || '',
-          cpf_cnpj: existing.cpf_cnpj || '',
         },
       })
     }
@@ -587,7 +592,7 @@ export function ClientsPage() {
     return groups
   }, [filtered, colaboradores])
 
-  function openNew() { setEditId(null); setForm(EMPTY_CLIENT); setAvatarPreview(''); setModalOpen(true) }
+  function openNew() { setEditId(null); setForm(EMPTY_CLIENT); setAvatarPreview(''); setNotesExpanded(false); setModalOpen(true) }
 
   async function loadClientExpenses(clientId: string) {
     setExpensesLoading(true)
@@ -610,14 +615,21 @@ export function ClientsPage() {
   async function saveExpense(form: FinancialDrawerForm) {
     if (!viewClient) return
     setSavingExpense(true)
-    await supabase.from('financials').insert({
+    const amount = parseFloat(form.amount)
+    if (!form.description.trim() || Number.isNaN(amount)) {
+      setSavingExpense(false)
+      alert('Preencha a descrição e um valor válido antes de salvar.')
+      return
+    }
+    const { error } = await supabase.from('financials').insert({
       type: 'payable', category: form.category, description: form.description,
-      amount: parseFloat(form.amount), due_date: form.due_date || null, paid_date: form.paid_date || null,
+      amount, due_date: form.due_date || null, paid_date: form.paid_date || null,
       status: form.status, notes: form.notes || null,
       client_id: viewClient.id, client_name: viewClient.name,
       process_id: form.process_id || null, process_number: form.process_number || null,
     })
     setSavingExpense(false)
+    if (error) { alert(`Erro ao salvar despesa: ${error.message}`); return }
     setExpenseDrawerOpen(false)
     loadClientExpenses(viewClient.id)
   }
@@ -683,6 +695,7 @@ export function ClientsPage() {
       lgpd_consent_date: c.lgpd_consent_date || '',
     })
     setAvatarPreview(c.avatar_url || '')
+    setNotesExpanded((c.notes || '').length > 60 || (c.notes || '').includes('\n'))
     setModalOpen(true)
   }
 
@@ -1061,23 +1074,7 @@ export function ClientsPage() {
     URL.revokeObjectURL(url)
   }
 
-  const importPreview = useMemo(() => {
-    const existingCpfs = new Set(clients.map(c => (c.cpf_cnpj || '').replace(/\D/g, '')).filter(Boolean))
-    return importRows.map(row => {
-      const cpfDigits = (row.cpf_cnpj || row['cpf/cnpj'] || '').replace(/\D/g, '')
-      return {
-        name: row.nome || row.name || '',
-        type: (row.tipo || row.type || 'pf').toLowerCase() === 'pj' ? 'pj' : 'pf',
-        cpf_cnpj: row.cpf_cnpj || row['cpf/cnpj'] || '',
-        phone: row.telefone || row.phone || row.celular || '',
-        email: row.email || '',
-        cidade: row.cidade || '',
-        area_direito: row.area_direito || row['área do direito'] || '',
-        status: ['active', 'inactive', 'prospect'].includes((row.status || '').toLowerCase()) ? row.status.toLowerCase() : 'prospect',
-        duplicate: cpfDigits.length > 0 && existingCpfs.has(cpfDigits),
-      }
-    })
-  }, [importRows, clients])
+  const importPreview = useMemo(() => buildClientImportPreview(importRows, clients), [importRows, clients])
 
   async function runImport() {
     const toInsert = importPreview.filter(r => r.name.trim() && !r.duplicate)
@@ -1899,12 +1896,32 @@ export function ClientsPage() {
               </div>
             )}
             <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Anotações gerais</label>
-              <input
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="Anotações, senhas e outros"
-                value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm text-gray-500 dark:text-gray-400">Anotações gerais</label>
+                <button
+                  type="button"
+                  onClick={() => setNotesExpanded(v => !v)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                >
+                  <ChevronDown className={cn('w-3 h-3 transition-transform', notesExpanded && 'rotate-180')} />
+                  {notesExpanded ? 'Reduzir' : 'Expandir para adicionar mais informações'}
+                </button>
+              </div>
+              {notesExpanded ? (
+                <Textarea
+                  className="w-full text-sm bg-gray-50 dark:bg-dark-800"
+                  placeholder="Anotações, senhas e outros"
+                  rows={5}
+                  value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+                />
+              ) : (
+                <input
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                  placeholder="Anotações, senhas e outros"
+                  value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+                  onFocus={() => { if (form.notes.length > 60) setNotesExpanded(true) }}
+                />
+              )}
             </div>
           </div>
         </div>
