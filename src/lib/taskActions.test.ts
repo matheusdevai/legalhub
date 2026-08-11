@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { nextRecurrenceDueDate, RECURRENCE_LABELS } from './taskActions'
+import { nextRecurrenceDueDate, RECURRENCE_LABELS, displayTaskDescription } from './taskActions'
 import type { Task } from '@/types'
 
 describe('nextRecurrenceDueDate', () => {
@@ -95,5 +95,23 @@ describe('markTaskDone — recurrence_end_date', () => {
     const { markTaskDone } = await import('./taskActions')
     await markTaskDone(baseTask({ recurrence_end_date: '2020-01-01' }))
     expect(updateEqMock).toHaveBeenCalled()
+  })
+})
+
+describe('displayTaskDescription', () => {
+  it('remove o prefixo client_id:{uuid} | usado internamente pra pré-preencher o cliente', () => {
+    expect(displayTaskDescription('client_id:c48cd9fd-ff1b-462b-b50d-1221ed245234 | Cadastrado em 19/05/2026. Verificar documentação e iniciar processo'))
+      .toBe('Cadastrado em 19/05/2026. Verificar documentação e iniciar processo')
+  })
+
+  it('mantém descrições sem o prefixo intocadas', () => {
+    expect(displayTaskDescription('Digitalizar documentos e finalizar com petição.'))
+      .toBe('Digitalizar documentos e finalizar com petição.')
+  })
+
+  it('retorna string vazia para descrição nula ou vazia', () => {
+    expect(displayTaskDescription(null)).toBe('')
+    expect(displayTaskDescription(undefined)).toBe('')
+    expect(displayTaskDescription('')).toBe('')
   })
 })

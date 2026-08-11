@@ -7,6 +7,18 @@ export const RECURRENCE_LABELS: Record<string, string> = {
   yearly: 'Anualmente',
 }
 
+// ─── Descrição exibível ─────────────────────────────────────────────────────
+// A tarefa automática "Protocolar processo de {nome}" grava um prefixo
+// "client_id:{uuid} | " no início da description — é lido de volta em
+// requestComplete() (TasksPage) pra pré-preencher o cliente ao concluir a
+// tarefa. Esse prefixo nunca deve aparecer pro usuário; use esta função em
+// qualquer lugar que exiba task.description numa tela (nunca remova o prefixo
+// do dado salvo, só do texto mostrado).
+export function displayTaskDescription(description: string | null | undefined): string {
+  if (!description) return ''
+  return description.replace(/^client_id:[a-f0-9-]{36}\s*\|\s*/, '')
+}
+
 // ─── Recorrência ──────────────────────────────────────────────────────────────
 export function nextRecurrenceDueDate(dueDate: string, interval: string | null): string | null {
   if (interval !== 'weekly' && interval !== 'monthly' && interval !== 'yearly') return null

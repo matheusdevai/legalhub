@@ -31,7 +31,7 @@ src/
     onboarding/OnboardingModal.tsx
   pages/
     auth/Login.tsx
-    dashboard/Dashboard.tsx   — tabs: visao | lista | quadro | desempenho | configuracoes
+    dashboard/Dashboard.tsx   — tabs: visao | lista | quadro | desempenho | ia | configuracoes
     clients/ClientsPage.tsx
     processes/ProcessesPage.tsx
     tasks/TasksPage.tsx
@@ -255,11 +255,14 @@ const filtered = useMemo(() => clients.filter(c => {
 ## Dashboard — tabs
 | Tab | Conteúdo |
 |---|---|
-| visao | Stats (concluídas/hoje/pendentes/vencidas), Taskscore, lista de tasks, mini-calendário |
+| visao | Stats (concluídas/hoje/pendentes/vencidas), lista de tasks, mini-calendário |
 | lista | Tabela de tasks com seções "Não lidas" / "Todas as demais" |
 | quadro | Kanban: Todas / Hoje / Próximos / Fazendo / Concluídas hoje |
-| desempenho | Stats + Taskscore + calendário completo |
-| configuracoes | DashConfiguracoes: Caixa de entrada com seções reordenáveis |
+| desempenho | Stats + Taskscore (gráfico) + Atividades concluídas + calendário completo |
+| ia | Copiloto / Inteligência Artificial |
+| configuracoes | DashConfiguracoes: só a Caixa de entrada (seções reordenáveis) + callout linkando para /configuracoes (configurações gerais do escritório ficam lá, não aqui) |
+
+`task.description` de tarefas geradas automaticamente pode conter um prefixo interno `client_id:{uuid} | ` (usado por `requestComplete()` em TasksPage para pré-preencher o cliente ao concluir). Nunca exibir esse prefixo ao usuário — use `displayTaskDescription()` de `src/lib/taskActions.ts` em qualquer lugar que renderize `task.description`.
 
 ## Processos — campos especiais
 - Fases: `NEGOCIAÇÃO | CONHECIMENTO | RECURSAL | EXECUÇÃO | ENCERRADO`

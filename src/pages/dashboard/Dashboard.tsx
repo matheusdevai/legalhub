@@ -19,7 +19,7 @@ import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STAT
 import { Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
-import { markTaskDone } from '@/lib/taskActions'
+import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
 
 type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'ia' | 'configuracoes'
 
@@ -95,13 +95,6 @@ function MiniCalendar() {
 
 type ConfigSection = { id: string; label: string }
 
-const CONFIG_NAV = [
-  'Usuários', 'Inteligência Artificial', 'Termos monitorados', 'Financeiro',
-  'Tarefas', 'Workflow', 'Grupos de ação', 'Tipos de ação', 'Etapas',
-  'Metas', 'Origem de pessoas', 'Parceiros', 'Caixa de entrada',
-  'Notificações', 'Integrações e API',
-]
-
 const INBOX_DEFAULTS: ConfigSection[] = [
   { id: 'prazo_fatal',   label: 'Prazo fatal' },
   { id: 'intimacoes',    label: 'Intimações' },
@@ -112,7 +105,7 @@ const INBOX_DEFAULTS: ConfigSection[] = [
 ]
 
 function DashConfiguracoes() {
-  const [activeNav, setActiveNav] = useState('Caixa de entrada')
+  const navigate = useNavigate()
   const [inboxEnabled, setInboxEnabled] = useState(true)
   const [sections, setSections] = useState<ConfigSection[]>(INBOX_DEFAULTS)
   const [saved, setSaved] = useState(false)
@@ -127,87 +120,70 @@ function DashConfiguracoes() {
   function handleSave() { setSaved(true); setTimeout(() => setSaved(false), 2000) }
 
   return (
-    <div className="flex gap-0 bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card overflow-hidden min-h-[520px]">
-      {/* Left nav */}
-      <div className="w-56 flex-shrink-0 border-r border-slate-100 dark:border-dark-700/50 py-4">
-        <p className="px-5 text-base font-bold text-slate-800 dark:text-white mb-3">Configurações</p>
-        {CONFIG_NAV.map(item => (
-          <button
-            key={item}
-            onClick={() => setActiveNav(item)}
-            className={cn(
-              'w-full text-left px-5 py-2 text-sm transition-colors',
-              activeNav === item
-                ? 'bg-slate-100 dark:bg-dark-700 text-slate-900 dark:text-white font-semibold'
-                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-dark-700/50 hover:text-slate-800 dark:hover:text-slate-200'
-            )}
-          >
-            {item}
-          </button>
-        ))}
+    <div className="space-y-4">
+      {/* Aviso: isto é só a caixa de entrada do Dashboard — configurações gerais ficam em /configuracoes */}
+      <div className="flex items-center justify-between gap-4 bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-800/30 rounded-2xl px-5 py-3.5">
+        <p className="text-xs sm:text-sm text-primary-700 dark:text-primary-400">
+          Aqui você só ajusta a caixa de entrada do Dashboard. Usuários, financeiro, tarefas, parceiros e o resto das configurações do escritório ficam na página de Configurações.
+        </p>
+        <button
+          onClick={() => navigate('/configuracoes')}
+          className="flex-shrink-0 text-xs sm:text-sm font-semibold text-primary-700 dark:text-primary-400 hover:underline whitespace-nowrap"
+        >
+          Ir para Configurações →
+        </button>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 p-8">
-        {activeNav === 'Caixa de entrada' && (
-          <div className="max-w-lg">
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1">Caixa de entrada</h2>
-            <p className="text-sm text-slate-400 dark:text-slate-500 mb-6">
-              Altere a seção da caixa de entrada de acordo com suas necessidades.
-            </p>
+      <div className="bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-8">
+        <div className="max-w-lg">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-1">Caixa de entrada</h2>
+          <p className="text-sm text-slate-400 dark:text-slate-500 mb-6">
+            Altere a seção da caixa de entrada de acordo com suas necessidades.
+          </p>
 
-            {/* Toggle */}
-            <div className="flex items-center gap-3 mb-5">
-              <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Seções da caixa de entrada</span>
-              <button
-                onClick={() => setInboxEnabled(v => !v)}
-                className={cn('relative w-11 h-6 rounded-full transition-colors flex-shrink-0', inboxEnabled ? 'bg-primary-600' : 'bg-slate-300 dark:bg-dark-500')}
-              >
-                <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform', inboxEnabled && 'translate-x-5')} />
-              </button>
-            </div>
-
-            {/* Reorderable sections */}
-            {inboxEnabled && (
-              <div className="space-y-2 mb-6">
-                {sections.map((sec, i) => (
-                  <div key={sec.id} className="flex items-center justify-between bg-slate-50 dark:bg-dark-700/50 border border-slate-100 dark:border-dark-600 rounded-xl px-4 py-3">
-                    <span className="text-sm text-slate-700 dark:text-slate-200 font-medium">
-                      {i + 1}. {sec.label}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => moveUp(i)}
-                        disabled={i === 0}
-                        className={cn('text-xs font-medium transition-colors', i === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-primary-600 dark:text-primary-400 hover:underline')}
-                      >Mover para cima</button>
-                      <button
-                        onClick={() => moveDown(i)}
-                        disabled={i === sections.length - 1}
-                        className={cn('text-xs font-medium transition-colors', i === sections.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-primary-600 dark:text-primary-400 hover:underline')}
-                      >Mover para baixo</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
+          {/* Toggle */}
+          <div className="flex items-center gap-3 mb-5">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Seções da caixa de entrada</span>
             <button
-              onClick={handleSave}
-              className="px-8 py-3 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-full transition-colors shadow-sm"
+              onClick={() => setInboxEnabled(v => !v)}
+              className={cn('relative w-11 h-6 rounded-full transition-colors flex-shrink-0', inboxEnabled ? 'bg-primary-600' : 'bg-slate-300 dark:bg-dark-500')}
             >
-              {saved ? 'Salvo!' : 'Salvar alterações'}
+              <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform', inboxEnabled && 'translate-x-5')} />
             </button>
           </div>
-        )}
 
-        {activeNav !== 'Caixa de entrada' && (
-          <div className="flex flex-col items-center justify-center h-64 text-center">
-            <Settings className="w-10 h-10 text-slate-200 dark:text-slate-700 mb-3" />
-            <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{activeNav}</p>
-            <p className="text-xs text-slate-400 mt-1">Esta seção está sendo desenvolvida.</p>
-          </div>
-        )}
+          {/* Reorderable sections */}
+          {inboxEnabled && (
+            <div className="space-y-2 mb-6">
+              {sections.map((sec, i) => (
+                <div key={sec.id} className="flex items-center justify-between bg-slate-50 dark:bg-dark-700/50 border border-slate-100 dark:border-dark-600 rounded-xl px-4 py-3">
+                  <span className="text-sm text-slate-700 dark:text-slate-200 font-medium">
+                    {i + 1}. {sec.label}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => moveUp(i)}
+                      disabled={i === 0}
+                      className={cn('text-xs font-medium transition-colors', i === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-primary-600 dark:text-primary-400 hover:underline')}
+                    >Mover para cima</button>
+                    <button
+                      onClick={() => moveDown(i)}
+                      disabled={i === sections.length - 1}
+                      className={cn('text-xs font-medium transition-colors', i === sections.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-primary-600 dark:text-primary-400 hover:underline')}
+                    >Mover para baixo</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={handleSave}
+            className="px-8 py-3 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold rounded-full transition-colors shadow-sm"
+          >
+            {saved ? 'Salvo!' : 'Salvar alterações'}
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -655,84 +631,6 @@ export function Dashboard() {
               </div>
             </div>
 
-            {/* ── Middle row ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-              {/* Taskscore (2 cols) */}
-              <div className="lg:col-span-2 bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-800 dark:text-white">Taskscore</h2>
-                    <p className="text-[11px] text-slate-400 mt-0.5">Últimos 7 dias</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="flex items-center gap-1 text-[10px] text-slate-400">
-                      <span className="w-2 h-2 rounded-full bg-primary-500 inline-block" />Tarefas concluídas
-                    </span>
-                    <button
-                      onClick={refreshTaskscore}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-400 transition-colors"
-                      title="Atualizar"
-                    >
-                      <RefreshCw className={cn('w-3.5 h-3.5', taskscoreLoading && 'animate-spin')} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bar chart — last 7 days */}
-                <ResponsiveContainer width="100%" height={100}>
-                  <BarChart data={dailyScores} barSize={18} margin={{ top: 2, right: 4, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="dayLabel" tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} width={20} />
-                    <Tooltip
-                      formatter={(value: number) => [`${value} tarefa${value !== 1 ? 's' : ''}`, 'Concluídas']}
-                      contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
-                    />
-                    <Bar dataKey="count" fill="#0f172a" radius={[3, 3, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-
-                {/* Cross-screen mini stats */}
-                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-dark-700/50 grid grid-cols-3 gap-3">
-                  <div className="text-center">
-                    <p className="text-lg font-bold text-slate-800 dark:text-white">{crossStats.processesActive}</p>
-                    <p className="text-[10px] text-slate-400">Processos ativos</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-lg font-bold text-slate-800 dark:text-white">{crossStats.clientsActive}</p>
-                    <p className="text-[10px] text-slate-400">Clientes ativos</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-sm font-bold text-emerald-600">{formatCurrency(crossStats.financialReceivable)}</p>
-                    <p className="text-[10px] text-slate-400">A receber</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Atividades concluídas */}
-              <div className="bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-5">
-                <h2 className="text-sm font-bold text-slate-800 dark:text-white mb-4">Atividades concluídas</h2>
-                {stats.completedMonth === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-28 text-center">
-                    <CheckCircle2 className="w-8 h-8 text-slate-200 dark:text-slate-700 mb-2" />
-                    <p className="text-xs text-slate-400">Você ainda não concluiu nenhuma atividade este mês</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl">
-                      <span className="text-sm text-emerald-700 dark:text-emerald-400 font-medium">Este mês</span>
-                      <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{stats.completedMonth}</span>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-dark-700/50 rounded-xl">
-                      <span className="text-sm text-slate-600 dark:text-slate-400">Mês anterior</span>
-                      <span className="text-lg font-bold text-slate-700 dark:text-slate-300">{stats.completedPrevMonth}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* ── Bottom row ── */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
@@ -780,7 +678,7 @@ export function Dashboard() {
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-slate-800 dark:text-slate-200 truncate">{task.title}</p>
                             {task.description && (
-                              <p className="text-[11px] text-slate-400 truncate">{task.description}</p>
+                              <p className="text-[11px] text-slate-400 truncate">{displayTaskDescription(task.description)}</p>
                             )}
                           </div>
 
@@ -862,7 +760,7 @@ export function Dashboard() {
                 </div>
                 <div className="flex-1 min-w-0 py-3 pr-3">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{task.title}</p>
-                  {task.description && <p className="text-[11px] text-gray-400 truncate">{task.description}</p>}
+                  {task.description && <p className="text-[11px] text-gray-400 truncate">{displayTaskDescription(task.description)}</p>}
                 </div>
                 <div className="w-28 flex-shrink-0 pr-3">
                   <span className={cn('text-[10px] px-2 py-0.5 rounded-full font-semibold', PRIORITY_COLORS[task.priority || 'medium'])}>
@@ -1182,7 +1080,7 @@ export function Dashboard() {
                   {done && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />}
                 </div>
                 {task.description && (
-                  <p className="text-[11px] text-gray-400 dark:text-gray-500 ml-5 mb-1.5 line-clamp-1">{task.description}</p>
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 ml-5 mb-1.5 line-clamp-1">{displayTaskDescription(task.description)}</p>
                 )}
                 <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100 dark:border-dark-700/50">
                   <div className="flex items-center gap-1.5">
@@ -1715,7 +1613,7 @@ export function Dashboard() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">{task.title}</p>
                           {task.description && (
-                            <p className="text-[11px] text-slate-400 truncate">{task.description}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{displayTaskDescription(task.description)}</p>
                           )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
