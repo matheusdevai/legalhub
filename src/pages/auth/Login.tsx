@@ -2,7 +2,7 @@ import { useState, FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { Eye, EyeOff, Mail, Check, Settings, ShieldCheck, X, Send, MessageCircle } from 'lucide-react'
+import { Eye, EyeOff, Mail, Check, Settings, ShieldCheck, X, Send, MessageCircle, Layers, LineChart, Lock } from 'lucide-react'
 
 function GoogleIcon() {
   return (
@@ -354,37 +354,76 @@ export function Login() {
   }
 
   return (
-    <div className="h-screen overflow-hidden" style={{ background: '#050b15' }}>
+    <div className="h-screen overflow-hidden bg-white">
 
       {/* ══ DESKTOP ══ */}
-      <div className="hidden lg:block h-screen relative overflow-hidden">
+      <div className="hidden lg:flex h-screen overflow-hidden">
 
-        <img
-          src="/login-bg.png"
-          alt=""
-          className="absolute inset-0 w-full h-full"
-          style={{ objectFit: 'cover', objectPosition: 'left top' }}
-          draggable={false}
-        />
+        {/* Painel de marca — mesma direção visual da landing page (branco + azul) */}
+        <div className="relative w-[42%] xl:w-[38%] flex-shrink-0 overflow-hidden bg-blue-700 flex flex-col">
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.06]"
+            style={{
+              backgroundImage: 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)',
+              backgroundSize: '48px 48px',
+            }}
+          />
+          <div
+            className="pointer-events-none absolute -top-28 -left-28 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-30"
+            style={{ background: 'radial-gradient(circle, #60a5fa, transparent 70%)' }}
+          />
+          <div
+            className="pointer-events-none absolute -bottom-28 -right-16 w-[24rem] h-[24rem] rounded-full blur-3xl opacity-25"
+            style={{ background: 'radial-gradient(circle, #1e3a8a, transparent 70%)' }}
+          />
 
-        <div
-          className="absolute flex flex-col bg-white"
-          style={{
-            left: 'max(53.9vw, 80.9vh)',
-            right: 'max(0.98vw, 1.46vh)',
-            top: 'max(1.11vw, 1.66vh)',
-            bottom: 'max(5.53vw, 8.3vh)',
-            borderRadius: '20px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.18), 0 4px 16px rgba(0,0,0,0.08)',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Ícone de configurações — canto superior direito */}
+          <div className="relative flex-1 flex flex-col justify-between px-12 xl:px-16 py-12">
+            <div className="flex items-center gap-2.5">
+              <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 38, height: 38 }}>
+                <img src="/logomarca.png" alt="LegalHub"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
+              </div>
+              <span className="font-bold text-xl text-white tracking-tight">LegalHub</span>
+            </div>
+
+            <div>
+              <h1 className="text-3xl xl:text-4xl font-bold text-white leading-tight" style={{ textWrap: 'balance' } as React.CSSProperties}>
+                Tecnologia e inteligência para transformar a gestão do{' '}
+                <span className="text-blue-200">seu escritório</span>.
+              </h1>
+              <p className="mt-4 text-sm text-blue-100/90 leading-relaxed max-w-sm">
+                Centralize processos, automatize tarefas e tome decisões com segurança e dados.
+              </p>
+
+              <div className="mt-9 grid grid-cols-3 gap-4">
+                {[
+                  { icon: ShieldCheck, label: 'Segurança avançada' },
+                  { icon: Layers, label: 'Gestão centralizada' },
+                  { icon: LineChart, label: 'Decisões inteligentes' },
+                ].map(item => (
+                  <div key={item.label}>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/10 mb-2.5">
+                      <item.icon className="w-4 h-4 text-blue-200" />
+                    </div>
+                    <p className="text-xs text-blue-100/90 leading-snug">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-blue-100/70">
+              <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+              Seus dados estão protegidos com criptografia de ponta a ponta.
+            </div>
+          </div>
+        </div>
+
+        {/* Painel do formulário */}
+        <div className="relative flex-1 flex flex-col bg-white">
           <div className="absolute top-4 right-4 z-10">
             <Settings className="w-4 h-4 text-slate-300" />
           </div>
 
-          {/* Área scrollável centralizada */}
           <div className="flex-1 overflow-y-auto px-10 pt-10 pb-2" style={{ minHeight: 0 }}>
             <div className="flex items-center justify-center min-h-full">
               <div style={{ width: '100%', maxWidth: '360px' }}>
@@ -393,7 +432,6 @@ export function Login() {
             </div>
           </div>
 
-          {/* Copyright colado no fundo */}
           <div className="flex-shrink-0 text-center py-3 border-t border-slate-100">
             <p className="text-[11px] text-slate-400">
               © 2026 LegalHub · Todos os direitos reservados
