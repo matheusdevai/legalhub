@@ -71,7 +71,20 @@ type SecondaryTab = 'comissoes' | 'expenses' | 'anual'
 export function FinancialsPage() {
   const { profile } = useAuth()
   const currentUserId = profile?.user_id
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
   const navigate = useNavigate()
+
+  // Minhas Despesas — admins podem ver as despesas de outros colegas, um por vez
+  const [viewedUserId, setViewedUserId] = useState<string | undefined>(undefined)
+  const [teamMembers, setTeamMembers] = useState<{ user_id: string; name: string | null; display_name: string | null }[]>([])
+  useEffect(() => {
+    if (!isAdmin || !profile?.tenant_id) return
+    supabase.from('profiles').select('user_id, name, display_name')
+      .eq('tenant_id', profile.tenant_id).neq('role', 'client').order('name')
+      .then(({ data }) => setTeamMembers(data || []))
+  }, [isAdmin, profile?.tenant_id])
+  const effectiveUserId = viewedUserId ?? currentUserId
+  const viewingOwnExpenses = effectiveUserId === currentUserId
 
   const [financials, setFinancials] = useState<Financial[]>([])
   const [recurringTemplates, setRecurringTemplates] = useState<Financial[]>([])
@@ -151,9 +164,9 @@ export function FinancialsPage() {
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('financial_accounts').select('*').order('created_at'),
     ]
-    if (currentUserId) {
-      promises.push(supabase.from('user_expenses').select('*').eq('user_id', currentUserId).is('deleted_at', null).order('expense_date', { ascending: false }))
-      promises.push(supabase.from('expense_budgets').select('*').eq('user_id', currentUserId))
+    if (effectiveUserId) {
+      promises.push(supabase.from('user_expenses').select('*').eq('user_id', effectiveUserId).is('deleted_at', null).order('expense_date', { ascending: false }))
+      promises.push(supabase.from('expense_budgets').select('*').eq('user_id', effectiveUserId))
     }
     const results = await Promise.all(promises)
     const allFinancials: Financial[] = results[0].data || []
@@ -177,7 +190,7 @@ export function FinancialsPage() {
     setLoading(false)
   }
 
-  useEffect(() => { load() }, [currentUserId])
+  useEffect(() => { load() }, [currentUserId, effectiveUserId])
 
   const lancFilterRef = useRef<HTMLDivElement>(null)
   const lancSortRef = useRef<HTMLDivElement>(null)
@@ -1390,6 +1403,27 @@ export function FinancialsPage() {
         {/* ── Minhas Despesas ── */}
         {secondaryTab === 'expenses' && (
           <div className="space-y-4">
+            {isAdmin && teamMembers.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Ver despesas de</span>
+                <select
+                  value={effectiveUserId || ''}
+                  onChange={e => setViewedUserId(e.target.value)}
+                  className="text-sm border border-slate-200 dark:border-dark-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                >
+                  {teamMembers.map(m => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.user_id === currentUserId ? `Eu (${m.name || m.display_name})` : (m.name || m.display_name || 'Sem nome')}
+                    </option>
+                  ))}
+                </select>
+                {!viewingOwnExpenses && (
+                  <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-full">
+                    Somente leitura
+                  </span>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Card className="p-4 border-l-4 border-primary-500">
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">Total do Mês</p>
@@ -1408,7 +1442,9 @@ export function FinancialsPage() {
               <Card className="p-4">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Metas do mês por categoria</h3>
-                  <button onClick={openBudgetModal} className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">Editar metas</button>
+                  {viewingOwnExpenses && (
+                    <button onClick={openBudgetModal} className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">Editar metas</button>
+                  )}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {budgetsWithSpend.map(b => {
@@ -1433,14 +1469,16 @@ export function FinancialsPage() {
               </Card>
             )}
             <div className="flex gap-2 flex-wrap">
-              <Button onClick={() => openNewExpense()} size="sm"><Plus className="w-3.5 h-3.5" /> Nova Despesa</Button>
+              {viewingOwnExpenses && (
+                <Button onClick={() => openNewExpense()} size="sm"><Plus className="w-3.5 h-3.5" /> Nova Despesa</Button>
+              )}
               <button
                 onClick={exportExpenses}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 hover:bg-slate-50 dark:hover:bg-dark-700 rounded-lg transition-colors"
               >
                 <Download className="w-3.5 h-3.5" /> Exportar
               </button>
-              {budgetsWithSpend.length === 0 && (
+              {viewingOwnExpenses && budgetsWithSpend.length === 0 && (
                 <button
                   onClick={openBudgetModal}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 hover:bg-slate-50 dark:hover:bg-dark-700 rounded-lg transition-colors"
@@ -1515,16 +1553,18 @@ export function FinancialsPage() {
                           </div>
                           <div className="flex items-center gap-1.5 flex-shrink-0">
                             {col.total > 0 && <span className="font-bold text-red-600 dark:text-red-400 text-xs whitespace-nowrap">-{formatCurrency(col.total)}</span>}
-                            <button
-                              onClick={() => {
-                                const day = isCurrent ? now.getDate() : 1
-                                openNewExpense(`${expYear}-${String(col.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
-                              }}
-                              title="Registrar despesa neste mês"
-                              className="p-1 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex-shrink-0"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
+                            {viewingOwnExpenses && (
+                              <button
+                                onClick={() => {
+                                  const day = isCurrent ? now.getDate() : 1
+                                  openNewExpense(`${expYear}-${String(col.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+                                }}
+                                title="Registrar despesa neste mês"
+                                className="p-1 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex-shrink-0"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="p-2 space-y-2 min-h-[72px]">
@@ -1534,7 +1574,7 @@ export function FinancialsPage() {
                             const meta = CATEGORY_META[e.category]
                             const Icon = meta.icon
                             const day = dateParts(e.expense_date)?.day
-                            const canBulkSelect = e.reimbursable && !e.reimbursed
+                            const canBulkSelect = e.reimbursable && !e.reimbursed && viewingOwnExpenses
                             return (
                               <div key={e.id} className="group rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 p-2.5 hover:shadow-card-hover transition-shadow">
                                 <div className="flex items-start justify-between gap-1.5">
@@ -1547,10 +1587,12 @@ export function FinancialsPage() {
                                     <span className="font-mono text-[10px] text-slate-400 flex-shrink-0">{day != null ? String(day).padStart(2, '0') : '—'}</span>
                                     <Badge className={cn(meta.badge, 'flex-shrink-0')}><Icon className="w-2.5 h-2.5 mr-0.5 inline" />{meta.label}</Badge>
                                   </div>
-                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
-                                    <button onClick={() => openEditExpense(e)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400"><Edit3 className="w-3 h-3" /></button>
-                                    <button onClick={() => deleteExpense(e.id)} className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
-                                  </div>
+                                  {viewingOwnExpenses && (
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                      <button onClick={() => openEditExpense(e)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400"><Edit3 className="w-3 h-3" /></button>
+                                      <button onClick={() => deleteExpense(e.id)} className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                                    </div>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-1.5 mt-1.5">
                                   <p className="text-xs font-medium text-slate-900 dark:text-white truncate flex-1 min-w-0">{e.description}</p>
