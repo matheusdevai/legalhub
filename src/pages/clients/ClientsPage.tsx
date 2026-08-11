@@ -1911,7 +1911,7 @@ export function ClientsPage() {
                 <Textarea
                   className="w-full text-sm bg-gray-50 dark:bg-dark-800"
                   placeholder="Anotações, senhas e outros"
-                  rows={5}
+                  rows={12}
                   value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
                 />
               ) : (
