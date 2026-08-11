@@ -17,6 +17,8 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
 import { markTaskDone, notifyTaskAssignment } from '@/lib/taskActions'
+import { withErrorFeedback } from '@/lib/errorFeedback'
+import { toast } from '@/components/ui/Toast'
 
 type TaskForm = {
   title: string; description: string; process_id: string; client_id: string;
@@ -395,7 +397,7 @@ export function TasksPage() {
       error = res.error
     }
     setSaving(false)
-    if (error) { alert(`Erro ao salvar tarefa: ${error.message}`); return }
+    if (error) { toast(`Erro ao salvar tarefa: ${error.message}`, 'error'); return }
     if (payload.assigned_to && payload.assigned_to !== previousAssignedTo) {
       await notifyTaskAssignment(payload.assigned_to, form.title)
     }
@@ -415,13 +417,13 @@ export function TasksPage() {
   }
 
   async function softDeleteTask(taskId: string) {
-    await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', taskId)
+    await withErrorFeedback(supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', taskId), 'Erro ao excluir tarefa')
     setTasks(prev => prev.filter(t => t.id !== taskId))
     setDeletingTaskId(null)
   }
 
   async function stopRecurrence(templateId: string) {
-    await supabase.from('tasks').update({ recurring: false }).eq('id', templateId)
+    await withErrorFeedback(supabase.from('tasks').update({ recurring: false }).eq('id', templateId), 'Erro ao encerrar recorrência')
     setRecurringTemplates(prev => prev.filter(t => t.id !== templateId))
   }
 
@@ -455,7 +457,8 @@ export function TasksPage() {
   async function confirmCompletion() {
     if (!completionModal) return
     const selectedClient = clients.find(c => c.id === completionForm.client_id)
-    await supabase.from('tasks').update({ status: 'done', completed_at: new Date().toISOString() }).eq('id', completionModal.taskId)
+    const { error: taskErr } = await withErrorFeedback(supabase.from('tasks').update({ status: 'done', completed_at: new Date().toISOString() }).eq('id', completionModal.taskId), 'Erro ao concluir tarefa')
+    if (taskErr) return
     const payload: any = {
       ...completionForm,
       title: completionForm.title.trim() || completionForm.type || selectedClient?.name || completionModal.taskTitle,
@@ -469,7 +472,7 @@ export function TasksPage() {
     }
     if (!payload.client_id) delete payload.client_id
     const { error } = await supabase.from('processes').insert(payload)
-    if (error) { alert(`Erro ao criar processo: ${error.message}`); return }
+    if (error) { toast(`Erro ao criar processo: ${error.message}`, 'error'); return }
     setCompletionModal(null)
     load(true)
   }

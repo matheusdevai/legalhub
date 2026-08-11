@@ -11,6 +11,8 @@ import { supabase } from '@/lib/supabase'
 import { Profile } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate } from '@/lib/utils'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 import {
   getInitials, getRoleStyle, computeRoleCounts, filterProfiles,
   canManageUsers, planUsagePercent, ROLE_LABELS, PLAN_LABELS, PLAN_LIMITS,
@@ -138,17 +140,17 @@ export function UsersPage() {
         const { error } = await supabase.from('profiles')
           .update({ name: form.name, display_name: form.name, role: form.role as Profile['role'] })
           .eq('id', editId)
-        if (error) { alert('Erro ao atualizar: ' + error.message); return }
+        if (error) { toast('Erro ao atualizar: ' + error.message, 'error'); return }
         setModalOpen(false)
         loadUsers()
         return
       }
       if (!form.email.trim() || !form.password.trim()) return
-      if (!profile?.tenant_id) { alert('Erro: administrador sem tenant válido. Contate o suporte.'); return }
+      if (!profile?.tenant_id) { toast('Erro: administrador sem tenant válido. Contate o suporte.', 'error'); return }
 
       const { data: sessionData } = await supabase.auth.getSession()
       const accessToken = sessionData?.session?.access_token
-      if (!accessToken) { alert('Erro: sessão expirada. Faça login novamente.'); return }
+      if (!accessToken) { toast('Erro: sessão expirada. Faça login novamente.', 'error'); return }
 
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
         method: 'POST',
@@ -156,11 +158,11 @@ export function UsersPage() {
         body: JSON.stringify({ email: form.email.trim(), password: form.password, name: form.name, role: form.role, tenant_id: profile.tenant_id }),
       })
       const resData = await res.json().catch(() => ({ error: 'Resposta inválida do servidor' }))
-      if (!res.ok) { alert('Erro ao criar usuário: ' + (resData.error || res.statusText)); return }
+      if (!res.ok) { toast('Erro ao criar usuário: ' + (resData.error || res.statusText), 'error'); return }
       setCreatedCredentials({ email: form.email.trim(), password: form.password })
       loadUsers()
     } catch (err: unknown) {
-      alert('Erro inesperado: ' + (err instanceof Error ? err.message : 'Erro de conexão.'))
+      toast('Erro inesperado: ' + (err instanceof Error ? err.message : 'Erro de conexão.'), 'error')
     } finally { setSaving(false) }
   }
 
@@ -172,11 +174,11 @@ export function UsersPage() {
   }
 
   async function removeUser(id: string) {
-    if (!confirm('Deseja remover este usuário do escritório? Esta ação não pode ser desfeita.')) return
+    if (!(await confirmDialog('Deseja remover este usuário do escritório? Esta ação não pode ser desfeita.', { danger: true, confirmLabel: 'Remover' }))) return
     try {
       const { data: sessionData } = await supabase.auth.getSession()
       const accessToken = sessionData?.session?.access_token
-      if (!accessToken) { alert('Sessão expirada. Faça login novamente.'); return }
+      if (!accessToken) { toast('Sessão expirada. Faça login novamente.', 'error'); return }
 
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`, {
         method: 'DELETE',
@@ -184,10 +186,10 @@ export function UsersPage() {
         body: JSON.stringify({ userId: id }),
       })
       const resData = await res.json().catch(() => ({ error: 'Resposta inválida' }))
-      if (!res.ok) { alert('Erro ao excluir usuário: ' + (resData.error || res.statusText)); return }
+      if (!res.ok) { toast('Erro ao excluir usuário: ' + (resData.error || res.statusText), 'error'); return }
       loadUsers()
     } catch (err: unknown) {
-      alert('Erro inesperado: ' + (err instanceof Error ? err.message : 'Erro de conexão.'))
+      toast('Erro inesperado: ' + (err instanceof Error ? err.message : 'Erro de conexão.'), 'error')
     }
   }
 

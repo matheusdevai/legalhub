@@ -8,6 +8,8 @@ import { ResetPassword } from '@/pages/auth/ResetPassword'
 import { LoadingScreen } from '@/components/ui/LoadingScreen'
 import { PageLoadingProvider } from '@/contexts/PageLoadingContext'
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal'
+import { ConfirmDialogHost } from '@/components/ui/ConfirmDialog'
+import { ToastHost } from '@/components/ui/Toast'
 
 const Dashboard        = lazy(() => import('@/pages/dashboard/Dashboard').then(m => ({ default: m.Dashboard })))
 const ClientsPage      = lazy(() => import('@/pages/clients/ClientsPage').then(m => ({ default: m.ClientsPage })))
@@ -100,6 +102,8 @@ export default function App() {
         <AuthProvider>
           <PageLoadingProvider>
             <AppRoutes />
+            <ConfirmDialogHost />
+            <ToastHost />
           </PageLoadingProvider>
         </AuthProvider>
       </ThemeProvider>

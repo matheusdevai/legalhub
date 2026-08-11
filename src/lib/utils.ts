@@ -121,3 +121,11 @@ export const ROLE_LABELS: Record<string, string> = {
   financial: 'Financeiro',
   super_admin: 'Super Admin',
 }
+
+// ─── Variação percentual mês a mês (Dashboard) ─────────────────────────────────
+// Sem mês anterior pra comparar (previous = 0), não dá pra calcular uma razão —
+// tratamos como +100% se houve produção este mês, ou 0% se também não houve nada.
+export function computeMonthlyChangePercent(current: number, previous: number): number {
+  if (previous > 0) return Math.round(((current - previous) / previous) * 100)
+  return current > 0 ? 100 : 0
+}

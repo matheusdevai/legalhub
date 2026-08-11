@@ -6,6 +6,7 @@ import { Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 interface Document {
   id: string
@@ -158,13 +159,13 @@ export function DocumentsPage() {
   }
 
   async function deleteDoc(id: string) {
-    if (!confirm('Deseja excluir este documento?')) return
+    if (!(await confirmDialog('Deseja excluir este documento?'))) return
     await supabase.from('documents').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }
 
   async function deleteLibraryTemplate(id: string) {
-    if (!confirm('Excluir este modelo da Biblioteca Pública? Ele deixará de ficar visível para todos os escritórios.')) return
+    if (!(await confirmDialog('Excluir este modelo da Biblioteca Pública? Ele deixará de ficar visível para todos os escritórios.'))) return
     await supabase.from('document_library_templates').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }

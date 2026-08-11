@@ -12,6 +12,8 @@ import { Colaborador } from '@/types'
 import { cn, formatDate, formatCurrency, formatCPFCNPJ, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 
 function waLink(phone: string): string | null {
   const digits = phone.replace(/\D/g, '')
@@ -395,16 +397,16 @@ export function CollaboratorsPage() {
     }
     if (editId) {
       const { error } = await supabase.from('colaboradores').update(payload).eq('id', editId)
-      if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+      if (error) { toast('Erro: ' + error.message, 'error'); setSaving(false); return }
     } else {
       const { error } = await supabase.from('colaboradores').insert(payload)
-      if (error) { alert('Erro: ' + error.message); setSaving(false); return }
+      if (error) { toast('Erro: ' + error.message, 'error'); setSaving(false); return }
     }
     setSaving(false); setModalOpen(false); load()
   }
 
   async function deleteCollaborator(id: string) {
-    if (!confirm('Deseja excluir este parceiro?')) return
+    if (!(await confirmDialog('Deseja excluir este parceiro?'))) return
     await supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }
@@ -431,7 +433,7 @@ export function CollaboratorsPage() {
     load()
   }
   async function bulkDelete() {
-    if (!confirm(`Excluir ${selectedIds.size} parceiro(s) selecionado(s)?`)) return
+    if (!(await confirmDialog(`Excluir ${selectedIds.size} parceiro(s) selecionado(s)?`))) return
     setBulkWorking(true)
     await supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
     setBulkWorking(false)

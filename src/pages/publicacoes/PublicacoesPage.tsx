@@ -12,6 +12,7 @@ import { openExportWindow } from '@/lib/exportUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
 import { computePrazo } from '@/lib/prazoUtils'
+import { toast } from '@/components/ui/Toast'
 
 interface CnjMovimento {
   codigo?: number
@@ -211,7 +212,7 @@ export function PublicacoesPage() {
       type: 'deadline',
     })
     setPrazoSaving(false)
-    if (error) { alert(`Erro ao criar tarefa de prazo: ${error.message}`); return }
+    if (error) { toast(`Erro ao criar tarefa de prazo: ${error.message}`, 'error'); return }
     savePrazoCriado(prazoItem.id, dueDateStr)
     setPrazoMap(m => ({ ...m, [prazoItem.id]: dueDateStr }))
     setPrazoItem(null)

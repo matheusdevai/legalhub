@@ -15,6 +15,8 @@ import { supabase } from '@/lib/supabase'
 import { Lead } from '@/types'
 import { formatDate, formatPhone, formatCurrency, LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
 interface ExtLead extends Lead {
@@ -248,7 +250,7 @@ export function LeadsPage() {
   }
 
   async function deleteLead(id: string) {
-    if (!confirm('Excluir este lead?')) return
+    if (!(await confirmDialog('Excluir este lead?'))) return
     await supabase.from('leads').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     if (detailLead?.id === id) setDetailLead(null)
     load()
@@ -269,7 +271,7 @@ export function LeadsPage() {
 
   async function convertLeadToClient(lead: ExtLead) {
     if (lead.converted_client_id) { navigate('/clientes'); return }
-    if (!confirm(`Converter "${lead.name}" em contato? Um novo cadastro será criado em Contatos.`)) return
+    if (!(await confirmDialog(`Converter "${lead.name}" em contato? Um novo cadastro será criado em Contatos.`))) return
     setConverting(true)
     // Contatos guardam o responsável pelo NOME (assigned_lawyer), enquanto o
     // lead guarda o user_id (assigned_to) — resolve o nome antes de converter
@@ -292,7 +294,7 @@ export function LeadsPage() {
       notes: `Convertido do lead em ${new Date().toLocaleDateString('pt-BR')}.${lead.notes ? ` ${lead.notes}` : ''}`,
     }).select('id').single()
     setConverting(false)
-    if (error) { alert('Erro ao converter lead em contato: ' + error.message); return }
+    if (error) { toast('Erro ao converter lead em contato: ' + error.message, 'error'); return }
     const clientId = (data?.id as string | undefined) ?? null
     const converted_at = new Date().toISOString()
     await supabase.from('leads').update({ status: 'won', converted_at, converted_client_id: clientId }).eq('id', lead.id)
@@ -361,7 +363,7 @@ export function LeadsPage() {
   }
 
   async function deleteMeta(id: string) {
-    if (!confirm('Excluir esta conta Meta?')) return
+    if (!(await confirmDialog('Excluir esta conta Meta?'))) return
     await supabase.from('meta_accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }
@@ -398,7 +400,7 @@ export function LeadsPage() {
   }
 
   async function deleteWa(id: string) {
-    if (!confirm('Excluir esta conta WhatsApp?')) return
+    if (!(await confirmDialog('Excluir esta conta WhatsApp?'))) return
     await supabase.from('whatsapp_accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }

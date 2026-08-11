@@ -23,6 +23,25 @@ const FINANCIAL_STATUS_LABELS: Record<string, string> = {
   pending: 'Pendente', paid: 'Pago', overdue: 'Vencido', cancelled: 'Cancelado',
 }
 
+// ─── Carrega os dados do portal, sempre filtrados por client_id ────────────────
+// Extraída à parte (em vez de inline no useEffect) para poder testar isoladamente
+// que as três consultas nunca esquecem o filtro — já houve um vazamento de dados
+// entre clientes aqui por falta exatamente desse filtro (ver CLAUDE.md).
+export async function loadPortalData(clientId: string): Promise<{
+  processes: Process[]; financials: Financial[]; documents: PortalDocument[]
+}> {
+  const [{ data: p }, { data: f }, { data: d }] = await Promise.all([
+    supabase.from('processes').select('*').eq('client_id', clientId).is('deleted_at', null).order('created_at', { ascending: false }),
+    supabase.from('financials').select('*').eq('client_id', clientId).is('deleted_at', null).order('due_date', { ascending: false }),
+    supabase.from('documents').select('id, title, file_url, file_name, created_at').eq('client_id', clientId).is('deleted_at', null).order('created_at', { ascending: false }),
+  ])
+  return {
+    processes: (p || []) as Process[],
+    financials: (f || []) as Financial[],
+    documents: (d || []) as PortalDocument[],
+  }
+}
+
 export function ClientPortalPage() {
   const { profile, signOut } = useAuth()
   const [tab, setTab] = useState<Tab>('processos')
@@ -37,14 +56,10 @@ export function ClientPortalPage() {
       if (!clientId) { setLoading(false); return }
       setLoading(true)
       try {
-        const [{ data: p }, { data: f }, { data: d }] = await Promise.all([
-          supabase.from('processes').select('*').eq('client_id', clientId).is('deleted_at', null).order('created_at', { ascending: false }),
-          supabase.from('financials').select('*').eq('client_id', clientId).is('deleted_at', null).order('due_date', { ascending: false }),
-          supabase.from('documents').select('id, title, file_url, file_name, created_at').eq('client_id', clientId).is('deleted_at', null).order('created_at', { ascending: false }),
-        ])
-        setProcesses((p || []) as Process[])
-        setFinancials((f || []) as Financial[])
-        setDocuments((d || []) as PortalDocument[])
+        const { processes, financials, documents } = await loadPortalData(clientId)
+        setProcesses(processes)
+        setFinancials(financials)
+        setDocuments(documents)
       } finally {
         setLoading(false)
       }

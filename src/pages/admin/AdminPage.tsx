@@ -6,6 +6,7 @@ import { Card, Badge, Button, Modal, Input, Select, Textarea, Spinner, StatsCard
 import { supabase } from '@/lib/supabase'
 import { Tenant, Profile, SystemAnnouncement, SupportTicket } from '@/types'
 import { formatDate, ROLE_LABELS } from '@/lib/utils'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 export function AdminPage() {
   const [tenants, setTenants] = useState<Tenant[]>([])
@@ -47,7 +48,7 @@ export function AdminPage() {
   }
 
   async function deleteAnnouncement(id: string) {
-    if (!confirm('Excluir este anúncio?')) return
+    if (!(await confirmDialog('Excluir este anúncio?'))) return
     await supabase.from('system_announcements').delete().eq('id', id)
     load()
   }

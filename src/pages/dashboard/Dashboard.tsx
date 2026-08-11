@@ -15,7 +15,7 @@ import { AiCopilotoTab } from '@/components/ai/AiCopilotoTab'
 import { Spinner, Modal, Button, Input, Select } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS } from '@/lib/utils'
+import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent } from '@/lib/utils'
 import { Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
@@ -476,9 +476,7 @@ export function Dashboard() {
   const fullName = profile?.name || profile?.display_name || 'Usuário'
   const initials = fullName.split(' ').map((n: string) => n[0]).slice(0,2).join('').toUpperCase()
 
-  const pctChange = stats.completedPrevMonth > 0
-    ? Math.round(((stats.completedMonth - stats.completedPrevMonth) / stats.completedPrevMonth) * 100)
-    : stats.completedMonth > 0 ? 100 : 0
+  const pctChange = computeMonthlyChangePercent(stats.completedMonth, stats.completedPrevMonth)
 
   // Taskscore: last 7 days completed tasks (simplified to show month stats as bar)
   const maxBar = Math.max(stats.completedMonth, 1)

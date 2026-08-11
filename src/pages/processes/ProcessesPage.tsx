@@ -18,6 +18,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
 import { ensureProcessDeadlineTask, markTaskDone } from '@/lib/taskActions'
+import { withErrorFeedback } from '@/lib/errorFeedback'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 
 /** Cria/atualiza/remove os eventos de Agenda vinculados a um processo (prazo e audiência) */
 async function syncProcessCalendarEvents(opts: {
@@ -324,22 +327,22 @@ export function ProcessesPage() {
   }
   async function bulkSetStatus(status: string) {
     setBulkWorking(true)
-    await supabase.from('processes').update({ status }).in('id', Array.from(selectedIds))
+    await withErrorFeedback(supabase.from('processes').update({ status }).in('id', Array.from(selectedIds)), 'Erro ao atualizar status')
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
   }
   async function bulkAssignColaborador(colaboradorId: string) {
     setBulkWorking(true)
-    await supabase.from('processes').update({ colaborador_id: colaboradorId === '__none__' ? null : colaboradorId }).in('id', Array.from(selectedIds))
+    await withErrorFeedback(supabase.from('processes').update({ colaborador_id: colaboradorId === '__none__' ? null : colaboradorId }).in('id', Array.from(selectedIds)), 'Erro ao atribuir parceiro')
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
   }
   async function bulkDelete() {
-    if (!confirm(`Excluir ${selectedIds.size} processo(s) selecionado(s)?`)) return
+    if (!(await confirmDialog(`Excluir ${selectedIds.size} processo(s) selecionado(s)?`))) return
     setBulkWorking(true)
-    await supabase.from('processes').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    await withErrorFeedback(supabase.from('processes').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds)), 'Erro ao excluir processos')
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
@@ -415,7 +418,7 @@ export function ProcessesPage() {
     }
     setSaving(false)
     if (error) {
-      alert(`Erro ao salvar processo: ${error.message}`)
+      toast(`Erro ao salvar processo: ${error.message}`, 'error')
       return
     }
     if (processId) {
@@ -429,13 +432,13 @@ export function ProcessesPage() {
   }
 
   async function deleteProcess(id: string) {
-    if (!confirm('Deseja excluir este processo?')) return
-    await supabase.from('processes').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    if (!(await confirmDialog('Deseja excluir este processo?'))) return
+    await withErrorFeedback(supabase.from('processes').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir processo')
     load()
   }
 
   async function moveProcess(processId: string, newColaboradorId: string) {
-    await supabase.from('processes').update({ colaborador_id: newColaboradorId || null }).eq('id', processId)
+    await withErrorFeedback(supabase.from('processes').update({ colaborador_id: newColaboradorId || null }).eq('id', processId), 'Erro ao mover processo')
     setMoveModal(null)
     load()
   }
@@ -1762,14 +1765,14 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
   async function addUpdate() {
     if (!newUpdate.title.trim()) return
     setSavingUpdate(true)
-    await supabase.from('process_updates').insert({
+    await withErrorFeedback(supabase.from('process_updates').insert({
       process_id: p.id,
       title: newUpdate.title.trim(),
       description: newUpdate.description || null,
       date: newUpdate.date || null,
       author: profile?.name || null,
       type: newUpdate.type,
-    })
+    }), 'Erro ao adicionar andamento')
     const { data } = await supabase.from('process_updates').select('*').eq('process_id', p.id).order('date', { ascending: false })
     setTabUpdates(data || [])
     setNewUpdate({ title: '', description: '', date: new Date().toISOString().slice(0, 10), type: 'andamento' })
@@ -1781,11 +1784,11 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
     const amount = parseFloat(finForm.amount)
     if (!finForm.description.trim() || !amount || amount <= 0) return
     setSavingFin(true)
-    await supabase.from('financials').insert({
+    await withErrorFeedback(supabase.from('financials').insert({
       type: finForm.type, category: finForm.category, description: finForm.description.trim(),
       amount, due_date: finForm.due_date || null, status: 'pending',
       process_id: p.id, process_number: p.number, client_id: p.client_id || null, client_name: p.client_name || null,
-    })
+    }), 'Erro ao adicionar lançamento')
     const { data } = await supabase.from('financials').select('*').eq('process_id', p.id).is('deleted_at', null).order('due_date')
     setTabFinancials(data || [])
     setFinForm({ type: 'receivable', category: 'fees', description: '', amount: '', due_date: '' })
@@ -1796,10 +1799,10 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
   async function addTask() {
     if (!taskForm.title.trim()) return
     setSavingTask(true)
-    await supabase.from('tasks').insert({
+    await withErrorFeedback(supabase.from('tasks').insert({
       title: taskForm.title.trim(), due_date: taskForm.due_date || null, priority: taskForm.priority,
       status: 'pending', type: 'custom', process_id: p.id,
-    })
+    }), 'Erro ao adicionar tarefa')
     const { data } = await supabase.from('tasks').select('*').eq('process_id', p.id).is('deleted_at', null).order('due_date')
     setTabTasks(data || [])
     setTaskForm({ title: '', due_date: '', priority: 'medium' })
@@ -1816,7 +1819,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       const { error: uploadErr } = await supabase.storage.from('documents').upload(path, file)
       if (uploadErr) throw uploadErr
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
-      await supabase.from('documents').insert({
+      const { error: insertErr } = await supabase.from('documents').insert({
         tenant_id: p.tenant_id,
         process_id: p.id,
         title: file.name.replace(/\.[^.]+$/, ''),
@@ -1829,9 +1832,12 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
         file_size: file.size,
         file_mime: file.type,
       })
+      if (insertErr) throw insertErr
       const { data } = await supabase.from('documents').select('id,title,type,file_url,file_name,file_size,created_at').eq('process_id', p.id).is('deleted_at', null).order('created_at', { ascending: false })
       setTabDocuments((data || []) as DocItem[])
-    } catch { /* silently fail */ }
+    } catch (err: any) {
+      toast(`Erro ao anexar documento: ${err.message || 'tente novamente'}`, 'error')
+    }
     finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -1840,7 +1846,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
 
   async function toggleTaskStatus(taskId: string, current: string) {
     if (current === 'done') {
-      await supabase.from('tasks').update({ status: 'pending', completed_at: null }).eq('id', taskId)
+      await withErrorFeedback(supabase.from('tasks').update({ status: 'pending', completed_at: null }).eq('id', taskId), 'Erro ao atualizar tarefa')
       setTabTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'pending', completed_at: null } : t))
       return
     }
@@ -1856,7 +1862,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
   async function handleSave() {
     setSaving(true)
     const newDeadline = form.next_deadline || null
-    await supabase.from('processes').update({
+    const { error } = await withErrorFeedback(supabase.from('processes').update({
       number: form.number,
       court: form.court || form.vara,
       judge: form.judge,
@@ -1872,7 +1878,8 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       colaborador_id: form.colaborador_id || null,
       status: form.status as any,
       modalidade: (form.modalidade || null) as any,
-    }).eq('id', p.id)
+    }).eq('id', p.id), 'Erro ao salvar processo')
+    if (error) { setSaving(false); return }
     await syncProcessCalendarEvents({
       processId: p.id, title: [p.client_name, form.counterparty].filter(Boolean).join(' x ') || p.title,
       clientName: p.client_name, processNumber: form.number,
@@ -2508,7 +2515,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
           }
         </button>
         <button
-          onClick={() => { if (confirm('Excluir este processo?')) onDelete() }}
+          onClick={async () => { if (await confirmDialog('Excluir este processo?')) onDelete() }}
           className="p-2.5 rounded-xl border border-gray-200 dark:border-dark-600 text-gray-400 hover:text-red-500 hover:border-red-200 transition-colors"
         >
           <Trash2 className="w-4 h-4" />

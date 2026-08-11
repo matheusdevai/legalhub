@@ -18,6 +18,8 @@ import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
 import { buildClientImportPreview } from '@/lib/clientImportUtils'
 import { fetchCitiesByState } from '@/lib/ibgeUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 
@@ -635,7 +637,7 @@ export function ClientsPage() {
     const amount = parseFloat(form.amount)
     if (!form.description.trim() || Number.isNaN(amount)) {
       setSavingExpense(false)
-      alert('Preencha a descrição e um valor válido antes de salvar.')
+      toast('Preencha a descrição e um valor válido antes de salvar.', 'error')
       return
     }
     const { error } = await supabase.from('financials').insert({
@@ -646,7 +648,7 @@ export function ClientsPage() {
       process_id: form.process_id || null, process_number: form.process_number || null,
     })
     setSavingExpense(false)
-    if (error) { alert(`Erro ao salvar despesa: ${error.message}`); return }
+    if (error) { toast(`Erro ao salvar despesa: ${error.message}`, 'error'); return }
     setExpenseDrawerOpen(false)
     loadClientExpenses(viewClient.id)
   }
@@ -752,14 +754,14 @@ export function ClientsPage() {
     if (editId) {
       const { error: updateError } = await supabase.from('clients').update(payload).eq('id', editId)
       if (updateError) {
-        alert('Erro ao atualizar contato: ' + updateError.message)
+        toast('Erro ao atualizar contato: ' + updateError.message, 'error')
         setSaving(false)
         return
       }
     } else {
       const { data: inserted, error: insertError } = await supabase.from('clients').insert(payload).select('id').single()
       if (insertError) {
-        alert('Erro ao salvar contato: ' + insertError.message)
+        toast('Erro ao salvar contato: ' + insertError.message, 'error')
         setSaving(false)
         return
       }
@@ -837,7 +839,7 @@ export function ClientsPage() {
   }
 
   async function deleteClient(id: string) {
-    if (!confirm('Deseja excluir este contato?')) return
+    if (!(await confirmDialog('Deseja excluir este contato?'))) return
     await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }
@@ -985,7 +987,7 @@ export function ClientsPage() {
     load()
   }
   async function bulkDelete() {
-    if (!confirm(`Excluir ${selectedIds.size} contato(s) selecionado(s)?`)) return
+    if (!(await confirmDialog(`Excluir ${selectedIds.size} contato(s) selecionado(s)?`))) return
     setBulkWorking(true)
     await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
     setBulkWorking(false)

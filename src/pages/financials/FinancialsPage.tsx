@@ -21,6 +21,8 @@ import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINAN
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib/expenseUtils'
+import { withErrorFeedback } from '@/lib/errorFeedback'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, BarChart, Bar,
@@ -103,6 +105,8 @@ export function FinancialsPage() {
   // Secondary tabs
   const [secondaryTab, setSecondaryTab] = useState<SecondaryTab | null>(null)
   const [comissaoSearch, setComissaoSearch] = useState('')
+  const [comissaoPage, setComissaoPage] = useState(0)
+  const COMISSAO_PAGE_SIZE = 15
   const [expSearch, setExpSearch] = useState('')
   const [expCategory, setExpCategory] = useState('')
   const [expYear, setExpYear] = useState(now.getFullYear())
@@ -392,10 +396,10 @@ export function FinancialsPage() {
       }))
     const toDelete = categories.filter(cat => budgetForm[cat].trim() === '')
     if (toUpsert.length > 0) {
-      await supabase.from('expense_budgets').upsert(toUpsert, { onConflict: 'user_id,category' })
+      await withErrorFeedback(supabase.from('expense_budgets').upsert(toUpsert, { onConflict: 'user_id,category' }), 'Erro ao salvar metas')
     }
     if (toDelete.length > 0) {
-      await supabase.from('expense_budgets').delete().eq('user_id', currentUserId).in('category', toDelete)
+      await withErrorFeedback(supabase.from('expense_budgets').delete().eq('user_id', currentUserId).in('category', toDelete), 'Erro ao salvar metas')
     }
     setSavingBudgets(false)
     setBudgetModalOpen(false)
@@ -412,6 +416,8 @@ export function FinancialsPage() {
     const q = comissaoSearch.toLowerCase()
     return !comissaoSearch || (c.name as string).toLowerCase().includes(q) || col?.nome.toLowerCase().includes(q)
   })
+  const comissoesTotalPages = Math.max(1, Math.ceil(filteredComissoes.length / COMISSAO_PAGE_SIZE))
+  const pageComissoes = filteredComissoes.slice(comissaoPage * COMISSAO_PAGE_SIZE, (comissaoPage + 1) * COMISSAO_PAGE_SIZE)
 
   // ── Actions ─────────────────────────────────────────────────────────────────
   function openNew(type?: 'receivable' | 'payable') {
@@ -482,7 +488,7 @@ export function FinancialsPage() {
         })
       })
 
-      await supabase.from('financials').insert(rows)
+      await withErrorFeedback(supabase.from('financials').insert(rows), 'Erro ao salvar parcelamento')
       setSaving(false)
       setDrawerOpen(false)
       load()
@@ -502,17 +508,17 @@ export function FinancialsPage() {
       recurrence_end_date: form.recurring ? (form.recurrence_end_date || null) : null,
     }
     if (editId) {
-      await supabase.from('financials').update(payload).eq('id', editId)
+      await withErrorFeedback(supabase.from('financials').update(payload).eq('id', editId), 'Erro ao salvar lançamento')
     } else {
-      await supabase.from('financials').insert({ ...payload, reconciled: false })
+      await withErrorFeedback(supabase.from('financials').insert({ ...payload, reconciled: false }), 'Erro ao salvar lançamento')
     }
     setSaving(false)
     setDrawerOpen(false)
     load()
   }
   async function deleteFinancial(id: string) {
-    if (!confirm('Deseja excluir este lançamento?')) return
-    await supabase.from('financials').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    if (!(await confirmDialog('Deseja excluir este lançamento?'))) return
+    await withErrorFeedback(supabase.from('financials').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir lançamento')
     load()
   }
   async function toggleFinancialPaid(f: Financial) {
@@ -521,11 +527,11 @@ export function FinancialsPage() {
       ? { status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }
       : { status: 'pending', paid_date: null }
     setFinancials(prev => prev.map(x => x.id === f.id ? { ...x, ...payload } as Financial : x))
-    await supabase.from('financials').update(payload).eq('id', f.id)
+    await withErrorFeedback(supabase.from('financials').update(payload).eq('id', f.id), 'Erro ao atualizar pagamento')
   }
 
   async function stopRecurrence(templateId: string) {
-    await supabase.from('financials').update({ recurring: false }).eq('id', templateId)
+    await withErrorFeedback(supabase.from('financials').update({ recurring: false }).eq('id', templateId), 'Erro ao encerrar recorrência')
     setRecurringTemplates(prev => prev.filter(f => f.id !== templateId))
   }
 
@@ -576,15 +582,15 @@ export function FinancialsPage() {
       notes: expenseForm.notes || null,
       receipt_url: expenseForm.receipt_url || null,
     }
-    if (editExpenseId) await supabase.from('user_expenses').update(payload).eq('id', editExpenseId)
-    else await supabase.from('user_expenses').insert(payload)
+    if (editExpenseId) await withErrorFeedback(supabase.from('user_expenses').update(payload).eq('id', editExpenseId), 'Erro ao salvar despesa')
+    else await withErrorFeedback(supabase.from('user_expenses').insert(payload), 'Erro ao salvar despesa')
     setSavingExpense(false)
     setExpenseModalOpen(false)
     load()
   }
   async function deleteExpense(id: string) {
-    if (!confirm('Deseja excluir esta despesa?')) return
-    await supabase.from('user_expenses').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    if (!(await confirmDialog('Deseja excluir esta despesa?'))) return
+    await withErrorFeedback(supabase.from('user_expenses').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir despesa')
     load()
   }
 
@@ -598,7 +604,7 @@ export function FinancialsPage() {
   async function bulkMarkReimbursed() {
     if (selectedExpenseIds.size === 0) return
     setBulkReimbursing(true)
-    await supabase.from('user_expenses').update({ reimbursed: true }).in('id', Array.from(selectedExpenseIds))
+    await withErrorFeedback(supabase.from('user_expenses').update({ reimbursed: true }).in('id', Array.from(selectedExpenseIds)), 'Erro ao marcar como reembolsado')
     setBulkReimbursing(false)
     setSelectedExpenseIds(new Set())
     load()
@@ -626,15 +632,15 @@ export function FinancialsPage() {
   }
   async function bulkMarkPaid() {
     setBulkWorking(true)
-    await supabase.from('financials').update({ status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }).in('id', Array.from(selectedIds))
+    await withErrorFeedback(supabase.from('financials').update({ status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }).in('id', Array.from(selectedIds)), 'Erro ao marcar como pago')
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
   }
   async function bulkDeleteLanc() {
-    if (!confirm(`Excluir ${selectedIds.size} lançamento(s) selecionado(s)?`)) return
+    if (!(await confirmDialog(`Excluir ${selectedIds.size} lançamento(s) selecionado(s)?`))) return
     setBulkWorking(true)
-    await supabase.from('financials').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    await withErrorFeedback(supabase.from('financials').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds)), 'Erro ao excluir lançamentos')
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
@@ -650,7 +656,7 @@ export function FinancialsPage() {
   async function saveNewAccount() {
     if (!newAccountName.trim()) return
     setSavingAccount(true)
-    await supabase.from('financial_accounts').insert({ name: newAccountName.trim() })
+    await withErrorFeedback(supabase.from('financial_accounts').insert({ name: newAccountName.trim() }), 'Erro ao criar conta')
     setSavingAccount(false)
     setNewAccountName('')
     setNewAccountOpen(false)
@@ -1323,7 +1329,7 @@ export function FinancialsPage() {
                   className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   placeholder="Buscar por cliente ou colaborador..."
                   value={comissaoSearch}
-                  onChange={e => setComissaoSearch(e.target.value)}
+                  onChange={e => { setComissaoSearch(e.target.value); setComissaoPage(0) }}
                 />
               </div>
             </Card>
@@ -1340,7 +1346,7 @@ export function FinancialsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50 dark:divide-dark-700/50">
-                    {filteredComissoes.map(c => {
+                    {pageComissoes.map(c => {
                       const col = colaboradores.find(x => x.id === c.colaborador_id)
                       return (
                         <tr key={c.id} className="hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors">
@@ -1364,6 +1370,23 @@ export function FinancialsPage() {
                     })}
                   </tbody>
                 </table>
+                {comissoesTotalPages > 1 && (
+                  <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-700/20">
+                    <p className="text-xs text-slate-400">
+                      {comissaoPage * COMISSAO_PAGE_SIZE + 1}–{Math.min((comissaoPage + 1) * COMISSAO_PAGE_SIZE, filteredComissoes.length)} de {filteredComissoes.length}
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setComissaoPage(p => p - 1)} disabled={comissaoPage === 0}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-40">
+                        ← Anterior
+                      </button>
+                      <button onClick={() => setComissaoPage(p => p + 1)} disabled={comissaoPage >= comissoesTotalPages - 1}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-700 disabled:opacity-40">
+                        Próximo →
+                      </button>
+                    </div>
+                  </div>
+                )}
               </Card>
             )}
           </div>

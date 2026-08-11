@@ -22,6 +22,8 @@ import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { useAuth } from '@/contexts/AuthContext'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar'
@@ -383,7 +385,7 @@ export function CalendarPage() {
       : await supabase.from('calendar_events').insert(payload)
 
     setSaving(false)
-    if (error) { alert(`Erro ao salvar: ${error.message}`); return }
+    if (error) { toast(`Erro ao salvar: ${error.message}`, 'error'); return }
     if (token && form.sync_google && googleEventId) {
       setGMsg({ type: 'ok', text: '✓ Sincronizado com Google Calendar' })
       setTimeout(() => setGMsg(null), 4000)
@@ -393,7 +395,7 @@ export function CalendarPage() {
   }
 
   async function deleteEvent(id: string) {
-    if (!confirm('Deseja excluir este evento?')) return
+    if (!(await confirmDialog('Deseja excluir este evento?'))) return
     const ev = events.find(e => e.id === id)
     const token = gToken || getStoredToken(uid)
     if (ev?.google_event_id && token) {
