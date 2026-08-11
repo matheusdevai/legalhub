@@ -45,3 +45,30 @@ export function groupExpensesByMonth(expenses: UserExpense[]): ExpenseMonthGroup
       }
     })
 }
+
+export interface ExpenseMonthColumn {
+  /** 0-indexado, igual a Date.getMonth() */
+  month: number
+  items: UserExpense[]
+  total: number
+}
+
+// ─── Planilha-kanban ────────────────────────────────────────────────────────
+// Monta as 12 colunas (uma por mês) de um ano específico, para o quadro
+// kanban de Minhas Despesas. Sempre retorna os 12 meses, mesmo sem nenhuma
+// despesa, para que um mês vazio já apareça como coluna pronta a receber um
+// novo lançamento. Itens ordenados do dia mais antigo para o mais recente
+// dentro de cada coluna (leitura tipo planilha, não feed).
+export function buildExpenseMonthColumns(expenses: UserExpense[], year: number): ExpenseMonthColumn[] {
+  const columns: ExpenseMonthColumn[] = Array.from({ length: 12 }, (_, month) => ({ month, items: [], total: 0 }))
+  for (const e of expenses) {
+    const parts = dateParts(e.expense_date)
+    if (!parts || parts.year !== year) continue
+    columns[parts.month].items.push(e)
+  }
+  for (const col of columns) {
+    col.items.sort((a, b) => (a.expense_date < b.expense_date ? -1 : 1))
+    col.total = col.items.reduce((s, e) => s + Number(e.amount), 0)
+  }
+  return columns
+}

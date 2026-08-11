@@ -20,7 +20,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
-import { dateParts, groupExpensesByMonth } from '@/lib/expenseUtils'
+import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib/expenseUtils'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, BarChart, Bar,
@@ -105,6 +105,7 @@ export function FinancialsPage() {
   const [comissaoSearch, setComissaoSearch] = useState('')
   const [expSearch, setExpSearch] = useState('')
   const [expCategory, setExpCategory] = useState('')
+  const [expYear, setExpYear] = useState(now.getFullYear())
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
 
   // Contas bancárias accordion
@@ -337,9 +338,19 @@ export function FinancialsPage() {
       (!expSearch || e.description.toLowerCase().includes(q) || e.process_number?.toLowerCase().includes(q))
   }), [expenses, expSearch, expCategory])
 
-  // Agrupa as despesas por mês/ano — planilha mensal, sempre exibindo todos os
-  // meses de todos os anos em que houver despesa registrada (mais recente primeiro).
+  // Agrupa as despesas por mês/ano — usado só na exportação (relatório cobre
+  // todos os anos com despesa registrada, não só o ano selecionado no board).
   const expensesByMonth = useMemo(() => groupExpensesByMonth(filteredExpenses), [filteredExpenses])
+
+  // Planilha-kanban — uma coluna por mês do ano selecionado (sempre as 12,
+  // mesmo vazias). Uma despesa nova cai automaticamente na coluna do mês em
+  // que foi registrada, porque as colunas são recalculadas a partir de `expenses`.
+  const expenseMonthColumns = useMemo(() => buildExpenseMonthColumns(filteredExpenses, expYear), [filteredExpenses, expYear])
+  const expYears = useMemo(() => {
+    const ys = Array.from(new Set(expenses.map(e => dateParts(e.expense_date)?.year).filter((y): y is number => !!y)))
+    if (!ys.includes(expYear)) ys.push(expYear)
+    return ys.sort((a, b) => b - a)
+  }, [expenses, expYear])
 
   const monthExpTotal = expenses.filter(e => {
     const d = dateParts(e.expense_date)
@@ -1443,101 +1454,112 @@ export function FinancialsPage() {
                 </button>
               </div>
             )}
-            {/* Planilha mensal — um cartão por mês/ano, do mais recente ao mais antigo,
-                sempre mostrando todos os meses em que houver alguma despesa registrada. */}
-            {expensesByMonth.length === 0 ? (
+            {/* Planilha-kanban — uma coluna por mês do ano selecionado (sempre as 12,
+                mesmo vazias). Uma despesa nova cai automaticamente na coluna do mês
+                em que foi registrada, porque as colunas vêm de `expenses` via useMemo. */}
+            {expenses.length === 0 ? (
               <EmptyState icon={Wallet} title="Nenhuma despesa registrada" description="Clique em “Nova Despesa” para começar a registrar." />
             ) : (
-              <div className="space-y-4">
-                {expensesByMonth.map(g => (
-                  <Card key={g.key} className="overflow-hidden">
-                    <div className="flex items-center justify-between gap-2 px-4 sm:px-5 py-3 bg-slate-50 dark:bg-dark-700/30 border-b border-slate-100 dark:border-dark-700/50">
-                      <div className="min-w-0">
-                        <h3 className="font-semibold text-slate-900 dark:text-white text-sm truncate">
-                          {MONTHS_PT[g.month]} de {g.year}
-                        </h3>
-                        <p className="text-[11px] text-slate-400">{g.items.length} despesa{g.items.length !== 1 ? 's' : ''}</p>
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <span className="font-bold text-red-600 dark:text-red-400 text-sm">-{formatCurrency(g.total)}</span>
-                        <button
-                          onClick={() => {
-                            const day = (g.year === currentYear && g.month === currentMonth) ? now.getDate() : 1
-                            openNewExpense(`${g.year}-${String(g.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
-                          }}
-                          title="Registrar despesa neste mês"
-                          className="p-1.5 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-slate-100 dark:border-dark-700/50">
-                            <th className="px-3 py-2 w-8" />
-                            <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 w-14">Dia</th>
-                            <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Descrição</th>
-                            <th className="px-4 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 hidden sm:table-cell">Categoria</th>
-                            <th className="px-4 py-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Valor</th>
-                            <th className="px-4 py-2 w-16" />
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50 dark:divide-dark-700/30">
-                          {g.items.map(e => {
+              <>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setExpYear(y => y - 1)} title="Ano anterior"
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <select className="px-2.5 py-1.5 text-sm font-semibold border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-slate-900 dark:text-slate-100"
+                    value={expYear} onChange={e => setExpYear(Number(e.target.value))}>
+                    {expYears.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <button onClick={() => setExpYear(y => y + 1)} title="Próximo ano"
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  {expYear !== now.getFullYear() && (
+                    <button onClick={() => setExpYear(now.getFullYear())} className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline ml-1">
+                      Ano atual
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1 snap-x">
+                  {expenseMonthColumns.map(col => {
+                    const isCurrent = expYear === currentYear && col.month === currentMonth
+                    return (
+                      <div key={col.month} className={cn(
+                        'flex-shrink-0 w-[250px] sm:w-[270px] snap-start rounded-2xl border flex flex-col',
+                        isCurrent ? 'border-primary-200 dark:border-primary-800/50 bg-primary-50/30 dark:bg-primary-900/5' : 'border-slate-200 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-800/40'
+                      )}>
+                        <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-slate-200/70 dark:border-dark-700/70 flex-shrink-0">
+                          <div className="min-w-0">
+                            <h3 className={cn('font-bold text-xs uppercase tracking-wide truncate', isCurrent ? 'text-primary-700 dark:text-primary-400' : 'text-slate-700 dark:text-slate-300')}>
+                              {MONTHS_PT[col.month]}
+                            </h3>
+                            <p className="text-[10px] text-slate-400">{col.items.length} despesa{col.items.length !== 1 ? 's' : ''}</p>
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            {col.total > 0 && <span className="font-bold text-red-600 dark:text-red-400 text-xs whitespace-nowrap">-{formatCurrency(col.total)}</span>}
+                            <button
+                              onClick={() => {
+                                const day = isCurrent ? now.getDate() : 1
+                                openNewExpense(`${expYear}-${String(col.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+                              }}
+                              title="Registrar despesa neste mês"
+                              className="p-1 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors flex-shrink-0"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <div className="p-2 space-y-2 min-h-[72px]">
+                          {col.items.length === 0 ? (
+                            <p className="text-[11px] text-slate-300 dark:text-dark-500 text-center py-6">Sem despesas</p>
+                          ) : col.items.map(e => {
                             const meta = CATEGORY_META[e.category]
                             const Icon = meta.icon
                             const day = dateParts(e.expense_date)?.day
                             const canBulkSelect = e.reimbursable && !e.reimbursed
                             return (
-                              <tr key={e.id} className="hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors group">
-                                <td className="px-3 py-2.5" onClick={ev => ev.stopPropagation()}>
-                                  {canBulkSelect && (
-                                    <button onClick={() => toggleSelectExpense(e.id)} className="text-slate-300 hover:text-primary-600 dark:text-dark-500 dark:hover:text-primary-400">
-                                      {selectedExpenseIds.has(e.id) ? <CheckSquare className="w-4 h-4 text-primary-600 dark:text-primary-400" /> : <Square className="w-4 h-4" />}
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="px-4 py-2.5 text-slate-500 dark:text-slate-400 font-mono text-xs">{day != null ? String(day).padStart(2, '0') : '—'}</td>
-                                <td className="px-4 py-2.5">
-                                  <div className="flex items-center gap-1.5">
-                                    <p className="font-medium text-slate-900 dark:text-white truncate max-w-[220px]">{e.description}</p>
-                                    {e.receipt_url && (
-                                      <a href={e.receipt_url} target="_blank" rel="noreferrer" title="Ver comprovante" onClick={ev => ev.stopPropagation()}
-                                        className="text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex-shrink-0">
-                                        <Paperclip className="w-3 h-3" />
-                                      </a>
+                              <div key={e.id} className="group rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 p-2.5 hover:shadow-card-hover transition-shadow">
+                                <div className="flex items-start justify-between gap-1.5">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    {canBulkSelect && (
+                                      <button onClick={() => toggleSelectExpense(e.id)} className="flex-shrink-0 text-slate-300 hover:text-primary-600 dark:text-dark-500 dark:hover:text-primary-400">
+                                        {selectedExpenseIds.has(e.id) ? <CheckSquare className="w-3.5 h-3.5 text-primary-600 dark:text-primary-400" /> : <Square className="w-3.5 h-3.5" />}
+                                      </button>
                                     )}
+                                    <span className="font-mono text-[10px] text-slate-400 flex-shrink-0">{day != null ? String(day).padStart(2, '0') : '—'}</span>
+                                    <Badge className={cn(meta.badge, 'flex-shrink-0')}><Icon className="w-2.5 h-2.5 mr-0.5 inline" />{meta.label}</Badge>
                                   </div>
-                                  <div className="flex items-center gap-1.5 mt-0.5 sm:hidden">
-                                    <Badge className={meta.badge}>{meta.label}</Badge>
+                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                                    <button onClick={() => openEditExpense(e)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400"><Edit3 className="w-3 h-3" /></button>
+                                    <button onClick={() => deleteExpense(e.id)} className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
                                   </div>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-1.5">
+                                  <p className="text-xs font-medium text-slate-900 dark:text-white truncate flex-1 min-w-0">{e.description}</p>
+                                  {e.receipt_url && (
+                                    <a href={e.receipt_url} target="_blank" rel="noreferrer" title="Ver comprovante" onClick={ev => ev.stopPropagation()}
+                                      className="text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 flex-shrink-0">
+                                      <Paperclip className="w-3 h-3" />
+                                    </a>
+                                  )}
+                                </div>
+                                <div className="flex items-center justify-between mt-1.5">
+                                  <span className="font-bold text-red-600 dark:text-red-400 text-xs">-{formatCurrency(e.amount)}</span>
                                   {e.reimbursable && (
-                                    <span className={cn('inline-block mt-0.5 text-[10px] font-semibold', e.reimbursed ? 'text-green-600' : 'text-orange-500')}>
+                                    <span className={cn('text-[9px] font-semibold', e.reimbursed ? 'text-green-600' : 'text-orange-500')}>
                                       {e.reimbursed ? 'Reembolsado' : 'A reembolsar'}
                                     </span>
                                   )}
-                                </td>
-                                <td className="px-4 py-2.5 hidden sm:table-cell">
-                                  <Badge className={meta.badge}><Icon className="w-3 h-3 mr-1 inline" />{meta.label}</Badge>
-                                </td>
-                                <td className="px-4 py-2.5 text-right font-bold text-red-600 dark:text-red-400 whitespace-nowrap">-{formatCurrency(e.amount)}</td>
-                                <td className="px-4 py-2.5">
-                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                                    <button onClick={() => openEditExpense(e)} className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400"><Edit3 className="w-3.5 h-3.5" /></button>
-                                    <button onClick={() => deleteExpense(e.id)} className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                                  </div>
-                                </td>
-                              </tr>
+                                </div>
+                              </div>
                             )
                           })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </Card>
-                ))}
-              </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </>
             )}
           </div>
         )}

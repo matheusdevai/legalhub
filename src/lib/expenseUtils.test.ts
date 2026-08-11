@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { dateParts, groupExpensesByMonth } from './expenseUtils'
+import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from './expenseUtils'
 import type { UserExpense } from '@/types'
 
 function expense(overrides: Partial<UserExpense>): UserExpense {
@@ -86,5 +86,56 @@ describe('groupExpensesByMonth', () => {
 
   it('retorna lista vazia para nenhuma despesa', () => {
     expect(groupExpensesByMonth([])).toEqual([])
+  })
+})
+
+describe('buildExpenseMonthColumns', () => {
+  it('sempre retorna 12 colunas (uma por mês), mesmo sem nenhuma despesa', () => {
+    const columns = buildExpenseMonthColumns([], 2026)
+    expect(columns).toHaveLength(12)
+    expect(columns.map(c => c.month)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
+    expect(columns.every(c => c.items.length === 0 && c.total === 0)).toBe(true)
+  })
+
+  it('coloca cada despesa na coluna do mês em que foi registrada', () => {
+    const columns = buildExpenseMonthColumns([
+      expense({ id: 'a', expense_date: '2026-01-10' }),
+      expense({ id: 'b', expense_date: '2026-08-01' }),
+      expense({ id: 'c', expense_date: '2026-08-20' }),
+    ], 2026)
+    expect(columns[0].items.map(e => e.id)).toEqual(['a'])
+    expect(columns[7].items.map(e => e.id)).toEqual(['b', 'c'])
+  })
+
+  it('ignora despesas de outros anos', () => {
+    const columns = buildExpenseMonthColumns([
+      expense({ id: 'this-year', expense_date: '2026-03-05' }),
+      expense({ id: 'other-year', expense_date: '2025-03-05' }),
+    ], 2026)
+    expect(columns[2].items.map(e => e.id)).toEqual(['this-year'])
+  })
+
+  it('ordena os itens dentro da coluna do dia mais antigo para o mais recente', () => {
+    const columns = buildExpenseMonthColumns([
+      expense({ id: 'late', expense_date: '2026-08-28' }),
+      expense({ id: 'early', expense_date: '2026-08-01' }),
+    ], 2026)
+    expect(columns[7].items.map(e => e.id)).toEqual(['early', 'late'])
+  })
+
+  it('soma o total de cada coluna', () => {
+    const columns = buildExpenseMonthColumns([
+      expense({ id: 'a', expense_date: '2026-08-01', amount: 100 }),
+      expense({ id: 'b', expense_date: '2026-08-20', amount: 50.5 }),
+    ], 2026)
+    expect(columns[7].total).toBe(150.5)
+  })
+
+  it('ignora despesas com expense_date inválida em vez de quebrar o agrupamento', () => {
+    const columns = buildExpenseMonthColumns([
+      expense({ id: 'ok', expense_date: '2026-08-01' }),
+      expense({ id: 'bad', expense_date: '' }),
+    ], 2026)
+    expect(columns[7].items.map(e => e.id)).toEqual(['ok'])
   })
 })
