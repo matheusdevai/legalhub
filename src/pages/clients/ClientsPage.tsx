@@ -16,6 +16,7 @@ import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/ut
 import { cn } from '@/lib/utils'
 import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
 import { buildClientImportPreview } from '@/lib/clientImportUtils'
+import { fetchCitiesByState } from '@/lib/ibgeUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
@@ -190,6 +191,22 @@ export function ClientsPage() {
   const [reconcileModalOpen, setReconcileModalOpen] = useState(false)
   const [savingExpense, setSavingExpense] = useState(false)
   const [form, setForm] = useState(EMPTY_CLIENT)
+  const [stateCities, setStateCities] = useState<string[]>([])
+  const [stateCitiesLoading, setStateCitiesLoading] = useState(false)
+  const [stateCitiesError, setStateCitiesError] = useState(false)
+
+  // Ao escolher o Estado no formulário de contato, busca todas as cidades
+  // daquela UF (API do IBGE) para popular o campo Cidade como um select.
+  useEffect(() => {
+    if (!form.state) { setStateCities([]); setStateCitiesError(false); return }
+    let cancelled = false
+    setStateCitiesLoading(true); setStateCitiesError(false)
+    fetchCitiesByState(form.state)
+      .then(names => { if (!cancelled) setStateCities(names) })
+      .catch(() => { if (!cancelled) setStateCitiesError(true) })
+      .finally(() => { if (!cancelled) setStateCitiesLoading(false) })
+    return () => { cancelled = true }
+  }, [form.state])
   const [saving, setSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [activeProcessFilter, setActiveProcessFilter] = useState<'all' | 'with' | 'without'>('all')
@@ -2066,7 +2083,7 @@ export function ClientsPage() {
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Estado</label>
             <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              value={form.state} onChange={e => setForm({ ...form, state: e.target.value })}>
+              value={form.state} onChange={e => setForm({ ...form, state: e.target.value, cidade: '' })}>
               <option value="">Selecione o estado</option>
               {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s => (
                 <option key={s} value={s}>{s}</option>
@@ -2075,10 +2092,27 @@ export function ClientsPage() {
           </div>
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Cidade</label>
-            <input list="city-options"
-              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              placeholder="Selecione a cidade" value={form.cidade} onChange={e => setForm({ ...form, cidade: e.target.value })} />
-            <datalist id="city-options">{cityOptions.map(c => <option key={c} value={c} />)}</datalist>
+            {form.state && !stateCitiesError ? (
+              <select
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 disabled:opacity-60"
+                value={form.cidade}
+                disabled={stateCitiesLoading}
+                onChange={e => setForm({ ...form, cidade: e.target.value })}
+              >
+                <option value="">{stateCitiesLoading ? 'Carregando cidades...' : 'Selecione a cidade'}</option>
+                {form.cidade && !stateCities.includes(form.cidade) && (
+                  <option value={form.cidade}>{form.cidade}</option>
+                )}
+                {stateCities.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            ) : (
+              <>
+                <input list="city-options"
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                  placeholder="Selecione o estado para listar as cidades" value={form.cidade} onChange={e => setForm({ ...form, cidade: e.target.value })} />
+                <datalist id="city-options">{cityOptions.map(c => <option key={c} value={c} />)}</datalist>
+              </>
+            )}
           </div>
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Endereço</label>
