@@ -19,6 +19,7 @@ import { openExportWindow } from '@/lib/exportUtils'
 import { markTaskDone, notifyTaskAssignment } from '@/lib/taskActions'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
+import { confirmDialog } from '@/components/ui/ConfirmDialog'
 
 type TaskForm = {
   title: string; description: string; process_id: string; client_id: string;
@@ -81,11 +82,16 @@ const TIPOS_ACAO: Record<string, string[]> = {
 const FASES = ['NEGOCIAÇÃO', 'CONHECIMENTO', 'RECURSAL', 'EXECUÇÃO', 'ENCERRADO']
 const CONTINGENCIAMENTOS = ['Remoto', 'Possível', 'Provável', 'Quase certo']
 
-const PRIORITY_BAR: Record<string, string> = {
-  urgent: 'bg-red-500',
-  high: 'bg-orange-500',
-  medium: 'bg-yellow-400',
-  low: 'bg-gray-300 dark:bg-dark-600',
+const PRIORITY_BORDER: Record<string, string> = {
+  urgent: 'border-red-500',
+  high: 'border-orange-400',
+  medium: 'border-yellow-300 dark:border-yellow-500/40',
+  low: 'border-transparent',
+}
+function daysOverdue(dueDate: string, today: string): number {
+  const a = new Date(`${today}T00:00:00`).getTime()
+  const b = new Date(`${dueDate.slice(0, 10)}T00:00:00`).getTime()
+  return Math.max(1, Math.round((a - b) / 86400000))
 }
 const PRIORITY_BADGE: Record<string, string> = {
   urgent: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -101,8 +107,8 @@ const TYPE_META: Record<string, { label: string; icon: React.ElementType; chip: 
   custom: { label: 'Geral', icon: CircleDot, chip: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300' },
 }
 
-function TaskRow({ task, today, done, deletingTaskId, onOpen, onComplete, onDeleteRequest, onDeleteConfirm, onDeleteCancel }: {
-  task: Task; today: string; done: boolean; deletingTaskId: string | null
+function TaskRow({ task, today, done, deletingTaskId, justCompleted, onOpen, onComplete, onDeleteRequest, onDeleteConfirm, onDeleteCancel }: {
+  task: Task; today: string; done: boolean; deletingTaskId: string | null; justCompleted?: boolean
   onOpen: (t: Task) => void; onComplete: (t: Task) => void
   onDeleteRequest: (id: string) => void; onDeleteConfirm: (id: string) => void; onDeleteCancel: () => void
 }) {
@@ -111,32 +117,40 @@ function TaskRow({ task, today, done, deletingTaskId, onOpen, onComplete, onDele
   const TypeIcon = TYPE_META[task.type || 'custom']?.icon || CircleDot
   return (
     <div
-      className="group flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-dark-700/40 transition-colors cursor-pointer"
+      className={cn(
+        'group flex items-center gap-3 pl-2.5 pr-3 py-2.5 rounded-xl border-l-[3px] hover:bg-gray-50 dark:hover:bg-dark-700/40 transition-colors duration-300 cursor-pointer',
+        isOverdue ? 'border-red-500 bg-red-50/40 dark:bg-red-900/10' : PRIORITY_BORDER[task.priority || 'medium'],
+        justCompleted && 'bg-emerald-50/70 dark:bg-emerald-900/15'
+      )}
       onClick={() => onOpen(task)}
     >
       <button
         onClick={e => { e.stopPropagation(); if (!done) onComplete(task) }}
-        className={cn('w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all',
+        className={cn('w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all duration-300',
           done ? 'border-emerald-500 bg-emerald-500' : 'border-gray-300 dark:border-dark-500 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-900/20')}
         title={done ? 'Concluída' : 'Marcar como concluída'}
       >
-        {done && <Check className="w-3 h-3 text-white" />}
+        {done && <Check className={cn('w-3 h-3 text-white', justCompleted && 'animate-check-pop')} />}
       </button>
 
       <div className={cn('w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0', TYPE_META[task.type || 'custom']?.chip)}>
         <TypeIcon className="w-3.5 h-3.5" />
       </div>
 
-      <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', PRIORITY_BAR[task.priority || 'medium'])} title={PRIORITY_LABELS[task.priority || 'medium']} />
-
-      <p className={cn('flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white truncate', done && 'line-through text-gray-400 dark:text-gray-500')}>
+      <p className={cn('flex-1 min-w-0 text-sm font-medium text-gray-900 dark:text-white truncate transition-colors duration-300', done && 'line-through text-gray-400 dark:text-gray-500')}>
         {task.title}
       </p>
 
       {task.due_date && (
-        <span className={cn('text-xs font-medium flex-shrink-0', isOverdue ? 'text-red-500' : 'text-gray-400 dark:text-gray-500')}>
-          {formatDate(task.due_date)}
-        </span>
+        isOverdue ? (
+          <span className="flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded-full flex-shrink-0">
+            <AlarmClock className="w-3 h-3" /> {daysOverdue(task.due_date, today)}d atrasada
+          </span>
+        ) : (
+          <span className="text-xs font-medium text-gray-400 dark:text-gray-500 flex-shrink-0">
+            {formatDate(task.due_date)}
+          </span>
+        )
       )}
 
       {initials ? (
@@ -197,10 +211,12 @@ export function TasksPage() {
   const [typeFilter, setTypeFilter] = useState('')
   const [assignedFilter, setAssignedFilter] = useState('')
   const [filterOpen, setFilterOpen] = useState(false)
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
-  const [viewMode, setViewMode] = useState<'list' | 'foco'>('foco')
+  const [viewMode, setViewMode] = useState<'list' | 'foco' | 'quadro'>('foco')
   const [focoTab, setFocoTab] = useState<'atrasadas' | 'fazendo' | 'agendadas' | 'sem_data' | 'concluidas'>('atrasadas')
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
+  const [justCompletedId, setJustCompletedId] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<TaskForm>(EMPTY_FORM)
@@ -262,6 +278,15 @@ export function TasksPage() {
     return map
   }, [tasks])
 
+  const teamWorkload = useMemo(() => {
+    const withLoad = systemUsers
+      .map(user => ({ user, count: workloadByUser[user.user_id] || 0 }))
+      .filter(u => u.count > 0)
+      .sort((a, b) => b.count - a.count)
+    const max = Math.max(...withLoad.map(u => u.count), 1)
+    return withLoad.map(u => ({ ...u, pct: Math.max(8, Math.round((u.count / max) * 100)) }))
+  }, [systemUsers, workloadByUser])
+
   // ── Modo Foco: categorização mutuamente exclusiva ────────────────────────
   const matchesFilters = (t: Task) => {
     const q = search.toLowerCase()
@@ -306,10 +331,12 @@ export function TasksPage() {
     () => tasks.filter(t => t.status === 'done' && t.completed_at?.slice(0, 10) === today),
     [tasks, today]
   )
+  // Paleta apoiada em primary-* (marca do sistema); vermelho/verde ficam reservados
+  // só para os estados semânticos reais (atrasado = alerta, concluído = sucesso).
   const focoTabs = [
     { key: 'atrasadas' as const, label: 'Atrasadas', icon: Flame, items: overdueTasks, color: 'text-red-600 dark:text-red-400', activeColor: 'bg-red-600' },
-    { key: 'fazendo' as const, label: 'Fazendo', icon: Zap, items: fazendoTasks, color: 'text-amber-600 dark:text-amber-400', activeColor: 'bg-amber-500' },
-    { key: 'agendadas' as const, label: 'Agendadas', icon: CalendarClock, items: proximosTasks, color: 'text-violet-600 dark:text-violet-400', activeColor: 'bg-violet-600' },
+    { key: 'fazendo' as const, label: 'Fazendo', icon: Zap, items: fazendoTasks, color: 'text-primary-600 dark:text-primary-400', activeColor: 'bg-primary-600' },
+    { key: 'agendadas' as const, label: 'Agendadas', icon: CalendarClock, items: proximosTasks, color: 'text-primary-500 dark:text-primary-400', activeColor: 'bg-primary-500' },
     { key: 'sem_data' as const, label: 'Sem data', icon: Inbox, items: semDataTasks, color: 'text-gray-500 dark:text-gray-400', activeColor: 'bg-gray-500' },
     { key: 'concluidas' as const, label: 'Concluídas hoje', icon: CheckCircle2, items: completedTodayTasks, color: 'text-emerald-600 dark:text-emerald-400', activeColor: 'bg-emerald-600', done: true },
   ]
@@ -413,6 +440,8 @@ export function TasksPage() {
       ? { ...t, status: 'done' as Task['status'], completed_at }
       : t
     ))
+    setJustCompletedId(taskId)
+    setTimeout(() => setJustCompletedId(prev => prev === taskId ? null : prev), 700)
     if (task.recurring) load(true)
   }
 
@@ -477,37 +506,53 @@ export function TasksPage() {
     load(true)
   }
 
-  function exportAll() {
+  const TYPE_LABEL: Record<string, string> = { custom: 'Tarefa', deadline: 'Prazo', hearing: 'Audiência', meeting: 'Reunião', document: 'Documento' }
+  const taskProcessInfo = (t: Task) => processes.find(p => p.id === t.process_id)
+  const taskClientName = (t: Task) => {
+    const proc = taskProcessInfo(t)
+    if (proc?.client_name) return proc.client_name
+    return clients.find(c => c.id === t.client_id)?.name || ''
+  }
+  function buildTasksCsv(list: Task[]): string {
+    return [
+      'Título,Tipo,Prioridade,Status,Responsável,Processo,Cliente,Vencimento',
+      ...list.map(t =>
+        `"${t.title}","${TYPE_LABEL[t.type || 'custom'] ?? t.type ?? '—'}","${PRIORITY_LABELS[t.priority || 'medium']}","${TASK_STATUS_LABELS[t.status || 'pending']}","${t.assigned_name || '—'}","${taskProcessInfo(t)?.number || '—'}","${taskClientName(t) || '—'}","${t.due_date ? formatDate(t.due_date) : '—'}"`
+      ),
+    ].join('\n')
+  }
+
+  function quickDownloadCsv(list: Task[]) {
+    const blob = new Blob([buildTasksCsv(list)], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tarefas-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function exportTasks(list: Task[], titleSuffix = '') {
     const todayStr = new Date().toISOString().split('T')[0]
     const PRIORITY_BADGE: Record<string, string> = { low: 'gray', medium: 'blue', high: 'orange', urgent: 'red' }
     const STATUS_BADGE: Record<string, string> = { pending: 'amber', in_progress: 'blue', done: 'green', cancelled: 'gray' }
-    const TYPE_LABEL: Record<string, string> = { custom: 'Tarefa', deadline: 'Prazo', hearing: 'Audiência', meeting: 'Reunião', document: 'Documento' }
-    const pendentes = filtered.filter(t => t.status === 'pending').length
-    const vencidas = filtered.filter(t => t.due_date && String(t.due_date).slice(0, 10) < todayStr && t.status !== 'done' && t.status !== 'cancelled').length
-    const concluidas = filtered.filter(t => t.status === 'done').length
-    const processInfo = (t: Task) => processes.find(p => p.id === t.process_id)
-    const clientName = (t: Task) => {
-      const proc = processInfo(t)
-      if (proc?.client_name) return proc.client_name
-      return clients.find(c => c.id === t.client_id)?.name || ''
-    }
-    const csvContent = [
-      'Título,Tipo,Prioridade,Status,Responsável,Processo,Cliente,Vencimento',
-      ...filtered.map(t =>
-        `"${t.title}","${TYPE_LABEL[t.type || 'custom'] ?? t.type ?? '—'}","${PRIORITY_LABELS[t.priority || 'medium']}","${TASK_STATUS_LABELS[t.status || 'pending']}","${t.assigned_name || '—'}","${processInfo(t)?.number || '—'}","${clientName(t) || '—'}","${t.due_date ? formatDate(t.due_date) : '—'}"`
-      ),
-    ].join('\n')
+    const pendentes = list.filter(t => t.status === 'pending').length
+    const vencidas = list.filter(t => t.due_date && String(t.due_date).slice(0, 10) < todayStr && t.status !== 'done' && t.status !== 'cancelled').length
+    const concluidas = list.filter(t => t.status === 'done').length
+    const processInfo = taskProcessInfo
+    const clientName = taskClientName
+    const csvContent = buildTasksCsv(list)
     openExportWindow({
-      title: 'Relatório de Tarefas',
+      title: `Relatório de Tarefas${titleSuffix}`,
       filename: 'tarefas',
       stats: [
-        { value: filtered.length, label: 'Total de tarefas', accent: '#2563eb' },
+        { value: list.length, label: 'Total de tarefas', accent: '#2563eb' },
         { value: pendentes, label: 'Pendentes', accent: '#d97706' },
         { value: vencidas, label: 'Vencidas', accent: '#dc2626' },
         { value: concluidas, label: 'Concluídas', accent: '#16a34a' },
       ],
       columns: ['Título', 'Tipo', 'Prioridade', 'Status', 'Responsável', 'Processo', 'Cliente', 'Vencimento'],
-      rows: filtered.map(t => {
+      rows: list.map(t => {
         const isOverdue = !!t.due_date && String(t.due_date).slice(0, 10) < todayStr && t.status !== 'done' && t.status !== 'cancelled'
         const proc = processInfo(t)
         return [
@@ -523,6 +568,36 @@ export function TasksPage() {
       }),
       csvContent,
     })
+  }
+  const exportAll = () => exportTasks(filtered)
+
+  // ── Ações em massa (visão Lista) ────────────────────────────────────────
+  async function bulkComplete() {
+    const targets = tasks.filter(t => selectedRows.has(t.id) && t.status !== 'done')
+    await Promise.all(targets.map(t => markTaskDone(t)))
+    setSelectedRows(new Set())
+    load(true)
+  }
+
+  async function bulkDelete() {
+    const count = selectedRows.size
+    const ok = await confirmDialog(
+      `Excluir ${count} tarefa${count !== 1 ? 's' : ''} selecionada${count !== 1 ? 's' : ''}? Essa ação não pode ser desfeita.`,
+      { title: 'Excluir tarefas', confirmLabel: 'Excluir', danger: true }
+    )
+    if (!ok) return
+    const ids = Array.from(selectedRows)
+    const { error } = await withErrorFeedback(
+      supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).in('id', ids),
+      'Erro ao excluir tarefas'
+    )
+    if (error) return
+    setTasks(prev => prev.filter(t => !selectedRows.has(t.id)))
+    setSelectedRows(new Set())
+  }
+
+  function bulkExport() {
+    exportTasks(tasks.filter(t => selectedRows.has(t.id)), ' (seleção)')
   }
 
   return (
@@ -542,22 +617,49 @@ export function TasksPage() {
       {!loading && (
         <div className="space-y-4">
 
-          {/* ── Stats pills ── */}
-          <div className="flex items-center gap-4 bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 px-5 py-3 w-fit">
-            <div className="text-center">
-              <p className="text-2xl font-bold text-gray-900 dark:text-white leading-none">{stats.pending}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Pendentes</p>
+          {/* ── Stats pills + Carga da equipe ── */}
+          <div className="flex items-stretch gap-4 flex-wrap">
+            <div className="flex items-center gap-4 bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 px-5 py-3 w-fit">
+              <div className="text-center">
+                <p className="text-2xl font-bold text-gray-900 dark:text-white leading-none">{stats.pending}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Pendentes</p>
+              </div>
+              <div className="w-px h-8 bg-gray-200 dark:bg-dark-600" />
+              <div className="text-center">
+                <p className="text-2xl font-bold text-red-500 leading-none">{stats.overdue}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Vencidas</p>
+              </div>
+              <div className="w-px h-8 bg-gray-200 dark:bg-dark-600" />
+              <div className="text-center">
+                <p className="text-2xl font-bold text-emerald-500 leading-none">{stats.doneToday}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Concluídas hoje</p>
+              </div>
             </div>
-            <div className="w-px h-8 bg-gray-200 dark:bg-dark-600" />
-            <div className="text-center">
-              <p className="text-2xl font-bold text-red-500 leading-none">{stats.overdue}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Vencidas</p>
-            </div>
-            <div className="w-px h-8 bg-gray-200 dark:bg-dark-600" />
-            <div className="text-center">
-              <p className="text-2xl font-bold text-emerald-500 leading-none">{stats.doneToday}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Concluídas hoje</p>
-            </div>
+
+            {profile?.role !== 'lawyer' && profile?.role !== 'intern' && teamWorkload.length > 0 && (
+              <div className="flex-1 min-w-[280px] bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 px-5 py-3">
+                <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-2">Carga da equipe</p>
+                <div className="flex items-center gap-5 overflow-x-auto pb-0.5">
+                  {teamWorkload.map(({ user, count, pct }) => {
+                    const initials = (user.name || user.display_name || '?').split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+                    return (
+                      <div key={user.user_id} className="flex-shrink-0 w-32">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <div className="w-5 h-5 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0">
+                            {initials}
+                          </div>
+                          <p className="text-xs font-medium text-gray-700 dark:text-gray-300 truncate">{(user.name || user.display_name || '').split(' ')[0]}</p>
+                          <span className="ml-auto text-xs font-bold text-gray-500 dark:text-gray-400 flex-shrink-0">{count}</span>
+                        </div>
+                        <div className="h-1.5 bg-gray-100 dark:bg-dark-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-primary-500 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Toolbar ── */}
@@ -603,9 +705,32 @@ export function TasksPage() {
               </button>
 
               {/* Export */}
-              <button onClick={exportAll} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                <Download className="w-3.5 h-3.5" /> Exportar
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setExportMenuOpen(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-dark-600 rounded-lg hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+                >
+                  <Download className="w-3.5 h-3.5" /> Exportar <ChevronDown className="w-3 h-3" />
+                </button>
+                {exportMenuOpen && (
+                  <div className="absolute z-10 top-full left-0 mt-1 w-56 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-lg shadow-modal py-1">
+                    <button
+                      onClick={() => { setExportMenuOpen(false); exportAll() }}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 flex items-center gap-2"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      Relatório completo (PDF/Planilha)
+                    </button>
+                    <button
+                      onClick={() => { setExportMenuOpen(false); quickDownloadCsv(filtered) }}
+                      className="w-full text-left px-3 py-2 text-xs text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 flex items-center gap-2"
+                    >
+                      <Download className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      Baixar CSV rápido
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* View toggle */}
               <div className="ml-auto flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden">
@@ -615,6 +740,13 @@ export function TasksPage() {
                   title="Modo Foco"
                 >
                   <Target className="w-4 h-4" /> Foco
+                </button>
+                <button
+                  onClick={() => setViewMode('quadro')}
+                  className={cn('flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-l border-gray-200 dark:border-dark-600 transition-colors', viewMode === 'quadro' ? 'bg-primary-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-700')}
+                  title="Quadro"
+                >
+                  <LayoutGrid className="w-4 h-4" /> Quadro
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
@@ -629,21 +761,21 @@ export function TasksPage() {
             {/* Filter panel */}
             {filterOpen && (
               <div className="px-4 pb-3 pt-3 border-t border-gray-100 dark:border-dark-700 flex items-center gap-3 flex-wrap">
-                <select
+                <Select
                   value={priorityFilter}
                   onChange={e => { setPriorityFilter(e.target.value); setPage(1) }}
-                  className="text-sm border border-gray-200 dark:border-dark-600 rounded-lg px-3 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none"
+                  className="!w-auto !py-1.5"
                 >
                   <option value="">Todas as prioridades</option>
                   <option value="urgent">Urgente</option>
                   <option value="high">Alta</option>
                   <option value="medium">Média</option>
                   <option value="low">Baixa</option>
-                </select>
-                <select
+                </Select>
+                <Select
                   value={typeFilter}
                   onChange={e => { setTypeFilter(e.target.value); setPage(1) }}
-                  className="text-sm border border-gray-200 dark:border-dark-600 rounded-lg px-3 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none"
+                  className="!w-auto !py-1.5"
                 >
                   <option value="">Todos os tipos</option>
                   <option value="deadline">Prazo</option>
@@ -651,24 +783,24 @@ export function TasksPage() {
                   <option value="document">Documento</option>
                   <option value="meeting">Reunião</option>
                   <option value="custom">Geral</option>
-                </select>
+                </Select>
                 {viewMode === 'list' && (
-                  <select
+                  <Select
                     value={statusFilter}
                     onChange={e => { setStatusFilter(e.target.value); setPage(1) }}
-                    className="text-sm border border-gray-200 dark:border-dark-600 rounded-lg px-3 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none"
+                    className="!w-auto !py-1.5"
                   >
                     <option value="">Todos os status</option>
                     <option value="pending">Pendente</option>
                     <option value="in_progress">Em andamento</option>
                     <option value="done">Concluída</option>
                     <option value="cancelled">Cancelada</option>
-                  </select>
+                  </Select>
                 )}
-                <select
+                <Select
                   value={assignedFilter}
                   onChange={e => { setAssignedFilter(e.target.value); setPage(1) }}
-                  className="text-sm border border-gray-200 dark:border-dark-600 rounded-lg px-3 py-1.5 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none"
+                  className="!w-auto !py-1.5"
                 >
                   <option value="">Todos os responsáveis</option>
                   {systemUsers.map(u => (
@@ -676,7 +808,7 @@ export function TasksPage() {
                       {u.name || u.display_name} ({workloadByUser[u.user_id] || 0} aberta{(workloadByUser[u.user_id] || 0) !== 1 ? 's' : ''})
                     </option>
                   ))}
-                </select>
+                </Select>
                 {filterCount > 0 && (
                   <button
                     onClick={() => { setPriorityFilter(''); setTypeFilter(''); setStatusFilter(''); setAssignedFilter('') }}
@@ -740,7 +872,7 @@ export function TasksPage() {
                       {[...todayOpenTasks, ...todayDoneTasks].map(task => (
                         <TaskRow
                           key={task.id} task={task} today={today} done={task.status === 'done'}
-                          deletingTaskId={deletingTaskId}
+                          deletingTaskId={deletingTaskId} justCompleted={justCompletedId === task.id}
                           onOpen={openEdit} onComplete={requestComplete}
                           onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
                         />
@@ -782,7 +914,7 @@ export function TasksPage() {
                       {activeFocoTab.items.map(task => (
                         <TaskRow
                           key={task.id} task={task} today={today} done={!!activeFocoTab.done}
-                          deletingTaskId={deletingTaskId}
+                          deletingTaskId={deletingTaskId} justCompleted={justCompletedId === task.id}
                           onOpen={openEdit} onComplete={requestComplete}
                           onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
                         />
@@ -794,15 +926,84 @@ export function TasksPage() {
             </div>
           )}
 
+          {/* ── Quadro (Kanban) ── */}
+          {viewMode === 'quadro' && (
+            <div className="flex items-start gap-4 overflow-x-auto pb-2">
+              {focoTabs.map(col => {
+                const ColIcon = col.icon
+                return (
+                  <div key={col.key} className="w-80 flex-shrink-0 bg-gray-50 dark:bg-dark-900/40 rounded-xl border border-gray-200 dark:border-dark-700 overflow-hidden">
+                    <div className="flex items-center gap-2 px-3.5 py-3 border-b border-gray-200 dark:border-dark-700 bg-white dark:bg-dark-800">
+                      <ColIcon className={cn('w-4 h-4 flex-shrink-0', col.color)} />
+                      <p className="flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{col.label}</p>
+                      <span className={cn('text-[10px] px-1.5 py-0.5 rounded-full font-bold text-white flex-shrink-0', col.activeColor)}>
+                        {col.items.length}
+                      </span>
+                    </div>
+                    <div className="p-2 space-y-1 max-h-[65vh] overflow-y-auto">
+                      {col.items.length === 0 ? (
+                        <div className="flex items-center justify-center py-10 text-xs text-gray-400 dark:text-gray-600 italic">
+                          Nenhuma tarefa aqui
+                        </div>
+                      ) : col.items.map(task => (
+                        <div key={task.id} className="bg-white dark:bg-dark-800 rounded-lg">
+                          <TaskRow
+                            task={task} today={today} done={!!col.done}
+                            deletingTaskId={deletingTaskId} justCompleted={justCompletedId === task.id}
+                            onOpen={openEdit} onComplete={requestComplete}
+                            onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
           {/* ── List view ── */}
           {viewMode === 'list' && (
+            <div className="space-y-3">
+              {selectedRows.size > 0 && (
+                <div className="flex items-center justify-between gap-3 bg-primary-50 dark:bg-primary-900/10 border border-primary-100 dark:border-primary-800/30 rounded-xl px-4 py-2.5">
+                  <p className="text-sm font-semibold text-primary-700 dark:text-primary-400">
+                    {selectedRows.size} tarefa{selectedRows.size !== 1 ? 's' : ''} selecionada{selectedRows.size !== 1 ? 's' : ''}
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={bulkComplete} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg transition-colors">
+                      <Check className="w-3.5 h-3.5" /> Concluir
+                    </button>
+                    <button onClick={bulkExport} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-600 dark:text-gray-300 bg-white dark:bg-dark-700 border border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-600 rounded-lg transition-colors">
+                      <Download className="w-3.5 h-3.5" /> Exportar
+                    </button>
+                    <button onClick={bulkDelete} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors">
+                      <Trash2 className="w-3.5 h-3.5" /> Excluir
+                    </button>
+                    <button onClick={() => setSelectedRows(new Set())} className="px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                      Limpar
+                    </button>
+                  </div>
+                </div>
+              )}
             <div className="bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-dark-700 bg-gray-50 dark:bg-dark-800/50">
                       <th className="w-8 px-3 py-3">
-                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 accent-primary-600" onChange={() => {}} />
+                        <input
+                          type="checkbox"
+                          className="w-3.5 h-3.5 rounded border-gray-300 accent-primary-600"
+                          checked={paginatedTasks.length > 0 && paginatedTasks.every(t => selectedRows.has(t.id))}
+                          ref={el => { if (el) el.indeterminate = paginatedTasks.some(t => selectedRows.has(t.id)) && !paginatedTasks.every(t => selectedRows.has(t.id)) }}
+                          onChange={() => setSelectedRows(s => {
+                            const allSelected = paginatedTasks.every(t => selectedRows.has(t.id))
+                            const n = new Set(s)
+                            paginatedTasks.forEach(t => allSelected ? n.delete(t.id) : n.add(t.id))
+                            return n
+                          })}
+                        />
                       </th>
                       <th className="w-8 px-2 py-3"></th>
                       <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Tarefa</th>
@@ -829,7 +1030,12 @@ export function TasksPage() {
                       return (
                         <tr
                           key={t.id}
-                          className={cn('group hover:bg-gray-50 dark:hover:bg-dark-700/30 transition-colors cursor-pointer', isSelected && 'bg-blue-50/50 dark:bg-blue-900/10')}
+                          className={cn(
+                            'group border-l-[3px] hover:bg-gray-50 dark:hover:bg-dark-700/30 transition-colors duration-300 cursor-pointer',
+                            isLate ? 'border-red-500 bg-red-50/30 dark:bg-red-900/10' : PRIORITY_BORDER[t.priority || 'medium'],
+                            isSelected && 'bg-blue-50/50 dark:bg-blue-900/10',
+                            justCompletedId === t.id && 'bg-emerald-50/70 dark:bg-emerald-900/15'
+                          )}
                           onClick={() => openEdit(t)}
                         >
                           <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
@@ -843,9 +1049,9 @@ export function TasksPage() {
                           <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
                             <button
                               onClick={() => t.status !== 'done' && markDone(t.id)}
-                              className={cn('w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all', t.status === 'done' ? 'border-green-500 bg-green-500' : 'border-gray-300 dark:border-dark-500 hover:border-primary-500')}
+                              className={cn('w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-300', t.status === 'done' ? 'border-green-500 bg-green-500' : 'border-gray-300 dark:border-dark-500 hover:border-primary-500')}
                             >
-                              {t.status === 'done' && <Check className="w-2.5 h-2.5 text-white" />}
+                              {t.status === 'done' && <Check className={cn('w-2.5 h-2.5 text-white', justCompletedId === t.id && 'animate-check-pop')} />}
                             </button>
                           </td>
                           <td className="px-3 py-3 max-w-xs">
@@ -877,9 +1083,14 @@ export function TasksPage() {
                           </td>
                           <td className="px-3 py-3">
                             {t.due_date ? (
-                              <span className={cn('text-sm font-medium', isLate ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300')}>
+                              <div className={cn('text-sm font-medium', isLate ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300')}>
                                 {formatDate(t.due_date)}
-                              </span>
+                                {isLate && (
+                                  <span className="block text-[10px] font-semibold text-red-500 dark:text-red-400">
+                                    {daysOverdue(t.due_date, today)}d atrasada
+                                  </span>
+                                )}
+                              </div>
                             ) : <span className="text-gray-300 dark:text-gray-600">—</span>}
                           </td>
                           <td className="px-3 py-3">
@@ -949,6 +1160,7 @@ export function TasksPage() {
                   <button onClick={() => setPage(totalPages)} disabled={page === totalPages} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30">»</button>
                 </div>
               </div>
+            </div>
             </div>
           )}
 
