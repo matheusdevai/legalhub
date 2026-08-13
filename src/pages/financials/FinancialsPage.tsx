@@ -116,6 +116,12 @@ export function FinancialsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkWorking, setBulkWorking] = useState(false)
 
+  // Escopo de período pedido antes de qualquer exportação da tela (ano inteiro vs. mês específico)
+  const [exportScopeOpen, setExportScopeOpen] = useState<null | 'lancamentos' | 'expenses'>(null)
+  const [exportScopeMode, setExportScopeMode] = useState<'year' | 'month'>('month')
+  const [exportScopeYear, setExportScopeYear] = useState(now.getFullYear())
+  const [exportScopeMonth, setExportScopeMonth] = useState(now.getMonth())
+
   // Secondary tabs
   const [secondaryTab, setSecondaryTab] = useState<SecondaryTab | null>(null)
   const [comissaoSearch, setComissaoSearch] = useState('')
@@ -224,9 +230,12 @@ export function FinancialsPage() {
     })
   }, [financials, lancMonth, lancYear, lancDateFilter, onlyOverdue])
 
-  const lancFiltered = useMemo(() => {
+  // Filtros de busca/conta/tipo/status/categoria + ordenação — independentes do
+  // recorte de mês/ano, reaproveitados tanto pela tabela (sempre 1 mês) quanto
+  // pela exportação (que pode pedir o ano inteiro).
+  function applyLancSecondaryFilters(list: Financial[]): Financial[] {
     const q = lancSearch.toLowerCase()
-    const result = lancMonthFinancials.filter(f => {
+    const result = list.filter(f => {
       const matchSearch = !lancSearch ||
         f.description.toLowerCase().includes(q) ||
         f.client_name?.toLowerCase().includes(q) ||
@@ -246,7 +255,12 @@ export function FinancialsPage() {
       if (va > vb) return lancSortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [lancMonthFinancials, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, lancSortField, lancSortDir])
+  }
+
+  const lancFiltered = useMemo(
+    () => applyLancSecondaryFilters(lancMonthFinancials),
+    [lancMonthFinancials, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, lancSortField, lancSortDir]
+  )
 
   useEffect(() => { setLancPage(0) }, [lancMonth, lancYear, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, onlyOverdue, pageSize])
   const lancTotalPages = Math.max(1, Math.ceil(lancFiltered.length / pageSize))
@@ -355,10 +369,6 @@ export function FinancialsPage() {
     return (!expCategory || e.category === expCategory) &&
       (!expSearch || e.description.toLowerCase().includes(q) || e.process_number?.toLowerCase().includes(q))
   }), [expenses, expSearch, expCategory])
-
-  // Agrupa as despesas por mês/ano — usado só na exportação (relatório cobre
-  // todos os anos com despesa registrada, não só o ano selecionado no board).
-  const expensesByMonth = useMemo(() => groupExpensesByMonth(filteredExpenses), [filteredExpenses])
 
   // Planilha-kanban — uma coluna por mês do ano selecionado (sempre as 12,
   // mesmo vazias). Uma despesa nova cai automaticamente na coluna do mês em
@@ -677,30 +687,41 @@ export function FinancialsPage() {
     load()
   }
 
-  function exportLancamentos() {
-    const receitas = lancFiltered.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0)
-    const despesas = lancFiltered.filter(f => f.type === 'payable').reduce((s, f) => s + Number(f.amount), 0)
-    const pagos = lancFiltered.filter(f => f.status === 'paid').length
+  /** mode 'month' exporta só `month`/`year`; mode 'year' exporta os 12 meses de `year`. */
+  function exportLancamentos(mode: 'year' | 'month', year: number, month: number) {
+    const dateFiltered = financials.filter(f => {
+      const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
+      if (!dateStr) return false
+      const d = new Date(dateStr)
+      if (mode === 'year') return d.getFullYear() === year
+      return d.getMonth() === month && d.getFullYear() === year
+    })
+    const scoped = applyLancSecondaryFilters(onlyOverdue ? dateFiltered.filter(f => f.status === 'overdue') : dateFiltered)
+
+    const receitas = scoped.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0)
+    const despesas = scoped.filter(f => f.type === 'payable').reduce((s, f) => s + Number(f.amount), 0)
+    const pagos = scoped.filter(f => f.status === 'paid').length
     const STATUS_BADGE: Record<string, string> = { paid: 'green', pending: 'amber', overdue: 'red', cancelled: 'gray' }
     const STATUS_LABEL: Record<string, string> = { paid: 'Pago', pending: 'Pendente', overdue: 'Vencido', cancelled: 'Cancelado' }
+    const periodLabel = mode === 'year' ? `Ano de ${year}` : `${MONTHS_PT[month]} de ${year}`
     const csvContent = [
       'Vencimento,Pagamento,Lançamento,Categoria,Tipo,Valor,Status',
-      ...lancFiltered.map(f =>
+      ...scoped.map(f =>
         `"${formatDate(f.due_date)}","${formatDate(f.paid_date)}","${f.description}","${CATEGORY_LABELS[f.category || ''] || f.category || '—'}","${f.type === 'receivable' ? 'Receita' : 'Despesa'}","${f.type === 'receivable' ? '' : '-'}${formatCurrency(f.amount)}","${STATUS_LABEL[f.status || 'pending'] ?? ''}"`
       ),
     ].join('\n')
     openExportWindow({
-      title: `Lançamentos — ${MONTHS_PT[lancMonth]} ${lancYear}`,
-      subtitle: `${MONTHS_PT[lancMonth]} de ${lancYear}`,
-      filename: `lancamentos-${MONTHS_PT[lancMonth].toLowerCase()}-${lancYear}`,
+      title: `Lançamentos — ${periodLabel}`,
+      subtitle: periodLabel,
+      filename: mode === 'year' ? `lancamentos-${year}` : `lancamentos-${MONTHS_PT[month].toLowerCase()}-${year}`,
       stats: [
-        { value: lancFiltered.length, label: 'Lançamentos', accent: '#2563eb' },
+        { value: scoped.length, label: 'Lançamentos', accent: '#2563eb' },
         { value: formatCurrency(receitas), label: 'Receitas', accent: '#16a34a' },
         { value: formatCurrency(despesas), label: 'Despesas', accent: '#dc2626' },
         { value: pagos, label: 'Pagos', accent: '#7c3aed' },
       ],
       columns: ['Vencimento', 'Pagamento', 'Lançamento', 'Categoria', 'Tipo', 'Valor', 'Status'],
-      rows: lancFiltered.map(f => [
+      rows: scoped.map(f => [
         { text: formatDate(f.due_date) },
         { text: formatDate(f.paid_date) },
         { text: f.description, bold: true },
@@ -713,29 +734,40 @@ export function FinancialsPage() {
     })
   }
 
-  function exportExpenses() {
-    const total = expensesByMonth.reduce((s, g) => s + g.total, 0)
-    const totalCount = expensesByMonth.reduce((s, g) => s + g.items.length, 0)
+  /** mode 'month' exporta só `month`/`year`; mode 'year' exporta os 12 meses de `year`. */
+  function exportExpenses(mode: 'year' | 'month', year: number, month: number) {
+    const scopedExpenses = filteredExpenses.filter(e => {
+      const parts = dateParts(e.expense_date)
+      if (!parts) return false
+      if (mode === 'year') return parts.year === year
+      return parts.year === year && parts.month === month
+    })
+    const grouped = groupExpensesByMonth(scopedExpenses)
+    const total = grouped.reduce((s, g) => s + g.total, 0)
+    const totalCount = grouped.reduce((s, g) => s + g.items.length, 0)
+    const scopedPendingReimb = scopedExpenses.filter(e => e.reimbursable && !e.reimbursed).reduce((s, e) => s + Number(e.amount), 0)
+    const scopedAlreadyReimb = scopedExpenses.filter(e => e.reimbursed).reduce((s, e) => s + Number(e.amount), 0)
+    const periodLabel = mode === 'year' ? `Ano de ${year}` : `${MONTHS_PT[month]} de ${year}`
     const csvContent = [
       'Mês,Dia,Descrição,Categoria,Valor,Reembolsável,Reembolsado',
-      ...expensesByMonth.flatMap(g => g.items.map(e => {
+      ...grouped.flatMap(g => g.items.map(e => {
         const day = dateParts(e.expense_date)?.day ?? ''
         return `"${MONTHS_PT[g.month]}/${g.year}","${day}","${e.description}","${CATEGORY_META[e.category].label}","-${formatCurrency(e.amount)}","${e.reimbursable ? 'Sim' : 'Não'}","${e.reimbursed ? 'Sim' : 'Não'}"`
       })),
     ].join('\n')
     openExportWindow({
       title: 'Minhas Despesas',
-      subtitle: expCategory ? `Categoria: ${CATEGORY_META[expCategory as ExpenseCategory].label}` : 'Todos os meses',
-      filename: 'minhas-despesas',
+      subtitle: (expCategory ? `Categoria: ${CATEGORY_META[expCategory as ExpenseCategory].label} — ` : '') + periodLabel,
+      filename: mode === 'year' ? `minhas-despesas-${year}` : `minhas-despesas-${MONTHS_PT[month].toLowerCase()}-${year}`,
       stats: [
         { value: totalCount, label: 'Despesas', accent: '#2563eb' },
         { value: formatCurrency(total), label: 'Total gasto', accent: '#dc2626' },
-        { value: formatCurrency(pendingReimb), label: 'A reembolsar', accent: '#f97316' },
-        { value: formatCurrency(alreadyReimb), label: 'Reembolsado', accent: '#16a34a' },
+        { value: formatCurrency(scopedPendingReimb), label: 'A reembolsar', accent: '#f97316' },
+        { value: formatCurrency(scopedAlreadyReimb), label: 'Reembolsado', accent: '#16a34a' },
       ],
       columns: ['Dia', 'Descrição', 'Categoria', 'Valor', 'Reembolso'],
       rows: [],
-      groups: expensesByMonth.map(g => ({
+      groups: grouped.map(g => ({
         label: `${MONTHS_PT[g.month]} de ${g.year}`,
         rows: g.items.map(e => {
           const day = dateParts(e.expense_date)?.day
@@ -750,6 +782,26 @@ export function FinancialsPage() {
       })),
       csvContent,
     })
+  }
+
+  /** Abre o seletor de período; a exportação de fato só roda quando o usuário confirma. */
+  function requestExport(kind: 'lancamentos' | 'expenses') {
+    if (kind === 'lancamentos') {
+      setExportScopeMode('month')
+      setExportScopeYear(lancYear)
+      setExportScopeMonth(lancMonth)
+    } else {
+      setExportScopeMode('year')
+      setExportScopeYear(expYear)
+      setExportScopeMonth(now.getMonth())
+    }
+    setExportScopeOpen(kind)
+  }
+
+  function confirmExportScope() {
+    if (exportScopeOpen === 'lancamentos') exportLancamentos(exportScopeMode, exportScopeYear, exportScopeMonth)
+    else if (exportScopeOpen === 'expenses') exportExpenses(exportScopeMode, exportScopeYear, exportScopeMonth)
+    setExportScopeOpen(null)
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -1126,7 +1178,7 @@ export function FinancialsPage() {
               </button>
             )}
             <button
-              onClick={exportLancamentos}
+              onClick={() => requestExport('lancamentos')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
             >
               <Download className="w-3.5 h-3.5" /> Exportar
@@ -1473,7 +1525,7 @@ export function FinancialsPage() {
                 <Button onClick={() => openNewExpense()} size="sm"><Plus className="w-3.5 h-3.5" /> Nova Despesa</Button>
               )}
               <button
-                onClick={exportExpenses}
+                onClick={() => requestExport('expenses')}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 hover:bg-slate-50 dark:hover:bg-dark-700 rounded-lg transition-colors"
               >
                 <Download className="w-3.5 h-3.5" /> Exportar
@@ -1840,6 +1892,55 @@ export function FinancialsPage() {
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={() => setBudgetModalOpen(false)}>Cancelar</Button>
           <Button onClick={saveBudgets} loading={savingBudgets}>Salvar metas</Button>
+        </div>
+      </Modal>
+
+      {/* ── Modal: escolher período antes de exportar (ano inteiro ou mês específico) ── */}
+      <Modal open={!!exportScopeOpen} onClose={() => setExportScopeOpen(null)} title="Exportar relatório" size="sm">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Período</label>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setExportScopeMode('year')}
+                className={cn('flex-1 px-3 py-2 text-sm font-semibold rounded-lg border transition-colors',
+                  exportScopeMode === 'year' ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:border-primary-400')}
+              >
+                Ano inteiro
+              </button>
+              <button
+                onClick={() => setExportScopeMode('month')}
+                className={cn('flex-1 px-3 py-2 text-sm font-semibold rounded-lg border transition-colors',
+                  exportScopeMode === 'month' ? 'bg-primary-600 text-white border-primary-600' : 'border-slate-200 dark:border-dark-600 text-slate-600 dark:text-slate-300 hover:border-primary-400')}
+              >
+                Mês específico
+              </button>
+            </div>
+          </div>
+
+          <div className={cn('grid gap-3', exportScopeMode === 'month' ? 'grid-cols-2' : 'grid-cols-1')}>
+            {exportScopeMode === 'month' && (
+              <Select label="Mês" value={exportScopeMonth} onChange={e => setExportScopeMonth(Number(e.target.value))}>
+                {MONTHS_PT.map((m, i) => <option key={m} value={i}>{m}</option>)}
+              </Select>
+            )}
+            <Select label="Ano" value={exportScopeYear} onChange={e => setExportScopeYear(Number(e.target.value))}>
+              {(exportScopeOpen === 'expenses' ? expYears : years).map(y => <option key={y} value={y}>{y}</option>)}
+              {!(exportScopeOpen === 'expenses' ? expYears : years).includes(exportScopeYear) && (
+                <option value={exportScopeYear}>{exportScopeYear}</option>
+              )}
+            </Select>
+          </div>
+
+          <p className="text-xs text-slate-400 dark:text-slate-500">
+            {exportScopeMode === 'year'
+              ? `O relatório trará os 12 meses de ${exportScopeYear}.`
+              : `O relatório trará só ${MONTHS_PT[exportScopeMonth]} de ${exportScopeYear}.`}
+          </p>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <Button variant="outline" onClick={() => setExportScopeOpen(null)}>Cancelar</Button>
+          <Button onClick={confirmExportScope}><Download className="w-3.5 h-3.5" />Exportar</Button>
         </div>
       </Modal>
     </Layout>
