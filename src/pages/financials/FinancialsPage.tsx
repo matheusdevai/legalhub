@@ -1169,14 +1169,12 @@ export function FinancialsPage() {
               )}
             </div>
 
-            {recurringTemplates.length > 0 && (
-              <button
-                onClick={() => setRecurringModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
-              >
-                <RefreshCw className="w-3.5 h-3.5" /> Recorrentes ({recurringTemplates.length})
-              </button>
-            )}
+            <button
+              onClick={() => setRecurringModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Recorrentes{recurringTemplates.length > 0 ? ` (${recurringTemplates.length})` : ''}
+            </button>
             <button
               onClick={() => requestExport('lancamentos')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
