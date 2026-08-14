@@ -2,15 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bell, X, Calendar, CheckSquare, Scale, Clock,
-  ArrowRight, CheckCircle2, Sparkles, Sun, Sunset, Moon,
+  ArrowRight, CheckCircle2, Sparkles, Sun, Sunset, Moon, CreditCard,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 
 type AgendaItem = {
   id: string
-  kind: 'event' | 'task' | 'deadline'
+  kind: 'event' | 'task' | 'deadline' | 'financial'
   title: string
   subtitle?: string
   time?: string
@@ -57,6 +57,19 @@ const KIND_META = {
     headerBg: 'bg-rose-500/15',
     headerIcon: 'text-rose-300',
   },
+  financial: {
+    icon: CreditCard,
+    sectionTitle: 'Lançamentos financeiros',
+    accent: 'bg-amber-500',
+    iconBg: 'bg-amber-50 dark:bg-amber-900/30',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    cardBorder: 'hover:border-amber-200 dark:hover:border-amber-800',
+    pillBg: 'bg-amber-500/20',
+    pillText: 'text-amber-300',
+    notifType: 'payment',
+    headerBg: 'bg-amber-500/15',
+    headerIcon: 'text-amber-300',
+  },
 } as const
 
 function getGreeting() {
@@ -81,7 +94,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
     setLoading(true)
     const today = new Date().toISOString().slice(0, 10)
 
-    const [{ data: events }, { data: tasks }, { data: processes }] = await Promise.all([
+    const [{ data: events }, { data: tasks }, { data: processes }, { data: financials }] = await Promise.all([
       supabase
         .from('calendar_events')
         .select('id,title,type,time,client_name,location')
@@ -105,6 +118,20 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
         .eq('next_deadline', today)
         .eq('status', 'active')
         .is('deleted_at', null),
+      // Inclui lançamentos gerados a partir de recorrência normalmente (já vêm com
+      // recurring = false); o "template" recorrente em si (recurring = true) fica de
+      // fora daqui — ele não é uma cobrança concreta, só o gerador da próxima.
+      ['admin', 'financial', 'super_admin'].includes(profile?.role || '')
+        ? supabase
+            .from('financials')
+            .select('id,description,amount,type,due_date,client_name')
+            .eq('tenant_id', profile!.tenant_id!)
+            .eq('recurring', false)
+            .lte('due_date', today)
+            .in('status', ['pending', 'overdue'])
+            .is('deleted_at', null)
+            .order('due_date')
+        : Promise.resolve({ data: [] }),
     ])
 
     const agenda: AgendaItem[] = [
@@ -129,6 +156,18 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
         title: p.title || `Processo ${p.number}`,
         subtitle: p.client_name || undefined,
         link: '/processos',
+      })),
+      ...(financials || []).map(f => ({
+        id: f.id,
+        kind: 'financial' as const,
+        title: f.description,
+        subtitle: [
+          f.type === 'receivable' ? 'A receber' : 'A pagar',
+          formatCurrency(f.amount),
+          f.client_name,
+          f.due_date && f.due_date < today ? 'Vencido' : null,
+        ].filter(Boolean).join(' · '),
+        link: '/financeiro',
       })),
     ]
 
@@ -163,14 +202,16 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
   const firstName = (profile?.name || profile?.display_name || 'você').split(' ')[0]
   const todayLabel = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
-  const eventItems    = items.filter(i => i.kind === 'event')
-  const taskItems     = items.filter(i => i.kind === 'task')
-  const deadlineItems = items.filter(i => i.kind === 'deadline')
+  const eventItems     = items.filter(i => i.kind === 'event')
+  const taskItems      = items.filter(i => i.kind === 'task')
+  const deadlineItems  = items.filter(i => i.kind === 'deadline')
+  const financialItems = items.filter(i => i.kind === 'financial')
 
   const sections = [
-    { kind: 'event'    as const, list: eventItems },
-    { kind: 'task'     as const, list: taskItems },
-    { kind: 'deadline' as const, list: deadlineItems },
+    { kind: 'event'     as const, list: eventItems },
+    { kind: 'task'      as const, list: taskItems },
+    { kind: 'deadline'  as const, list: deadlineItems },
+    { kind: 'financial' as const, list: financialItems },
   ].filter(s => s.list.length > 0)
 
   return (
@@ -257,6 +298,12 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
                         <span className="text-rose-200 text-xs font-bold">{deadlineItems.length} prazo{deadlineItems.length !== 1 ? 's' : ''}</span>
                       </div>
                     )}
+                    {financialItems.length > 0 && (
+                      <div className="flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/20 px-3 py-1.5 rounded-full">
+                        <CreditCard className="w-3 h-3 text-amber-300" />
+                        <span className="text-amber-200 text-xs font-bold">{financialItems.length} financeiro{financialItems.length !== 1 ? 's' : ''}</span>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
@@ -286,7 +333,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
               <div>
                 <p className="font-bold text-gray-800 dark:text-gray-200 text-base">Agenda completamente livre!</p>
                 <p className="text-sm text-gray-400 dark:text-gray-600 mt-1 leading-relaxed">
-                  Nenhuma audiência, tarefa ou prazo<br />programado para hoje. Aproveite!
+                  Nenhuma audiência, tarefa, prazo ou lançamento<br />financeiro para hoje. Aproveite!
                 </p>
               </div>
             </div>
