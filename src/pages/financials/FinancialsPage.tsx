@@ -1400,6 +1400,7 @@ export function FinancialsPage() {
               <EmptyState icon={UserCheck} title="Nenhuma comissão registrada" />
             ) : (
               <Card className="overflow-hidden">
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-slate-50 dark:bg-dark-700/40 border-b border-slate-200 dark:border-dark-700">
@@ -1433,6 +1434,7 @@ export function FinancialsPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
                 {comissoesTotalPages > 1 && (
                   <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-100 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-700/20">
                     <p className="text-xs text-slate-400">

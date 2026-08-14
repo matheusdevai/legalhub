@@ -211,10 +211,10 @@ export function UsersPage() {
 
   return (
     <Layout title="Conta e Assinatura">
-      <div className="flex gap-5 min-h-[600px]">
+      <div className="flex flex-col lg:flex-row gap-5 min-h-[600px]">
 
         {/* ── Left inner nav ─────────────────────────────────────────────── */}
-        <div className="w-52 flex-shrink-0">
+        <div className="w-full lg:w-52 lg:flex-shrink-0">
           <Card className="p-2 sticky top-4">
             <nav className="space-y-0.5">
               {NAV_ITEMS.map(({ id, label, icon: Icon }) => {

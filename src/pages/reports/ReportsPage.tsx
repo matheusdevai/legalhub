@@ -242,10 +242,10 @@ export function ReportsPage() {
         </div>
       }
     >
-      <div className="flex gap-4 animate-fade-in min-h-0">
+      <div className="flex flex-col lg:flex-row gap-4 animate-fade-in min-h-0">
 
         {/* ── Left nav (AdvBox-style) ── */}
-        <nav className="w-36 flex-shrink-0 space-y-0.5">
+        <nav className="w-full lg:w-36 lg:flex-shrink-0 space-y-0.5">
           {NAV_TABS.map(tab => {
             const Icon = tab.icon
             const active = activeTab === tab.id
@@ -750,7 +750,7 @@ export function ReportsPage() {
         </div>
 
         {/* ── Right sidebar ── */}
-        <aside className="w-72 flex-shrink-0 space-y-3">
+        <aside className="w-full lg:w-72 lg:flex-shrink-0 space-y-3">
 
           {/* Tarefas com mais atrasos */}
           <div className="rounded-2xl overflow-hidden">

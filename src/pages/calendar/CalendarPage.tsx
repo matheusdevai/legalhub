@@ -827,10 +827,10 @@ export function CalendarPage() {
       )}
 
       {!loading && (
-        <div className="flex gap-5 min-h-0">
+        <div className="flex flex-col lg:flex-row gap-5 min-h-0">
 
           {/* ── Left sidebar ── */}
-          <div className="w-[220px] flex-shrink-0 space-y-4">
+          <div className="w-full lg:w-[220px] lg:flex-shrink-0 space-y-4">
 
             {/* Quick add */}
             <div className="bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 p-3 space-y-1.5">

@@ -1138,7 +1138,7 @@ export function ProcessesPage() {
                       </button>
 
                       {isExpanded && (
-                        <div>
+                        <div className="overflow-x-auto">
                           <table className="w-full text-sm">
                             <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
                               {pageItems.map(p => (

@@ -1005,10 +1005,12 @@ export function Dashboard() {
                   )}
                 </div>
               ) : (
-                <>
-                  <Section title="Não lidas" items={naoLidas} sectionKey="nao-lidas" />
-                  <Section title="Todas as demais" items={demais} sectionKey="demais" />
-                </>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[640px]">
+                    <Section title="Não lidas" items={naoLidas} sectionKey="nao-lidas" />
+                    <Section title="Todas as demais" items={demais} sectionKey="demais" />
+                  </div>
+                </div>
               )}
             </div>
           )
@@ -1303,7 +1305,7 @@ export function Dashboard() {
             : 0
 
           return (
-            <div className="flex gap-4">
+            <div className="flex flex-col lg:flex-row gap-4">
               {/* Left: stats + charts */}
               <div className="flex-1 min-w-0 space-y-4">
                 {/* 4 stat cards */}
@@ -1466,7 +1468,7 @@ export function Dashboard() {
                 </div>
 
                 {/* Cross-screen stats — dados de outras telas */}
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <div className="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
@@ -1501,7 +1503,7 @@ export function Dashboard() {
               </div>
 
               {/* Right: Full calendar */}
-              <div className="w-72 flex-shrink-0 bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-5">
+              <div className="w-full lg:w-72 lg:flex-shrink-0 bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-5">
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-base font-bold text-slate-800 dark:text-white">
                     {monthNames[calMonth]} {calYear}

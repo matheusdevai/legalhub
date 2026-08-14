@@ -148,6 +148,7 @@ export function ClientPortalPage() {
                 <EmptyState icon={DollarSign} title="Nenhum lançamento" description="Não há lançamentos financeiros para exibir." />
               ) : (
                 <div className="bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl overflow-hidden">
+                  <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-100 dark:border-dark-700 text-left text-xs text-gray-400 uppercase">
@@ -168,6 +169,7 @@ export function ClientPortalPage() {
                       ))}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )
             )}
