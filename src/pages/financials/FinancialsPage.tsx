@@ -175,8 +175,13 @@ export function FinancialsPage() {
       promises.push(supabase.from('expense_budgets').select('*').eq('user_id', effectiveUserId))
     }
     const results = await Promise.all(promises)
+    // O "template" recorrente (recurring = true) continua na lista principal — seu
+    // due_date é sempre a próxima cobrança/recebimento real (avançado automaticamente
+    // pelo cron diário), então até ele virar uma ocorrência concreta ele PRECISA
+    // aparecer no mês em que está previsto; do contrário, ao cadastrar uma despesa
+    // recorrente ela simplesmente sumia da tela até o cron gerar a 1ª ocorrência.
     const allFinancials: Financial[] = results[0].data || []
-    let financialsData: Financial[] = allFinancials.filter(f => !f.recurring)
+    let financialsData: Financial[] = allFinancials
     setRecurringTemplates(allFinancials.filter(f => f.recurring))
     setClients(results[1].data || [])
     setProcesses(results[2].data || [])
