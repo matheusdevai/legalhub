@@ -764,11 +764,9 @@ export function TasksPage() {
       title="Atividades"
       actions={
         <div className="flex items-center gap-2">
-          {recurringTemplates.length > 0 && (
-            <Button variant="outline" onClick={() => setRecurringModalOpen(true)}>
-              <RefreshCw className="w-4 h-4" /> Recorrentes ({recurringTemplates.length})
-            </Button>
-          )}
+          <Button variant="outline" onClick={() => setRecurringModalOpen(true)}>
+            <RefreshCw className="w-4 h-4" /> Recorrentes{recurringTemplates.length > 0 ? ` (${recurringTemplates.length})` : ''}
+          </Button>
           <Button onClick={() => openNew()}><Plus className="w-4 h-4" /> Nova tarefa</Button>
         </div>
       }
