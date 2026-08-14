@@ -325,7 +325,7 @@ export function TasksPage() {
   const [filterOpen, setFilterOpen] = useState(false)
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
 
-  const [viewMode, setViewMode] = useState<'list' | 'foco' | 'quadro'>('foco')
+  const [viewMode, setViewMode] = useState<'list' | 'foco' | 'quadro'>('quadro')
   const [focoTab, setFocoTab] = useState<'atrasadas' | 'fazendo' | 'agendadas' | 'sem_data' | 'concluidas'>('atrasadas')
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null)
   const [justCompletedId, setJustCompletedId] = useState<string | null>(null)
