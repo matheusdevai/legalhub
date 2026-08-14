@@ -85,6 +85,8 @@ export interface Client {
   cid: string | null
   nome_mae: string | null
   avatar_url: string | null
+  /** Senha do gov.br do cliente — sensível: nunca incluir em exportações/relatórios */
+  senha_gov: string | null
 }
 
 export interface Process {
@@ -154,6 +156,8 @@ export interface Task {
   recurrence_interval: 'weekly' | 'monthly' | 'yearly' | null
   recurrence_end_date: string | null
   generated_from_id: string | null
+  /** user_id de quem criou/atribuiu a tarefa — usado pra notificar quando ela for concluída */
+  created_by: string | null
 }
 
 export interface Financial {

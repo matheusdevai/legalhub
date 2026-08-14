@@ -46,12 +46,14 @@ describe('RECURRENCE_LABELS', () => {
 // ─── markTaskDone — respeita recurrence_end_date ────────────────────────────
 const insertMock = vi.fn().mockResolvedValue({ error: null })
 const updateEqMock = vi.fn().mockResolvedValue({ error: null })
+const rpcMock = vi.fn().mockResolvedValue({ error: null })
 vi.mock('@/lib/supabase', () => ({
   supabase: {
     from: vi.fn(() => ({
       update: vi.fn(() => ({ eq: updateEqMock })),
       insert: insertMock,
     })),
+    rpc: (...args: unknown[]) => rpcMock(...args),
   },
 }))
 
@@ -63,13 +65,13 @@ function baseTask(overrides: Partial<Task> = {}): Task {
     location: null, all_day: false, deadline_date: null,
     created_at: null, updated_at: null, completed_at: null, deleted_at: null,
     recurring: true, recurrence_interval: 'monthly', recurrence_end_date: null,
-    generated_from_id: null,
+    generated_from_id: null, created_by: null,
     ...overrides,
   }
 }
 
 describe('markTaskDone — recurrence_end_date', () => {
-  beforeEach(() => { insertMock.mockClear(); updateEqMock.mockClear() })
+  beforeEach(() => { insertMock.mockClear(); updateEqMock.mockClear(); rpcMock.mockClear() })
 
   it('cria a próxima ocorrência quando não há data-limite de recorrência', async () => {
     const { markTaskDone } = await import('./taskActions')
@@ -95,6 +97,32 @@ describe('markTaskDone — recurrence_end_date', () => {
     const { markTaskDone } = await import('./taskActions')
     await markTaskDone(baseTask({ recurrence_end_date: '2020-01-01' }))
     expect(updateEqMock).toHaveBeenCalled()
+  })
+})
+
+describe('markTaskDone — avisa quem atribuiu a tarefa, quando concluída', () => {
+  beforeEach(() => { insertMock.mockClear(); updateEqMock.mockClear(); rpcMock.mockClear() })
+
+  it('notifica created_by quando ele é diferente do responsável pela tarefa', async () => {
+    const { markTaskDone } = await import('./taskActions')
+    await markTaskDone(baseTask({ recurring: false, created_by: 'admin-1', assigned_to: 'lawyer-2' }))
+    expect(rpcMock).toHaveBeenCalledWith('notify_user', expect.objectContaining({
+      target_user_id: 'admin-1',
+      p_type: 'task',
+      p_title: 'Tarefa concluída',
+    }))
+  })
+
+  it('não notifica quando created_by é nulo (tarefa gerada pelo sistema)', async () => {
+    const { markTaskDone } = await import('./taskActions')
+    await markTaskDone(baseTask({ recurring: false, created_by: null, assigned_to: 'lawyer-2' }))
+    expect(rpcMock).not.toHaveBeenCalled()
+  })
+
+  it('não notifica quando quem criou é a mesma pessoa responsável (concluiu a própria tarefa)', async () => {
+    const { markTaskDone } = await import('./taskActions')
+    await markTaskDone(baseTask({ recurring: false, created_by: 'lawyer-2', assigned_to: 'lawyer-2' }))
+    expect(rpcMock).not.toHaveBeenCalled()
   })
 })
 

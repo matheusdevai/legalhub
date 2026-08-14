@@ -2,8 +2,8 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, Check, Trash2,
-  CheckCircle2, User, ChevronDown, X as XIcon, Briefcase,
+  Plus, Search, Check, Trash2, Play,
+  CheckCircle2, CheckSquare, User, ChevronDown, X as XIcon, Briefcase,
   ArrowLeft, ArrowRight, Target, LayoutGrid, List, RefreshCw, SlidersHorizontal, Download,
   AlarmClock, Gavel, FileText, Users, CircleDot,
   Flame, Zap, CalendarClock, Inbox, PartyPopper,
@@ -140,9 +140,9 @@ function taskTime(task: Task): { label: string; isOverdue: boolean } {
   return { label: formatDate(task.due_date), isOverdue: false }
 }
 
-function TaskCard({ task, done, deletingTaskId, dragging, onOpen, onComplete, onDeleteRequest, onDeleteConfirm, onDeleteCancel, onDragStart, onDragEnd }: {
+function TaskCard({ task, done, deletingTaskId, dragging, onOpen, onComplete, onStart, onDeleteRequest, onDeleteConfirm, onDeleteCancel, onDragStart, onDragEnd }: {
   task: Task; done?: boolean; deletingTaskId: string | null; dragging?: boolean
-  onOpen: (t: Task) => void; onComplete: (t: Task) => void
+  onOpen: (t: Task) => void; onComplete: (t: Task) => void; onStart?: (id: string) => void
   onDeleteRequest: (id: string) => void; onDeleteConfirm: (id: string) => void; onDeleteCancel: () => void
   onDragStart?: (e: React.DragEvent, id: string) => void; onDragEnd?: () => void
 }) {
@@ -197,6 +197,15 @@ function TaskCard({ task, done, deletingTaskId, dragging, onOpen, onComplete, on
               {label}
             </span>
           )}
+          {!done && task.status !== 'in_progress' && onStart && (
+            <button
+              onClick={() => onStart(task.id)}
+              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-gray-300 hover:text-primary-600 dark:hover:text-primary-400 transition-all"
+              title="Marcar como iniciada"
+            >
+              <Play className="w-3 h-3" />
+            </button>
+          )}
           {!done && (
             deletingTaskId === task.id ? (
               <div className="flex items-center gap-1">
@@ -219,9 +228,9 @@ function TaskCard({ task, done, deletingTaskId, dragging, onOpen, onComplete, on
   )
 }
 
-function TaskRow({ task, today, done, deletingTaskId, justCompleted, onOpen, onComplete, onDeleteRequest, onDeleteConfirm, onDeleteCancel }: {
+function TaskRow({ task, today, done, deletingTaskId, justCompleted, onOpen, onComplete, onStart, onDeleteRequest, onDeleteConfirm, onDeleteCancel }: {
   task: Task; today: string; done: boolean; deletingTaskId: string | null; justCompleted?: boolean
-  onOpen: (t: Task) => void; onComplete: (t: Task) => void
+  onOpen: (t: Task) => void; onComplete: (t: Task) => void; onStart?: (id: string) => void
   onDeleteRequest: (id: string) => void; onDeleteConfirm: (id: string) => void; onDeleteCancel: () => void
 }) {
   const isOverdue = !done && task.due_date && task.due_date.slice(0, 10) < today
@@ -273,7 +282,16 @@ function TaskRow({ task, today, done, deletingTaskId, justCompleted, onOpen, onC
         <div className="w-6 h-6 rounded-full border border-dashed border-gray-300 dark:border-dark-600 flex-shrink-0" />
       )}
 
-      <div className="flex-shrink-0" onClick={e => e.stopPropagation()}>
+      <div className="flex items-center gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
+        {!done && task.status !== 'in_progress' && onStart && (
+          <button
+            onClick={() => onStart(task.id)}
+            className="opacity-0 group-hover:opacity-100 p-1 rounded-lg text-gray-300 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all"
+            title="Marcar como iniciada"
+          >
+            <Play className="w-3.5 h-3.5" />
+          </button>
+        )}
         {deletingTaskId === task.id ? (
           <div className="flex items-center gap-1">
             <button onClick={onDeleteCancel} className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors">Não</button>
@@ -337,8 +355,13 @@ export function TasksPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  const [completionModal, setCompletionModal] = useState<{ taskId: string; taskTitle: string; taskType: string; step: 'ask' | 'process' } | null>(null)
+  const [completionModal, setCompletionModal] = useState<{
+    taskId: string; taskTitle: string; taskType: string; step: 'check' | 'ask' | 'process'
+    clientId: string | null; assignedTo: string | null; assignedName: string | null
+  } | null>(null)
   const [completionForm, setCompletionForm] = useState<ProcessForm>({ ...PROCESS_EMPTY_FORM })
+  const [pendenciaNote, setPendenciaNote] = useState('')
+  const [showPendenciaInput, setShowPendenciaInput] = useState(false)
 
   const [pageSize, setPageSize] = useState(50)
   const [page, setPage] = useState(1)
@@ -554,7 +577,7 @@ export function TasksPage() {
       const res = await supabase.from('tasks').update(payload).eq('id', editId)
       error = res.error
     } else {
-      const res = await supabase.from('tasks').insert(payload)
+      const res = await supabase.from('tasks').insert({ ...payload, created_by: profile?.user_id || null })
       error = res.error
     }
     setSaving(false)
@@ -577,6 +600,18 @@ export function TasksPage() {
     setJustCompletedId(taskId)
     setTimeout(() => setJustCompletedId(prev => prev === taskId ? null : prev), 700)
     if (task.recurring) load(true)
+  }
+
+  // Marca que o responsável já começou a trabalhar na tarefa — é o que dá pra
+  // quem atribuiu acompanhar o andamento (coluna "Fazendo" do Quadro, aba
+  // "Fazendo" do Foco, status na Lista).
+  async function startTask(taskId: string) {
+    const { error } = await withErrorFeedback(
+      supabase.from('tasks').update({ status: 'in_progress' }).eq('id', taskId),
+      'Erro ao iniciar tarefa'
+    )
+    if (error) return
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'in_progress' as Task['status'] } : t))
   }
 
   // ── Quadro — mover tarefa entre colunas por drag-and-drop ───────────────
@@ -618,35 +653,81 @@ export function TasksPage() {
   function requestComplete(t: Task) {
     const match = t.description?.match(/^client_id:([a-f0-9-]{36})/)
     const preClient = match ? clients.find(c => c.id === match[1]) : null
+    const clientId = t.client_id || preClient?.id || null
+    const client = clientId ? clients.find(c => c.id === clientId) : preClient
     const matchOption = (value: string | null | undefined, options: string[]) => {
       const v = value?.trim().toLowerCase()
       return (v && options.find(o => o.toLowerCase() === v)) || ''
     }
-    const grupoAcao = matchOption((preClient as any)?.area_direito, GRUPOS_ACAO)
-    const tipoAcao = grupoAcao ? matchOption((preClient as any)?.beneficio_previdenciario, TIPOS_ACAO[grupoAcao] || []) : ''
-    setCompletionModal({ taskId: t.id, taskTitle: t.title, taskType: t.type || 'custom', step: 'ask' })
+    const grupoAcao = matchOption((client as any)?.area_direito, GRUPOS_ACAO)
+    const tipoAcao = grupoAcao ? matchOption((client as any)?.beneficio_previdenciario, TIPOS_ACAO[grupoAcao] || []) : ''
+    setPendenciaNote('')
+    setShowPendenciaInput(false)
+    setCompletionModal({
+      taskId: t.id, taskTitle: t.title, taskType: t.type || 'custom', step: 'check',
+      clientId, assignedTo: t.assigned_to, assignedName: t.assigned_name,
+    })
     setCompletionForm({
       ...PROCESS_EMPTY_FORM,
-      client_id: preClient?.id || '',
-      client_name: preClient?.name || '',
-      colaborador_id: preClient?.colaborador_id || '',
+      client_id: client?.id || '',
+      client_name: client?.name || '',
+      colaborador_id: client?.colaborador_id || '',
       grupo_acao: grupoAcao,
       type: tipoAcao,
       data_protocolo: new Date().toISOString().slice(0, 10),
     })
   }
 
+  // Se algo ficou pendente (marcado no passo "está tudo certo?"), garante que
+  // isso nunca vira só um texto perdido — vira uma tarefa rastreável de verdade.
+  async function createPendenciaFollowup() {
+    if (!completionModal || !pendenciaNote.trim()) return
+    await withErrorFeedback(supabase.from('tasks').insert({
+      title: `Pendência: ${completionModal.taskTitle}`,
+      description: pendenciaNote.trim(),
+      client_id: completionModal.clientId,
+      assigned_to: completionModal.assignedTo,
+      assigned_name: completionModal.assignedName,
+      priority: 'high',
+      status: 'pending',
+      type: 'custom',
+      due_date: today,
+      created_by: profile?.user_id || null,
+    }), 'Erro ao criar tarefa de pendência')
+  }
+
   async function completeWithoutProcess() {
     if (!completionModal) return
     await markDone(completionModal.taskId)
+    await createPendenciaFollowup()
     setCompletionModal(null)
+    if (pendenciaNote.trim()) load(true)
+  }
+
+  // Conclui a tarefa atual e abre o formulário de nova tarefa já vinculado ao
+  // mesmo contato/responsável — cobre o "ou quer cadastrar uma nova tarefa em
+  // relação aquele contato" sem duplicar a pendência (o texto já vai pra descrição).
+  async function completeAndCreateFollowupTask() {
+    if (!completionModal) return
+    await markDone(completionModal.taskId)
+    setEditId(null)
+    setForm({
+      ...EMPTY_FORM,
+      client_id: completionModal.clientId || '',
+      assigned_to: completionModal.assignedTo || '',
+      assigned_name: completionModal.assignedName || '',
+      description: pendenciaNote.trim(),
+    })
+    setCompletionModal(null)
+    setPendenciaNote('')
+    setModalOpen(true)
   }
 
   async function confirmCompletion() {
     if (!completionModal) return
     const selectedClient = clients.find(c => c.id === completionForm.client_id)
-    const { error: taskErr } = await withErrorFeedback(supabase.from('tasks').update({ status: 'done', completed_at: new Date().toISOString() }).eq('id', completionModal.taskId), 'Erro ao concluir tarefa')
-    if (taskErr) return
+    await markDone(completionModal.taskId)
+    await createPendenciaFollowup()
     const payload: any = {
       ...completionForm,
       title: completionForm.title.trim() || completionForm.type || selectedClient?.name || completionModal.taskTitle,
@@ -1030,7 +1111,7 @@ export function TasksPage() {
                         <TaskRow
                           key={task.id} task={task} today={today} done={task.status === 'done'}
                           deletingTaskId={deletingTaskId} justCompleted={justCompletedId === task.id}
-                          onOpen={openEdit} onComplete={requestComplete}
+                          onOpen={openEdit} onComplete={requestComplete} onStart={startTask}
                           onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
                         />
                       ))}
@@ -1072,7 +1153,7 @@ export function TasksPage() {
                         <TaskRow
                           key={task.id} task={task} today={today} done={!!activeFocoTab.done}
                           deletingTaskId={deletingTaskId} justCompleted={justCompletedId === task.id}
-                          onOpen={openEdit} onComplete={requestComplete}
+                          onOpen={openEdit} onComplete={requestComplete} onStart={startTask}
                           onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
                         />
                       ))}
@@ -1118,7 +1199,7 @@ export function TasksPage() {
                       <TaskCard
                         key={task.id} task={task} done={!!col.done}
                         deletingTaskId={deletingTaskId} dragging={draggingTaskId === task.id}
-                        onOpen={openEdit} onComplete={requestComplete}
+                        onOpen={openEdit} onComplete={requestComplete} onStart={startTask}
                         onDeleteRequest={setDeletingTaskId} onDeleteConfirm={softDeleteTask} onDeleteCancel={() => setDeletingTaskId(null)}
                         onDragStart={(e, id) => { e.dataTransfer.setData('text/plain', id); setDraggingTaskId(id) }}
                         onDragEnd={() => setDraggingTaskId(null)}
@@ -1232,7 +1313,7 @@ export function TasksPage() {
                           </td>
                           <td className="px-2 py-3" onClick={e => e.stopPropagation()}>
                             <button
-                              onClick={() => t.status !== 'done' && markDone(t.id)}
+                              onClick={() => t.status !== 'done' && requestComplete(t)}
                               className={cn('w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all duration-300', t.status === 'done' ? 'border-green-500 bg-green-500' : 'border-gray-300 dark:border-dark-500 hover:border-primary-500')}
                             >
                               {t.status === 'done' && <Check className={cn('w-2.5 h-2.5 text-white', justCompletedId === t.id && 'animate-check-pop')} />}
@@ -1298,20 +1379,31 @@ export function TasksPage() {
                             </span>
                           </td>
                           <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                            {deletingTaskId === t.id ? (
-                              <div className="flex items-center gap-1">
-                                <button onClick={() => setDeletingTaskId(null)} className="text-[10px] text-gray-400 hover:text-gray-600 px-1 py-1 rounded transition-colors">Não</button>
-                                <button onClick={() => softDeleteTask(t.id)} className="text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded-lg transition-colors">Excluir</button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setDeletingTaskId(t.id)}
-                                className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
-                                title="Excluir tarefa"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <div className="flex items-center justify-end gap-0.5">
+                              {t.status === 'pending' && (
+                                <button
+                                  onClick={() => startTask(t.id)}
+                                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-gray-300 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-all"
+                                  title="Marcar como iniciada"
+                                >
+                                  <Play className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {deletingTaskId === t.id ? (
+                                <div className="flex items-center gap-1">
+                                  <button onClick={() => setDeletingTaskId(null)} className="text-[10px] text-gray-400 hover:text-gray-600 px-1 py-1 rounded transition-colors">Não</button>
+                                  <button onClick={() => softDeleteTask(t.id)} className="text-[10px] font-semibold text-white bg-red-500 hover:bg-red-600 px-2 py-1 rounded-lg transition-colors">Excluir</button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setDeletingTaskId(t.id)}
+                                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                                  title="Excluir tarefa"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -1496,6 +1588,72 @@ export function TasksPage() {
       </Modal>
 
       {/* ── Completion Modal — step ask ── */}
+      {/* ── Completion Modal — step check (novo: está tudo certo?) ── */}
+      {completionModal && completionModal.step === 'check' && (
+        <Modal open onClose={() => { setCompletionModal(null); setPendenciaNote(''); setShowPendenciaInput(false) }} title="" size="md">
+          <div className="-mx-6 -mt-6">
+            <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-5">
+              <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+              <div className="absolute right-4 top-4 opacity-20"><CheckSquare className="w-20 h-20" /></div>
+              <div className="relative">
+                <p className="text-xs text-white/80 font-medium mb-1 uppercase tracking-wider">Concluir Atividade</p>
+                <h3 className="text-lg font-bold leading-tight pr-20 line-clamp-2">{completionModal.taskTitle}</h3>
+              </div>
+            </div>
+            <div className="px-6 py-8 flex flex-col items-center text-center gap-5">
+              <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center text-3xl">🔍</div>
+              <div>
+                <p className="text-base font-bold text-gray-900 dark:text-white mb-1">Está tudo certo com essa atividade?</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Confirme antes de concluir, ou avise se falta algum documento, diligência ou providência.</p>
+              </div>
+
+              {!showPendenciaInput ? (
+                <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
+                  <button
+                    onClick={() => setShowPendenciaInput(true)}
+                    className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 dark:border-dark-600 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+                  >
+                    Não, falta algo
+                  </button>
+                  <button
+                    onClick={() => setCompletionModal(prev => prev ? { ...prev, step: 'ask' } : null)}
+                    className="flex-1 py-3 px-4 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    Sim, está tudo certo
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full text-left space-y-3">
+                  <textarea
+                    autoFocus
+                    rows={3}
+                    value={pendenciaNote}
+                    onChange={e => setPendenciaNote(e.target.value)}
+                    placeholder="O que falta? Ex: documento pendente, aguardando diligência..."
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 resize-none"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setShowPendenciaInput(false)}
+                      className="py-2.5 px-4 rounded-xl text-gray-500 dark:text-gray-400 font-medium text-sm hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+                    >
+                      ‹ Voltar
+                    </button>
+                    <button
+                      onClick={() => setCompletionModal(prev => prev ? { ...prev, step: 'ask' } : null)}
+                      className="flex-1 py-2.5 px-4 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm transition-colors"
+                    >
+                      Continuar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {completionModal && completionModal.step === 'ask' && (
         <Modal open onClose={() => setCompletionModal(null)} title="" size="md">
           <div className="-mx-6 -mt-6">
@@ -1511,21 +1669,28 @@ export function TasksPage() {
               <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-3xl">⚖️</div>
               <div>
                 <p className="text-base font-bold text-gray-900 dark:text-white mb-1">Esta atividade resultou em um processo protocolado?</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Se sim, você pode registrar os dados do processo agora.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Se sim, você pode registrar os dados do processo agora. Também dá pra criar uma nova tarefa pra este contato.</p>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3 w-full pt-2">
-                <button
-                  onClick={completeWithoutProcess}
-                  className="flex-1 py-3 px-4 rounded-xl border-2 border-gray-200 dark:border-dark-600 text-gray-700 dark:text-gray-300 font-semibold text-sm hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
-                >
-                  Não, apenas concluir
-                </button>
+              <div className="flex flex-col gap-2.5 w-full pt-2">
                 <button
                   onClick={() => setCompletionModal(prev => prev ? { ...prev, step: 'process' } : null)}
-                  className="flex-1 py-3 px-4 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-3 px-4 rounded-xl bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   Sim, cadastrar processo
+                </button>
+                <button
+                  onClick={completeAndCreateFollowupTask}
+                  className="w-full py-3 px-4 rounded-xl border-2 border-primary-200 dark:border-primary-800 text-primary-700 dark:text-primary-400 font-semibold text-sm hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar nova tarefa para este contato
+                </button>
+                <button
+                  onClick={completeWithoutProcess}
+                  className="w-full py-2.5 px-4 rounded-xl text-gray-500 dark:text-gray-400 font-medium text-sm hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+                >
+                  Não, apenas concluir
                 </button>
               </div>
             </div>

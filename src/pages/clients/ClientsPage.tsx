@@ -7,6 +7,7 @@ import {
   FileText, X, CheckCircle2, Clock, CheckSquare, ChevronDown,
   AlertCircle, Info, MessageCircle, Sparkles, Tag, ShieldCheck,
   CalendarPlus, IdCard, KeyRound, Copy, Receipt, DollarSign,
+  Eye, EyeOff, Lock,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
@@ -20,6 +21,7 @@ import { fetchCitiesByState } from '@/lib/ibgeUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
+import { useAuth } from '@/contexts/AuthContext'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 
@@ -57,7 +59,7 @@ type ClientForm = {
   origem: string; pais: string; rg: string; birth_date: string; marital_status: string;
   profession: string; gender: string; nationality: string; celular: string;
   cep: string; state: string; bairro: string; pis_pasep: string; ctps: string;
-  cid: string; nome_mae: string; avatar_url: string;
+  cid: string; nome_mae: string; avatar_url: string; senha_gov: string;
   tags: string; lgpd_consent: boolean; lgpd_consent_date: string;
 }
 const EMPTY_CLIENT: ClientForm = {
@@ -68,7 +70,7 @@ const EMPTY_CLIENT: ClientForm = {
   processo_pago: false, processo_pago_valor: '', processo_pago_data: '', processo_categoria: 'fees',
   origem: '', pais: 'BRASIL', rg: '', birth_date: '', marital_status: '',
   profession: '', gender: '', nationality: '', celular: '',
-  cep: '', state: '', bairro: '', pis_pasep: '', ctps: '', cid: '', nome_mae: '', avatar_url: '',
+  cep: '', state: '', bairro: '', pis_pasep: '', ctps: '', cid: '', nome_mae: '', avatar_url: '', senha_gov: '',
   tags: '', lgpd_consent: false, lgpd_consent_date: '',
 }
 
@@ -168,6 +170,7 @@ function VerticalBarChart({ title, data }: { title: string; data: { label: strin
 
 export function ClientsPage() {
   const navigate = useNavigate()
+  const { profile } = useAuth()
   const [clients, setClients] = useState<Client[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [systemUsers, setSystemUsers] = useState<Profile[]>([])
@@ -215,6 +218,7 @@ export function ClientsPage() {
   const [avatarPreview, setAvatarPreview] = useState<string>('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [notesExpanded, setNotesExpanded] = useState(false)
+  const [showSenhaGov, setShowSenhaGov] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const [cepLoading, setCepLoading] = useState(false)
   const [cepError, setCepError] = useState('')
@@ -251,6 +255,7 @@ export function ClientsPage() {
       client_id: savedClientId,
       assigned_to: taskForm.assigned_to || null,
       assigned_name: taskForm.assigned_name || null,
+      created_by: profile?.user_id || null,
     })
     if (taskForm.assigned_to) await notifyTaskAssignment(taskForm.assigned_to, taskForm.title)
     setSaving(false)
@@ -611,7 +616,7 @@ export function ClientsPage() {
     return groups
   }, [filtered, colaboradores])
 
-  function openNew() { setEditId(null); setForm(EMPTY_CLIENT); setAvatarPreview(''); setNotesExpanded(false); setModalOpen(true) }
+  function openNew() { setEditId(null); setForm(EMPTY_CLIENT); setAvatarPreview(''); setNotesExpanded(false); setShowSenhaGov(false); setModalOpen(true) }
 
   async function loadClientExpenses(clientId: string) {
     setExpensesLoading(true)
@@ -708,13 +713,14 @@ export function ClientsPage() {
       celular: c.celular || '', cep: c.cep || '',
       state: c.state || '', bairro: c.bairro || '',
       pis_pasep: c.pis_pasep || '', ctps: c.ctps || '',
-      cid: c.cid || '', nome_mae: c.nome_mae || '',
+      cid: c.cid || '', nome_mae: c.nome_mae || '', senha_gov: c.senha_gov || '',
       tags: (c.tags || []).join(', '),
       lgpd_consent: c.lgpd_consent ?? false,
       lgpd_consent_date: c.lgpd_consent_date || '',
     })
     setAvatarPreview(c.avatar_url || '')
     setNotesExpanded((c.notes || '').length > 60 || (c.notes || '').includes('\n'))
+    setShowSenhaGov(false)
     setModalOpen(true)
   }
 
@@ -1681,6 +1687,7 @@ export function ClientsPage() {
 
                       {/* Linhas do grupo */}
                       {isExpanded && (
+                        <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
                             {groupPageClients.map(c => (
@@ -1734,6 +1741,7 @@ export function ClientsPage() {
                             ))}
                           </tbody>
                         </table>
+                        </div>
                       )}
                     </div>
                   )
@@ -2148,6 +2156,34 @@ export function ClientsPage() {
                 <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Nome da mãe</label>
                 <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
                   placeholder="Nome completo da mãe" value={form.nome_mae} onChange={e => setForm({ ...form, nome_mae: e.target.value })} />
+              </div>
+
+              {/* Card destacado — credencial sensível do cliente, nunca entra em exportações/relatórios */}
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-900/10 p-3.5">
+                <label className="flex items-center gap-1.5 text-sm font-medium text-amber-800 dark:text-amber-400 mb-1.5">
+                  <Lock className="w-3.5 h-3.5" /> Senha Gov.br
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSenhaGov ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    className="w-full px-3 py-2.5 pr-10 text-sm border border-amber-200 dark:border-amber-800/50 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-100 dark:focus:ring-amber-900/30 focus:border-amber-400"
+                    placeholder="Senha de acesso ao gov.br do cliente"
+                    value={form.senha_gov}
+                    onChange={e => setForm({ ...form, senha_gov: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSenhaGov(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    title={showSenhaGov ? 'Ocultar senha' : 'Mostrar senha'}
+                  >
+                    {showSenhaGov ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-amber-700/80 dark:text-amber-500/70 mt-1.5">
+                  Informação sensível — visível só dentro deste cadastro, nunca aparece em exportações ou relatórios.
+                </p>
               </div>
             </>
           )}
@@ -2809,7 +2845,7 @@ export function ClientsPage() {
                 </p>
                 <button onClick={() => { setImportRows([]); setImportError('') }} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">Trocar arquivo</button>
               </div>
-              <div className="max-h-72 overflow-y-auto border border-gray-200 dark:border-dark-600 rounded-xl">
+              <div className="max-h-72 overflow-auto border border-gray-200 dark:border-dark-600 rounded-xl">
                 <table className="w-full text-xs">
                   <thead className="bg-gray-50 dark:bg-dark-700/40 sticky top-0">
                     <tr>

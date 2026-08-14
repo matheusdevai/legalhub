@@ -30,10 +30,14 @@ export function nextRecurrenceDueDate(dueDate: string, interval: string | null):
   return d.toISOString().slice(0, 10)
 }
 
-// ─── Concluir tarefa (com disparo de recorrência) ──────────────────────────────
+// ─── Concluir tarefa (com disparo de recorrência + aviso a quem atribuiu) ──────
 export async function markTaskDone(task: Task): Promise<{ completed_at: string }> {
   const completed_at = new Date().toISOString()
   await supabase.from('tasks').update({ status: 'done', completed_at }).eq('id', task.id)
+
+  if (task.created_by && task.created_by !== task.assigned_to) {
+    await notifyTaskCompletion(task.created_by, task.title)
+  }
 
   if (task.recurring && task.due_date) {
     const nextDueDate = nextRecurrenceDueDate(task.due_date, task.recurrence_interval)
@@ -72,6 +76,17 @@ export async function notifyTaskAssignment(userId: string, taskTitle: string): P
     target_user_id: userId,
     p_type: 'task',
     p_title: 'Nova tarefa atribuída a você',
+    p_message: taskTitle,
+    p_link: '/tarefas',
+  })
+}
+
+// ─── Notificação a quem atribuiu, quando a tarefa é concluída pelo responsável ─
+export async function notifyTaskCompletion(creatorUserId: string, taskTitle: string): Promise<void> {
+  await supabase.rpc('notify_user', {
+    target_user_id: creatorUserId,
+    p_type: 'task',
+    p_title: 'Tarefa concluída',
     p_message: taskTitle,
     p_link: '/tarefas',
   })
