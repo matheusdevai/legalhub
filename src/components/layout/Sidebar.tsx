@@ -21,7 +21,7 @@ const navGroups = [
   {
     label: 'Jurídico',
     items: [
-      { to: '/clientes',    icon: Users,      label: 'Contatos' },
+      { to: '/clientes',    icon: Users,      label: 'Clientes' },
       { to: '/processos',   icon: Briefcase,  label: 'Processos' },
       { to: '/publicacoes', icon: Newspaper,  label: 'Intimações' },
       { to: '/documentos',  icon: FileText,   label: 'Documentos' },

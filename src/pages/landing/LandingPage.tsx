@@ -100,8 +100,8 @@ const FEATURES = [
   },
   {
     icon: Users,
-    title: 'Clientes & Contatos',
-    description: 'Cadastro completo de pessoa física e jurídica, com busca automática de CPF/CNPJ, importação por CSV e alerta de contatos duplicados.',
+    title: 'Clientes',
+    description: 'Cadastro completo de pessoa física e jurídica, com busca automática de CPF/CNPJ, importação por CSV e alerta de clientes duplicados.',
   },
   {
     icon: Briefcase,

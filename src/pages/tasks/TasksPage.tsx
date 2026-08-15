@@ -705,8 +705,8 @@ export function TasksPage() {
   }
 
   // Conclui a tarefa atual e abre o formulário de nova tarefa já vinculado ao
-  // mesmo contato/responsável — cobre o "ou quer cadastrar uma nova tarefa em
-  // relação aquele contato" sem duplicar a pendência (o texto já vai pra descrição).
+  // mesmo cliente/responsável — cobre o "ou quer cadastrar uma nova tarefa em
+  // relação aquele cliente" sem duplicar a pendência (o texto já vai pra descrição).
   async function completeAndCreateFollowupTask() {
     if (!completionModal) return
     await markDone(completionModal.taskId)
@@ -1669,7 +1669,7 @@ export function TasksPage() {
               <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center text-3xl">⚖️</div>
               <div>
                 <p className="text-base font-bold text-gray-900 dark:text-white mb-1">Esta atividade resultou em um processo protocolado?</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Se sim, você pode registrar os dados do processo agora. Também dá pra criar uma nova tarefa pra este contato.</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Se sim, você pode registrar os dados do processo agora. Também dá pra criar uma nova tarefa pra este cliente.</p>
               </div>
               <div className="flex flex-col gap-2.5 w-full pt-2">
                 <button
@@ -1684,7 +1684,7 @@ export function TasksPage() {
                   className="w-full py-3 px-4 rounded-xl border-2 border-primary-200 dark:border-primary-800 text-primary-700 dark:text-primary-400 font-semibold text-sm hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors flex items-center justify-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  Criar nova tarefa para este contato
+                  Criar nova tarefa para este cliente
                 </button>
                 <button
                   onClick={completeWithoutProcess}
@@ -1742,7 +1742,7 @@ export function TasksPage() {
                         }}
                         className="w-full pl-10 pr-9 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
                       >
-                        <option value="">Nome do contato</option>
+                        <option value="">Nome do cliente</option>
                         {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />

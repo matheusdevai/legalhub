@@ -186,7 +186,7 @@ export function Layout({ children }: LayoutProps) {
 
   const ADD_ITEMS = [
     { label: 'Nova tarefa',        icon: CheckSquare, action: () => goNew('/tarefas') },
-    { label: 'Novo contato',       icon: Users,       action: () => goNew('/clientes') },
+    { label: 'Novo cliente',       icon: Users,       action: () => goNew('/clientes') },
     { label: 'Novo processo',      icon: Briefcase,   action: () => goNew('/processos') },
     { label: 'Nova receita/despesa', icon: DollarSign, action: () => goNew('/financeiro') },
   ]

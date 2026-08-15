@@ -10,7 +10,7 @@ export interface ClientImportPreviewRow {
   duplicate: boolean
 }
 
-// ─── Importação de contatos por CSV ─────────────────────────────────────────
+// ─── Importação de clientes por CSV ─────────────────────────────────────────
 // Monta a prévia de importação, marcando como duplicado tanto quem já existe
 // no sistema (por CPF/CNPJ) quanto linhas repetidas dentro do próprio arquivo
 // importado — ex: um CSV exportado duas vezes e concatenado por engano teria,

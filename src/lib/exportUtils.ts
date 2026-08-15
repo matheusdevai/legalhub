@@ -41,7 +41,7 @@ export interface ExportGroup {
 }
 
 export interface ExportSection {
-  /** Título da seção (ex: "Contatos", "Processos") */
+  /** Título da seção (ex: "Clientes", "Processos") */
   title: string
   /** Cabeçalhos das colunas desta seção (independentes das demais) */
   columns: string[]
@@ -66,7 +66,7 @@ export interface ExportOptions {
   csvContent: string
   /** Quando fornecido, gera o relatório agrupado por parceiro em vez de lista plana */
   groups?: ExportGroup[]
-  /** Quando fornecido, gera o relatório em seções independentes (ex: Contatos + Processos), cada uma com suas próprias colunas */
+  /** Quando fornecido, gera o relatório em seções independentes (ex: Clientes + Processos), cada uma com suas próprias colunas */
   sections?: ExportSection[]
 }
 
@@ -455,7 +455,7 @@ export function openExportWindow(opts: ExportOptions): void {
         </div>`).join('')}
     </div>`
 
-  // Seções independentes (ex: Contatos + Processos de um parceiro)
+  // Seções independentes (ex: Clientes + Processos de um parceiro)
   const contentHtml = sections
     ? sections.map(s => `
         <div class="group-block">

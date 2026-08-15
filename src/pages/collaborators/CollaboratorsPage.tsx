@@ -346,7 +346,7 @@ export function CollaboratorsPage() {
       { text: formatDate(p.next_deadline) },
     ])
 
-    const csvLines = [`Parceiro: ${col.nome}`, '', 'Contatos', 'Nome,Tipo,CPF/CNPJ,Telefone,Email,Cidade,Status']
+    const csvLines = [`Parceiro: ${col.nome}`, '', 'Clientes', 'Nome,Tipo,CPF/CNPJ,Telefone,Email,Cidade,Status']
     for (const c of clients) {
       csvLines.push(`"${c.name}","${c.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}","${formatCPFCNPJ(c.cpf_cnpj || '') || '—'}","${formatPhone(c.phone || '') || '—'}","${c.email || '—'}","${c.cidade || '—'}","${CLIENT_STATUS_LABELS[c.status || 'active'] || c.status || '—'}"`)
     }
@@ -357,18 +357,18 @@ export function CollaboratorsPage() {
 
     openExportWindow({
       title: `Relatório do Parceiro — ${col.nome}`,
-      subtitle: 'Contatos e processos vinculados a este parceiro',
+      subtitle: 'Clientes e processos vinculados a este parceiro',
       filename: `parceiro-${col.nome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
       stats: [
-        { value: clients.length, label: 'Contatos', accent: '#2563eb' },
+        { value: clients.length, label: 'Clientes', accent: '#2563eb' },
         { value: processes.length, label: 'Processos', accent: '#7c3aed' },
-        { value: clients.filter(c => c.status === 'active').length, label: 'Contatos ativos', accent: '#16a34a' },
+        { value: clients.filter(c => c.status === 'active').length, label: 'Clientes ativos', accent: '#16a34a' },
         { value: processes.filter(p => p.status === 'active').length, label: 'Processos ativos', accent: '#0e7490' },
       ],
       columns: [],
       rows: [],
       sections: [
-        { title: 'Contatos', columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status'], rows: contatosRows },
+        { title: 'Clientes', columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status'], rows: contatosRows },
         { title: 'Processos', columns: ['Número', 'Título', 'Cliente', 'Modalidade', 'Área', 'Status', 'Próximo Prazo'], rows: processosRows },
       ],
       csvContent: csvLines.join('\n'),
@@ -441,7 +441,7 @@ export function CollaboratorsPage() {
     load()
   }
 
-  // ─── Navegação pros contatos/processos do parceiro ───────────────────────────
+  // ─── Navegação pros clientes/processos do parceiro ───────────────────────────
   function goToClientes(col: Colaborador) {
     navigate('/clientes', { state: { prefillColaborador: col.id } })
   }
@@ -452,7 +452,7 @@ export function CollaboratorsPage() {
     navigate('/dashboard', {
       state: {
         openTab: 'ia',
-        prefillQuestion: `Me dê um resumo da rede do parceiro ${col.nome}: contatos indicados, processos em andamento e comissões pendentes.`,
+        prefillQuestion: `Me dê um resumo da rede do parceiro ${col.nome}: clientes indicados, processos em andamento e comissões pendentes.`,
       },
     })
   }
@@ -551,7 +551,7 @@ export function CollaboratorsPage() {
             </div>
             <button onClick={() => setExpandParceiro(v => !v)}
               className="text-xs text-primary-600 dark:text-primary-400 hover:underline mt-1">
-              {stats.comissoesPendentesCount} contato{stats.comissoesPendentesCount !== 1 ? 's' : ''} aguardando pagamento
+              {stats.comissoesPendentesCount} cliente{stats.comissoesPendentesCount !== 1 ? 's' : ''} aguardando pagamento
             </button>
             {expandParceiro && (
               <div className="mt-3 space-y-1.5 border-t border-gray-100 dark:border-dark-700 pt-3">
@@ -844,7 +844,7 @@ export function CollaboratorsPage() {
                           <td className="px-2 py-3.5" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button onClick={() => exportParceiro(c)} disabled={exportingId === c.id}
-                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50" title="Exportar contatos e processos deste parceiro">
+                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50" title="Exportar clientes e processos deste parceiro">
                                 {exportingId === c.id ? <Spinner className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
                               </button>
                               <button onClick={() => openEdit(c)}
@@ -992,7 +992,7 @@ function PartnerDetailPanel({ partner, clients, paidValue, pendingValue, onClose
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="text-center p-3 rounded-xl bg-gray-50 dark:bg-dark-700/50">
                 <p className="text-lg font-bold text-gray-900 dark:text-white">{clients.length}</p>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400">Contatos</p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">Clientes</p>
               </div>
               <div className="text-center p-3 rounded-xl bg-gray-50 dark:bg-dark-700/50">
                 <p className="text-lg font-bold text-gray-900 dark:text-white">{processes.length}</p>
@@ -1014,7 +1014,7 @@ function PartnerDetailPanel({ partner, clients, paidValue, pendingValue, onClose
                 </a>
               )}
               <button onClick={onGoToClientes} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-                <UserCheck className="w-3.5 h-3.5" />Ver contatos
+                <UserCheck className="w-3.5 h-3.5" />Ver clientes
               </button>
               <button onClick={onGoToProcessos} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                 <Briefcase className="w-3.5 h-3.5" />Ver processos
@@ -1028,11 +1028,11 @@ function PartnerDetailPanel({ partner, clients, paidValue, pendingValue, onClose
             </div>
           </div>
 
-          {/* Contatos vinculados */}
+          {/* Clientes vinculados */}
           <div className="p-5 border-b border-gray-100 dark:border-dark-700">
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">Contatos vinculados</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3">Clientes vinculados</p>
             {clients.length === 0 ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500">Nenhum contato indicado por este parceiro ainda.</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500">Nenhum cliente indicado por este parceiro ainda.</p>
             ) : (
               <div className="space-y-1.5">
                 {clients.slice(0, 8).map(c => (
@@ -1045,7 +1045,7 @@ function PartnerDetailPanel({ partner, clients, paidValue, pendingValue, onClose
                   </div>
                 ))}
                 {clients.length > 8 && (
-                  <button onClick={onGoToClientes} className="text-xs text-primary-600 dark:text-primary-400 hover:underline pt-1">Ver todos os {clients.length} contatos →</button>
+                  <button onClick={onGoToClientes} className="text-xs text-primary-600 dark:text-primary-400 hover:underline pt-1">Ver todos os {clients.length} clientes →</button>
                 )}
               </div>
             )}

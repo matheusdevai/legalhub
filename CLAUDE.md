@@ -245,8 +245,8 @@ const filtered = useMemo(() => clients.filter(c => {
 - **Colaborador pago com valor** → cria/atualiza registro financial (type: payable, category: comissao)
 - **Onboarding** → exibido quando `profile.onboarding_completed = false && !oab_number` (ignorável via localStorage `lawfy_onboarding_skipped`)
 - **MaintenanceBanner** → banner âmbar descartável no Layout (sessionStorage `maintenance_dismissed`)
-- **Contato duplicado (nome/telefone parecido)** → sugestão de autopreenchimento em ClientsPage NUNCA inclui `cpf_cnpj` (o match é por nome/telefone, não pelo documento — preencher CPF automaticamente arriscaria transplantar o documento de uma pessoa errada)
-- **Importação de contatos por CSV** → dedupe cobre tanto clientes já cadastrados quanto linhas repetidas dentro do próprio arquivo (`buildClientImportPreview` em `src/lib/clientImportUtils.ts`)
+- **Cliente duplicado (nome/telefone parecido)** → sugestão de autopreenchimento em ClientsPage NUNCA inclui `cpf_cnpj` (o match é por nome/telefone, não pelo documento — preencher CPF automaticamente arriscaria transplantar o documento de uma pessoa errada)
+- **Importação de clientes por CSV** → dedupe cobre tanto clientes já cadastrados quanto linhas repetidas dentro do próprio arquivo (`buildClientImportPreview` em `src/lib/clientImportUtils.ts`)
 - **Tarefa recorrente** → `markTaskDone()`/`nextRecurrenceDueDate()` em `src/lib/taskActions.ts` suportam `weekly|monthly|yearly` e respeitam `recurrence_end_date` (não gera a próxima ocorrência se ela ultrapassar a data-limite)
 - **Sincronização OAB (CNJ/PJe)** → ao trocar a seccional (UF), `swapSeccionalTribunal()` em `OabSyncModal.tsx` troca o TJ da UF anterior pelo novo (nunca deixa o tribunal antigo "grudado" na lista)
 - **Minhas Despesas (Financeiro)** → planilha mensal (`groupExpensesByMonth`), upload de comprovante (`receipt_url`, bucket `documents`), seleção em massa para "marcar como reembolsado", metas de orçamento por categoria (`expense_budgets`) com barra de progresso do mês corrente, exportação (CSV/planilha/PDF) via `openExportWindow`

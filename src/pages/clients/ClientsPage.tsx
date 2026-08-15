@@ -200,7 +200,7 @@ export function ClientsPage() {
   const [stateCitiesLoading, setStateCitiesLoading] = useState(false)
   const [stateCitiesError, setStateCitiesError] = useState(false)
 
-  // Ao escolher o Estado no formulário de contato, busca todas as cidades
+  // Ao escolher o Estado no formulário de cliente, busca todas as cidades
   // daquela UF (API do IBGE) para popular o campo Cidade como um select.
   useEffect(() => {
     if (!form.state) { setStateCities([]); setStateCitiesError(false); return }
@@ -291,13 +291,13 @@ export function ClientsPage() {
       return
     }
 
-    // Checa duplicidade (CPF ou CNPJ) contra contatos já cadastrados, ignorando o próprio registro em edição
+    // Checa duplicidade (CPF ou CNPJ) contra clientes já cadastrados, ignorando o próprio registro em edição
     if (digits.length === 11 || digits.length === 14) {
       const existing = clients.find(c => c.cpf_cnpj?.replace(/\D/g, '') === digits && !c.deleted_at && c.id !== editId)
       if (existing) {
         setCpfSuggestion({
           label: existing.name,
-          sub: `Já existe um contato cadastrado com este ${digits.length === 11 ? 'CPF' : 'CNPJ'} — clique para preencher com os dados existentes`,
+          sub: `Já existe um cliente cadastrado com este ${digits.length === 11 ? 'CPF' : 'CNPJ'} — clique para preencher com os dados existentes`,
           fields: {
             name: existing.name,
             email: existing.email || '',
@@ -381,12 +381,12 @@ export function ClientsPage() {
     if (existing) {
       setCpfSuggestion({
         label: existing.name,
-        sub: `Possível contato duplicado (mesmo ${normalizeForCompare(existing.name) === nameNorm ? 'nome' : 'telefone'}) — clique para preencher com os dados existentes`,
+        sub: `Possível cliente duplicado (mesmo ${normalizeForCompare(existing.name) === nameNorm ? 'nome' : 'telefone'}) — clique para preencher com os dados existentes`,
         fields: {
           // cpf_cnpj é propositalmente omitido: o match acima é por nome/telefone
           // (não pelo próprio documento), então nunca preenchemos automaticamente
           // o CPF/CNPJ de outra pessoa — o risco de transplantar o documento de
-          // um contato errado é maior que a conveniência de autopreencher.
+          // um cliente errado é maior que a conveniência de autopreencher.
           name: existing.name, email: existing.email || '', phone: existing.phone || '',
           celular: existing.celular || '', address: existing.address || '',
           bairro: existing.bairro || '', cidade: existing.cidade || '',
@@ -760,14 +760,14 @@ export function ClientsPage() {
     if (editId) {
       const { error: updateError } = await supabase.from('clients').update(payload).eq('id', editId)
       if (updateError) {
-        toast('Erro ao atualizar contato: ' + updateError.message, 'error')
+        toast('Erro ao atualizar cliente: ' + updateError.message, 'error')
         setSaving(false)
         return
       }
     } else {
       const { data: inserted, error: insertError } = await supabase.from('clients').insert(payload).select('id').single()
       if (insertError) {
-        toast('Erro ao salvar contato: ' + insertError.message, 'error')
+        toast('Erro ao salvar cliente: ' + insertError.message, 'error')
         setSaving(false)
         return
       }
@@ -810,7 +810,7 @@ export function ClientsPage() {
           paid_date: form.processo_pago_data || null,
           due_date: form.processo_pago_data || null,
           status: 'paid',
-          notes: 'Registrado automaticamente no cadastro do contato',
+          notes: 'Registrado automaticamente no cadastro do cliente',
         })
       }
     }
@@ -845,7 +845,7 @@ export function ClientsPage() {
   }
 
   async function deleteClient(id: string) {
-    if (!(await confirmDialog('Deseja excluir este contato?'))) return
+    if (!(await confirmDialog('Deseja excluir este cliente?'))) return
     await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', id)
     load()
   }
@@ -894,11 +894,11 @@ export function ClientsPage() {
         csvLines.push(`"${c.name}","${c.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}","${formatCPFCNPJ(c.cpf_cnpj || '') || '—'}","${formatPhone(c.phone || '') || '—'}","${c.email || '—'}","${c.cidade || '—'}","${status}","${proc}","${formatDate(c.created_at)}"`)
       }
       openExportWindow({
-        title: 'Relatório de Contatos',
+        title: 'Relatório de Clientes',
         subtitle: `Parceiro: ${parceiroNome}`,
-        filename: `contatos-${parceiroNome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
+        filename: `clientes-${parceiroNome.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`,
         stats: [
-          { value: scoped.length, label: 'Total de contatos', accent: '#2563eb' },
+          { value: scoped.length, label: 'Total de clientes', accent: '#2563eb' },
           { value: activeCount, label: 'Ativos', accent: '#16a34a' },
           { value: pfCount, label: 'Pessoa Física', accent: '#7c3aed' },
           { value: pjCount, label: 'Pessoa Jurídica', accent: '#0e7490' },
@@ -936,11 +936,11 @@ export function ClientsPage() {
     }
 
     openExportWindow({
-      title: 'Relatório de Contatos',
+      title: 'Relatório de Clientes',
       subtitle: 'Agrupado por parceiro',
-      filename: 'contatos-por-parceiro',
+      filename: 'clientes-por-parceiro',
       stats: [
-        { value: filtered.length, label: 'Total de contatos', accent: '#2563eb' },
+        { value: filtered.length, label: 'Total de clientes', accent: '#2563eb' },
         { value: activeCount, label: 'Ativos', accent: '#16a34a' },
         { value: pfCount, label: 'Pessoa Física', accent: '#7c3aed' },
         { value: pjCount, label: 'Pessoa Jurídica', accent: '#0e7490' },
@@ -993,7 +993,7 @@ export function ClientsPage() {
     load()
   }
   async function bulkDelete() {
-    if (!(await confirmDialog(`Excluir ${selectedIds.size} contato(s) selecionado(s)?`))) return
+    if (!(await confirmDialog(`Excluir ${selectedIds.size} cliente(s) selecionado(s)?`))) return
     setBulkWorking(true)
     await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
     setBulkWorking(false)
@@ -1009,8 +1009,8 @@ export function ClientsPage() {
       csvLines.push(`"${c.name}","${c.type === 'pf' ? 'Pessoa Física' : 'Pessoa Jurídica'}","${formatCPFCNPJ(c.cpf_cnpj || '') || '—'}","${formatPhone(c.phone || '') || '—'}","${c.email || '—'}","${c.cidade || '—'}","${status}","${proc}","${formatDate(c.created_at)}"`)
     }
     openExportWindow({
-      title: 'Relatório de Contatos', subtitle: 'Seleção manual',
-      filename: 'contatos-selecionados',
+      title: 'Relatório de Clientes', subtitle: 'Seleção manual',
+      filename: 'clientes-selecionados',
       stats: [{ value: scoped.length, label: 'Selecionados', accent: '#2563eb' }],
       columns: ['Nome', 'Tipo', 'Telefone', 'Email', 'Cidade', 'Status', 'Processos', 'Cadastro'],
       rows: scoped.map(c => [
@@ -1094,7 +1094,7 @@ export function ClientsPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = 'modelo-importacao-contatos.csv'
+    a.download = 'modelo-importacao-clientes.csv'
     document.body.appendChild(a); a.click(); document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
@@ -1132,9 +1132,9 @@ export function ClientsPage() {
     <Layout>
       {/* ── Stats row ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-        {/* Contatos cadastrados */}
+        {/* Clientes cadastrados */}
         <Card className="p-4">
-          <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Contatos cadastrados</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-1">Clientes cadastrados</p>
           <div className="flex items-end gap-3">
             <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.total}</p>
             <span className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
@@ -1156,7 +1156,7 @@ export function ClientsPage() {
             <svg className="w-4 h-4 text-gray-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
           </div>
           <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.withProcesses}</p>
-          <span className="mt-1 text-xs text-primary-600 dark:text-primary-400">Mostrar contatos</span>
+          <span className="mt-1 text-xs text-primary-600 dark:text-primary-400">Mostrar clientes</span>
         </Card>
 
         {/* Sem processo ativo */}
@@ -1169,7 +1169,7 @@ export function ClientsPage() {
             <svg className="w-4 h-4 text-gray-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
           </div>
           <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.withoutProcesses}</p>
-          <span className="mt-1 text-xs text-primary-600 dark:text-primary-400">Mostrar contatos</span>
+          <span className="mt-1 text-xs text-primary-600 dark:text-primary-400">Mostrar clientes</span>
         </Card>
       </div>
 
@@ -1188,7 +1188,7 @@ export function ClientsPage() {
             className="flex items-center gap-2 font-semibold text-gray-900 dark:text-white text-sm hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
             onClick={() => setTableCollapsed(v => !v)}
           >
-            Contatos
+            Clientes
             <svg className={cn('w-4 h-4 transition-transform', tableCollapsed && 'rotate-180')} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
           </button>
         </div>
@@ -1198,14 +1198,14 @@ export function ClientsPage() {
             {/* Toolbar */}
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 dark:border-dark-700 flex-wrap">
               <Button onClick={openNew} className="h-8 text-xs px-3 gap-1.5">
-                <Plus className="w-3.5 h-3.5" /> Novo contato
+                <Plus className="w-3.5 h-3.5" /> Novo cliente
               </Button>
 
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
                   className="pl-8 pr-7 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 w-52"
-                  placeholder="Buscar contato..."
+                  placeholder="Buscar cliente..."
                   value={search}
                   onChange={e => { setSearch(e.target.value); setPage(0) }}
                 />
@@ -1392,7 +1392,7 @@ export function ClientsPage() {
                 </button>
                 {exportOpen && (
                   <div className="absolute left-0 top-full mt-1.5 w-64 max-h-80 overflow-y-auto bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-2 space-y-0.5">
-                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-2 py-1.5">Exportar contatos</p>
+                    <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider px-2 py-1.5">Exportar clientes</p>
                     <button
                       onClick={() => { exportAll('all'); setExportOpen(false) }}
                       className="w-full text-left px-3 py-2 text-xs rounded-lg transition-colors font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700"
@@ -1489,7 +1489,7 @@ export function ClientsPage() {
             )}
 
             {!loading && (filtered.length === 0 ? (
-              <EmptyState icon={Users} title="Nenhum contato encontrado" />
+              <EmptyState icon={Users} title="Nenhum cliente encontrado" />
             ) : viewMode === 'table' ? (
               <>
                 <div className="overflow-x-auto">
@@ -1616,7 +1616,7 @@ export function ClientsPage() {
                                     {/* Process rows */}
                                     {procs.length === 0 ? (
                                       <div className="px-10 py-3 text-xs text-gray-400 dark:text-gray-500 italic">
-                                        Nenhum processo vinculado a este contato
+                                        Nenhum processo vinculado a este cliente
                                       </div>
                                     ) : procs.map(p => (
                                       <div key={p.id} className="grid grid-cols-[1fr_200px_220px_100px] gap-0 px-10 py-2.5 border-b border-gray-100/60 dark:border-dark-700/40 hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors last:border-b-0">
@@ -1681,7 +1681,7 @@ export function ClientsPage() {
                         <UserCheck className="w-4 h-4 text-primary-500 dark:text-primary-400 flex-shrink-0" />
                         <span className="flex-1 text-xs font-bold text-gray-800 dark:text-gray-100">{group.name}</span>
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400">
-                          {group.items.length} contato{group.items.length !== 1 ? 's' : ''}
+                          {group.items.length} cliente{group.items.length !== 1 ? 's' : ''}
                         </span>
                       </button>
 
@@ -1762,7 +1762,7 @@ export function ClientsPage() {
                 <div className="w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
                   <span className="text-[10px] font-bold text-white">1</span>
                 </div>
-                <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">Dados do contato</span>
+                <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">Dados do cliente</span>
               </div>
               <div className="flex-1 h-px bg-gray-200 dark:bg-dark-600" />
               <svg className="w-2.5 h-2.5 text-gray-300 dark:text-dark-500 flex-shrink-0" fill="currentColor" viewBox="0 0 6 10"><path d="M0 0l6 5-6 5V0z"/></svg>
@@ -1814,7 +1814,7 @@ export function ClientsPage() {
             />
           </div>
           <h2 className="text-lg font-bold text-gray-900 dark:text-white text-center mb-4">
-            {editId ? 'Editar contato' : 'Criar novo contato'}
+            {editId ? 'Editar cliente' : 'Criar novo cliente'}
           </h2>
 
           {/* Top fields */}
@@ -1859,7 +1859,7 @@ export function ClientsPage() {
                 <div className="mt-2 flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-xl">
                   <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 truncate">Contato já cadastrado: {cpfSuggestion.label}</p>
+                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 truncate">Cliente já cadastrado: {cpfSuggestion.label}</p>
                     <p className="text-[11px] text-amber-700/80 dark:text-amber-500 mt-0.5">{cpfSuggestion.sub}</p>
                   </div>
                   <button
@@ -2037,7 +2037,7 @@ export function ClientsPage() {
             </>
           )}
 
-          {/* Contato */}
+          {/* Cliente */}
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Celular</label>
             <div className="relative">
@@ -2590,7 +2590,7 @@ export function ClientsPage() {
                   onClick={() => navigate('/dashboard', {
                     state: {
                       openTab: 'ia',
-                      prefillQuestion: `Me dê um resumo sobre o contato ${viewClient.name}: processos, pendências financeiras e tarefas relacionadas.`,
+                      prefillQuestion: `Me dê um resumo sobre o cliente ${viewClient.name}: processos, pendências financeiras e tarefas relacionadas.`,
                     },
                   })}
                 ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button>
@@ -2682,7 +2682,7 @@ export function ClientsPage() {
               <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0">
                 <CheckCircle2 className="w-3 h-3 text-white" />
               </div>
-              <span className="text-xs font-medium text-gray-400 line-through">Dados do contato</span>
+              <span className="text-xs font-medium text-gray-400 line-through">Dados do cliente</span>
             </div>
             <div className="flex-1 h-px bg-primary-300 dark:bg-primary-700" />
             <svg className="w-2.5 h-2.5 text-primary-400 flex-shrink-0" fill="currentColor" viewBox="0 0 6 10"><path d="M0 0l6 5-6 5V0z"/></svg>
@@ -2809,12 +2809,12 @@ export function ClientsPage() {
       </Modal>
 
       {/* ══ MODAL IMPORTAÇÃO ══ */}
-      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Importar contatos" size="lg">
+      <Modal open={importOpen} onClose={() => setImportOpen(false)} title="Importar clientes" size="lg">
         <div className="space-y-4">
           {importRows.length === 0 ? (
             <>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Envie um arquivo CSV com os contatos. Use o modelo abaixo para garantir que as colunas sejam reconhecidas corretamente.
+                Envie um arquivo CSV com os clientes. Use o modelo abaixo para garantir que as colunas sejam reconhecidas corretamente.
               </p>
               <button
                 onClick={downloadImportTemplate}
@@ -2879,7 +2879,7 @@ export function ClientsPage() {
                 disabled={importing || importPreview.filter(r => r.name.trim() && !r.duplicate).length === 0}
                 className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
               >
-                {importing ? 'Importando...' : `Importar ${importPreview.filter(r => r.name.trim() && !r.duplicate).length} contato(s)`}
+                {importing ? 'Importando...' : `Importar ${importPreview.filter(r => r.name.trim() && !r.duplicate).length} cliente(s)`}
               </button>
             </>
           )}

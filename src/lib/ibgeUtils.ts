@@ -6,7 +6,7 @@ export interface IbgeMunicipio {
 const cache: Record<string, string[]> = {}
 
 // ─── Cidades por estado (API pública do IBGE) ──────────────────────────────────
-// Usada para popular o campo Cidade a partir do Estado selecionado em Contatos.
+// Usada para popular o campo Cidade a partir do Estado selecionado em Clientes.
 // Cacheada em memória por UF para não repetir a chamada de rede a cada troca de estado.
 export async function fetchCitiesByState(uf: string): Promise<string[]> {
   if (!uf) return []

@@ -263,7 +263,7 @@ export function LeadsPage() {
     if (detailLead?.id === id) setDetailLead(prev => prev ? { ...prev, status: status as any, converted_at } : null)
   }
 
-  // ─── Converter lead em contato ──────────────────────────────────────────────
+  // ─── Converter lead em cliente ──────────────────────────────────────────────
   const LEAD_SOURCE_TO_ORIGEM: Record<string, string> = {
     website: 'site', referral: 'indicacao', social: 'redes_sociais',
     meta: 'google', google: 'google', ads: 'outro', other: 'outro',
@@ -271,9 +271,9 @@ export function LeadsPage() {
 
   async function convertLeadToClient(lead: ExtLead) {
     if (lead.converted_client_id) { navigate('/clientes'); return }
-    if (!(await confirmDialog(`Converter "${lead.name}" em contato? Um novo cadastro será criado em Contatos.`))) return
+    if (!(await confirmDialog(`Converter "${lead.name}" em cliente? Um novo cadastro será criado em Clientes.`))) return
     setConverting(true)
-    // Contatos guardam o responsável pelo NOME (assigned_lawyer), enquanto o
+    // Clientes guardam o responsável pelo NOME (assigned_lawyer), enquanto o
     // lead guarda o user_id (assigned_to) — resolve o nome antes de converter
     // para o vínculo de responsável não se perder na conversão.
     let assignedLawyerName: string | null = null
@@ -294,7 +294,7 @@ export function LeadsPage() {
       notes: `Convertido do lead em ${new Date().toLocaleDateString('pt-BR')}.${lead.notes ? ` ${lead.notes}` : ''}`,
     }).select('id').single()
     setConverting(false)
-    if (error) { toast('Erro ao converter lead em contato: ' + error.message, 'error'); return }
+    if (error) { toast('Erro ao converter lead em cliente: ' + error.message, 'error'); return }
     const clientId = (data?.id as string | undefined) ?? null
     const converted_at = new Date().toISOString()
     await supabase.from('leads').update({ status: 'won', converted_at, converted_client_id: clientId }).eq('id', lead.id)
@@ -834,7 +834,7 @@ export function LeadsPage() {
                       className="w-full flex items-center justify-center gap-1.5 text-sm py-2 mb-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold transition-colors"
                     >
                       <Users className="w-3.5 h-3.5" />
-                      {detailLead.converted_client_id ? 'Já convertido — ver Contatos' : converting ? 'Convertendo...' : 'Converter em contato'}
+                      {detailLead.converted_client_id ? 'Já convertido — ver Clientes' : converting ? 'Convertendo...' : 'Converter em cliente'}
                     </button>
                     <div className="flex gap-2 mb-5">
                       <button onClick={() => openEditLead(detailLead)} className="flex-1 flex items-center justify-center gap-1 text-sm py-2 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700">
