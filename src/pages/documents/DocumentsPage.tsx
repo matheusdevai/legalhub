@@ -2,7 +2,7 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
 import { Plus, Search, Trash2, Edit3, Eye, Copy, Image, Upload, Download, File, FileText, X } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
+import { Modal, Input, Select, Textarea, Spinner, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -339,11 +339,7 @@ export function DocumentsPage() {
 
         {/* Search + filter */}
         {activeTab === 'escritorio' && !loading && documents.length === 0 ? (
-          /* Empty state */
-          <div className="py-16 flex flex-col items-center justify-center text-center">
-            <p className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-1">Esta é a sua biblioteca</p>
-            <p className="text-sm text-gray-400 mb-6">Crie seu primeiro modelo clicando em "Em branco" acima.</p>
-          </div>
+          <EmptyState icon={FileText} title="Esta é a sua biblioteca" description={'Crie seu primeiro modelo clicando em "Em branco" acima.'} />
         ) : (
           <>
             <div className="flex items-center gap-3">
@@ -392,7 +388,7 @@ export function DocumentsPage() {
 
             {/* Document grid */}
             {!loading && (displayDocs.length === 0 ? (
-              <div className="py-16 text-center text-sm text-gray-400">Nenhum documento encontrado.</div>
+              <EmptyState icon={FileText} title="Nenhum documento encontrado" />
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
                 {displayDocs.map((doc, idx) => (

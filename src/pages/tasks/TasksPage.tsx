@@ -9,7 +9,7 @@ import {
   Flame, Zap, CalendarClock, Inbox, PartyPopper,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Modal, Input, Select, Textarea, Spinner } from '@/components/ui'
+import { Button, Modal, Input, Select, Textarea, Spinner, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Task, Process, Client, Profile, Colaborador } from '@/types'
 import { formatDate, PRIORITY_LABELS, TASK_STATUS_LABELS } from '@/lib/utils'
@@ -1144,9 +1144,7 @@ export function TasksPage() {
                 </div>
                 <div className="p-2 sm:p-3 border-t border-gray-100 dark:border-dark-700">
                   {activeFocoTab.items.length === 0 ? (
-                    <div className="flex items-center justify-center py-10 text-sm text-gray-400 dark:text-gray-600 italic">
-                      Nenhuma tarefa aqui
-                    </div>
+                    <EmptyState icon={CheckSquare} title="Nenhuma tarefa aqui" />
                   ) : (
                     <div className="divide-y divide-gray-50 dark:divide-dark-700/50 max-h-[420px] overflow-y-auto">
                       {activeFocoTab.items.map(task => (
@@ -1284,8 +1282,8 @@ export function TasksPage() {
                   <tbody className="divide-y divide-gray-50 dark:divide-dark-700">
                     {paginatedTasks.length === 0 ? (
                       <tr>
-                        <td colSpan={10} className="py-12 text-center text-gray-400 dark:text-gray-500 text-sm">
-                          Nenhuma tarefa encontrada
+                        <td colSpan={10}>
+                          <EmptyState icon={CheckSquare} title="Nenhuma tarefa encontrada" />
                         </td>
                       </tr>
                     ) : paginatedTasks.map(t => {

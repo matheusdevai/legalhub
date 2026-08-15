@@ -2,7 +2,7 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
 import { Shield, Users, Building2, Megaphone, Ticket, Plus, Trash2, Search, X } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Card, Badge, Button, Modal, Input, Select, Textarea, Spinner, StatsCard } from '@/components/ui'
+import { Card, Badge, Button, Modal, Input, Select, Textarea, Spinner, StatsCard, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Tenant, Profile, SystemAnnouncement, SupportTicket } from '@/types'
 import { formatDate, ROLE_LABELS } from '@/lib/utils'
@@ -206,7 +206,7 @@ export function AdminPage() {
           {tab === 'announcements' && (
             <div className="space-y-3">
               {filteredAnnouncements.length === 0 ? (
-                <Card className="p-8 text-center text-gray-400">{q ? 'Nenhum aviso encontrado' : 'Nenhum aviso criado'}</Card>
+                <Card className="p-4"><EmptyState icon={Megaphone} title={q ? 'Nenhum aviso encontrado' : 'Nenhum aviso criado'} /></Card>
               ) : filteredAnnouncements.map(a => (
                 <Card key={a.id} className="p-4">
                   <div className="flex items-start justify-between">

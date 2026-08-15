@@ -1,5 +1,5 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CheckSquare, TrendingUp, Target, RefreshCw,
@@ -9,10 +9,11 @@ import {
   ArrowUpDown, Download, Bell, Calendar, Crosshair, SlidersHorizontal, Trash2,
   Briefcase, Users, DollarSign, Sparkles,
 } from 'lucide-react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+const TaskscoreBarChart = lazy(() => import('./DashboardCharts').then(m => ({ default: m.TaskscoreBarChart })))
+const ChartFallback = () => <div className="h-full min-h-[160px] animate-pulse bg-slate-100 dark:bg-dark-700 rounded-xl" />
 import { Layout } from '@/components/layout/Layout'
 import { AiCopilotoTab } from '@/components/ai/AiCopilotoTab'
-import { Spinner, Modal, Button, Input, Select } from '@/components/ui'
+import { Spinner, Modal, Button, Input, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent } from '@/lib/utils'
@@ -655,11 +656,7 @@ export function Dashboard() {
                 </div>
 
                 {tasks.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-14 text-center">
-                    <CheckSquare className="w-8 h-8 text-slate-200 dark:text-slate-700 mb-2" />
-                    <p className="text-sm font-medium text-slate-500">Nenhuma atividade pendente</p>
-                    <p className="text-xs text-slate-400 mt-1">Bom trabalho! Está tudo em dia.</p>
-                  </div>
+                  <EmptyState icon={CheckSquare} title="Nenhuma atividade pendente" description="Bom trabalho! Está tudo em dia." />
                 ) : (
                   <div className="divide-y divide-slate-50 dark:divide-dark-700/30">
                     {tasks.slice(0, 8).map(task => {
@@ -993,15 +990,12 @@ export function Dashboard() {
 
               {/* Sections */}
               {filtered.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16">
-                  <CheckSquare className="w-8 h-8 text-gray-200 dark:text-dark-700 mb-2" />
-                  <p className="text-sm text-gray-400">
-                    {listaTasks.length === 0 ? 'Nenhuma tarefa pendente' : 'Nenhuma tarefa para os filtros selecionados'}
-                  </p>
+                <div className="flex flex-col items-center">
+                  <EmptyState icon={CheckSquare} title={listaTasks.length === 0 ? 'Nenhuma tarefa pendente' : 'Nenhuma tarefa para os filtros selecionados'} />
                   {(activeFiltersCount > 0 || listaSearch) && (
                     <button
                       onClick={() => { setListaFilterPriority(''); setListaFilterStatus(''); setListaFilterType(''); setListaSearch('') }}
-                      className="mt-2 text-xs text-primary-600 dark:text-primary-400 hover:underline"
+                      className="-mt-8 text-xs text-primary-600 dark:text-primary-400 hover:underline"
                     >
                       Limpar filtros
                     </button>
@@ -1408,32 +1402,10 @@ export function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Bar chart — recharts */}
-                    <ResponsiveContainer width="100%" height={160}>
-                      {taskscoreMode === 'mensal' ? (
-                        <BarChart data={monthlyScores} barSize={28} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} width={22} />
-                          <Tooltip
-                            formatter={(value: number) => [`${value} tarefa${value !== 1 ? 's' : ''}`, 'Concluídas']}
-                            contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
-                          />
-                          <Bar dataKey="count" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      ) : (
-                        <BarChart data={dailyScores} barSize={28} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                          <XAxis dataKey="dayLabel" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} width={22} />
-                          <Tooltip
-                            formatter={(value: number) => [`${value} tarefa${value !== 1 ? 's' : ''}`, 'Concluídas']}
-                            contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #e2e8f0' }}
-                          />
-                          <Bar dataKey="count" fill="#0f172a" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      )}
-                    </ResponsiveContainer>
+                    {/* Bar chart — recharts (lazy) */}
+                    <Suspense fallback={<ChartFallback />}>
+                      <TaskscoreBarChart mode={taskscoreMode} monthlyScores={monthlyScores} dailyScores={dailyScores} />
+                    </Suspense>
 
                     {/* Summary row */}
                     <div className="mt-3 pt-3 border-t border-slate-100 dark:border-dark-700/50 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
@@ -1591,12 +1563,7 @@ export function Dashboard() {
         return (
           <Modal open={taskListModalOpen} onClose={() => setTaskListModalOpen(false)} title={title} size="lg">
             {modalTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <CheckSquare className="w-10 h-10 text-slate-200 dark:text-slate-700 mb-3" />
-                <p className="text-sm font-medium text-slate-500">
-                  {taskListModalType === 'overdue' ? 'Nenhuma tarefa vencida. Parabéns!' : 'Nenhuma tarefa pendente.'}
-                </p>
-              </div>
+              <EmptyState icon={CheckSquare} title={taskListModalType === 'overdue' ? 'Nenhuma tarefa vencida. Parabéns!' : 'Nenhuma tarefa pendente.'} />
             ) : (
               <div className="space-y-0 -mx-6 -mb-6">
                 <p className="px-6 pb-3 text-xs text-slate-400">{modalTasks.length} tarefa{modalTasks.length !== 1 ? 's' : ''}</p>

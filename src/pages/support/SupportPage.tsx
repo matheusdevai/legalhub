@@ -6,7 +6,7 @@ import {
   AlertCircle, X, ArrowLeft,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Textarea, Spinner } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Textarea, Spinner, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { SupportTicket } from '@/types'
@@ -219,13 +219,9 @@ export function SupportPage() {
             </div>
 
             {!loading && (tickets.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="w-14 h-14 rounded-2xl bg-gray-100 dark:bg-dark-700 flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="w-7 h-7 text-gray-400" />
-                </div>
-                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Nenhum ticket ainda</p>
-                <p className="text-xs text-gray-400 mt-1">Abra um ticket se precisar de ajuda com o sistema.</p>
-                <Button className="mt-4" onClick={() => setModalOpen(true)}>Abrir Primeiro Ticket</Button>
+              <div className="text-center">
+                <EmptyState icon={MessageSquare} title="Nenhum ticket ainda" description="Abra um ticket se precisar de ajuda com o sistema." />
+                <Button className="-mt-8" onClick={() => setModalOpen(true)}>Abrir Primeiro Ticket</Button>
               </div>
             ) : (
               <div className="space-y-2">

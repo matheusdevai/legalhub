@@ -6,7 +6,7 @@ import {
   MessageCircle, Sparkles, DollarSign, Clock, CheckCircle2, X, UserCheck,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Modal, Input, Select, Textarea, Spinner, Badge } from '@/components/ui'
+import { Modal, Input, Select, Textarea, Spinner, Badge, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador } from '@/types'
 import { cn, formatDate, formatCurrency, formatCPFCNPJ, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
@@ -16,7 +16,7 @@ import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 
-function waLink(phone: string): string | null {
+export function waLink(phone: string): string | null {
   const digits = phone.replace(/\D/g, '')
   if (digits.length < 10) return null
   return `https://wa.me/${digits.length <= 11 ? '55' + digits : digits}`
@@ -777,8 +777,8 @@ export function CollaboratorsPage() {
                       <tr><td colSpan={7} className="py-16 text-center"><Spinner className="w-6 h-6 mx-auto" /></td></tr>
                     ) : filtered.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="px-5 py-16 text-center text-sm text-gray-400">
-                          Não encontramos nenhum registro.
+                        <td colSpan={7}>
+                          <EmptyState icon={Users} title="Não encontramos nenhum registro" />
                         </td>
                       </tr>
                     ) : (

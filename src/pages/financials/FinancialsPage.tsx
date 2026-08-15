@@ -1,5 +1,5 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, Search, DollarSign, TrendingUp, TrendingDown, Trash2,
@@ -24,10 +24,9 @@ import { openExportWindow } from '@/lib/exportUtils'
 import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib/expenseUtils'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, BarChart, Bar,
-} from 'recharts'
+const RevenueExpenseLineChart = lazy(() => import('./FinancialsCharts').then(m => ({ default: m.RevenueExpenseLineChart })))
+const AnnualRevenueBarChart = lazy(() => import('./FinancialsCharts').then(m => ({ default: m.AnnualRevenueBarChart })))
+const ChartFallback = () => <div className="h-full min-h-[160px] animate-pulse bg-slate-100 dark:bg-dark-700 rounded-xl" />
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ExpenseCategory = 'process' | 'travel' | 'food' | 'transport' | 'accommodation' | 'other'
@@ -937,19 +936,9 @@ export function FinancialsPage() {
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-primary-500 inline-block" />Receita</span>
               <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-full bg-red-400 inline-block" />Despesa</span>
             </div>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" strokeOpacity={0.5} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(0)}k` : '0'} axisLine={false} tickLine={false} />
-                <Tooltip
-                  formatter={(v: number) => formatCurrency(v)}
-                  contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '10px', fontSize: 12 }}
-                />
-                <Line type="monotone" dataKey="receita" name="Receita" stroke="#0f172a" strokeWidth={2} dot={{ fill: '#0f172a', r: 3 }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="despesa" name="Despesa" stroke="#94a3b8" strokeWidth={2} dot={{ fill: '#94a3b8', r: 3 }} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            <Suspense fallback={<ChartFallback />}>
+              <RevenueExpenseLineChart data={chartData} />
+            </Suspense>
             {/* Month labels row */}
             <div className="flex justify-between text-[10px] text-slate-400 mt-1 px-1">
               {chartData.map(d => <span key={d.month}>{d.month}</span>)}
@@ -1706,17 +1695,9 @@ export function FinancialsPage() {
             </div>
             <Card className="p-5">
               <h3 className="font-semibold text-slate-900 dark:text-white mb-4 text-sm">Receitas vs Despesas — {selectedYear}</h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={monthlyData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} tickFormatter={v => v > 0 ? `${(v / 1000).toFixed(0)}k` : '0'} />
-                  <Tooltip formatter={(v: number) => formatCurrency(v)} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="receitas" name="Receitas" fill="#0f172a" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="despesas" name="Despesas" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <Suspense fallback={<ChartFallback />}>
+                <AnnualRevenueBarChart data={monthlyData} />
+              </Suspense>
             </Card>
             <Card className="overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 dark:border-dark-700">

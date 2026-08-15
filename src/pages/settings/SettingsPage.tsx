@@ -5,7 +5,7 @@ import {
   History, Plus, Pencil, Trash2,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Input, Select } from '@/components/ui'
+import { Button, Card, Input, Select, EmptyState } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
@@ -528,7 +528,7 @@ export function SettingsPage() {
                   {auditLoading ? (
                     <p className="text-sm text-gray-400 text-center py-10">Carregando...</p>
                   ) : auditLog.length === 0 ? (
-                    <p className="text-sm text-gray-400 text-center py-10">Nenhum registro de auditoria ainda.</p>
+                    <EmptyState icon={History} title="Nenhum registro de auditoria ainda" />
                   ) : auditLog.map(entry => {
                     const meta = ACTION_META[entry.action]
                     const Icon = meta.icon

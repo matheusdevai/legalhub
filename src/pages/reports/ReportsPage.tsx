@@ -1,5 +1,5 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import {
   BarChart2, Download, Trophy, TrendingUp, Briefcase, Users, Scale,
   Award, CheckCircle2, XCircle, RotateCcw, Activity, FileCheck, UserCheck,
@@ -10,10 +10,10 @@ import { Card, Badge, Spinner, EmptyState, StatsCard } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador, Process, Profile, Client, Task } from '@/types'
 import { cn, formatDate, PROCESS_STATUS_COLORS } from '@/lib/utils'
-import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, PieChart, Pie, Cell as PieCell,
-} from 'recharts'
+const AgilityDonutChart = lazy(() => import('./ReportsCharts').then(m => ({ default: m.AgilityDonutChart })))
+const OutcomesDonutChart = lazy(() => import('./ReportsCharts').then(m => ({ default: m.OutcomesDonutChart })))
+const ProcessesByMonthBarChart = lazy(() => import('./ReportsCharts').then(m => ({ default: m.ProcessesByMonthBarChart })))
+const ChartFallback = () => <div className="h-full min-h-[160px] animate-pulse bg-slate-100 dark:bg-dark-700 rounded-xl" />
 import {
   computeAgilityMetrics, agilityPerUser, overdueTasksByType,
   scoreLabel, scoreColorClass, formatDelayDays, avgDelayDays, isCompletedOnTime, isOverdue,
@@ -23,7 +23,6 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 const MONTHS_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
-const COLORS = ['#0f172a','#94a3b8','#7c3aed','#3b82f6','#10b981','#f59e0b','#ec4899','#06b6d4','#8b5cf6','#f97316']
 
 type ActiveTab = 'agilidade' | 'produtividade' | 'resultados' | 'ranking'
 type ProductivityPeriod = 'day' | 'week' | 'month'
@@ -296,26 +295,9 @@ export function ReportsPage() {
                 <div className="flex items-center gap-6">
                   {/* Donut */}
                   <div className="flex-shrink-0">
-                    <ResponsiveContainer width={200} height={160}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Em dia', value: globalMetrics.onTime, fill: '#10b981' },
-                            { name: 'Com atraso', value: globalMetrics.late, fill: '#f59e0b' },
-                            { name: 'Pendentes', value: globalMetrics.pending, fill: '#6366f1' },
-                            { name: 'Vencidas', value: globalMetrics.overdue, fill: '#ef4444' },
-                            ...(globalMetrics.total === 0 ? [{ name: 'Sem dados', value: 1, fill: '#e5e7eb' }] : []),
-                          ]}
-                          cx="50%" cy="50%" innerRadius={45} outerRadius={72}
-                          dataKey="value" startAngle={90} endAngle={-270}
-                        >
-                          {[{ fill: '#10b981' }, { fill: '#f59e0b' }, { fill: '#6366f1' }, { fill: '#ef4444' }, { fill: '#e5e7eb' }].map((c, i) => (
-                            <PieCell key={i} fill={c.fill} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(v, n) => [`${v} tarefa(s)`, n]} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <Suspense fallback={<ChartFallback />}>
+                      <AgilityDonutChart metrics={globalMetrics} />
+                    </Suspense>
                   </div>
 
                   {/* Legend */}
@@ -553,14 +535,9 @@ export function ReportsPage() {
                 <Card className="p-5">
                   <h3 className="text-sm font-bold text-slate-800 dark:text-white mb-4">Distribuição de Resultados</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <ResponsiveContainer width="100%" height={180}>
-                      <PieChart>
-                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} dataKey="value" label={({ name, percent }) => `${name} ${Math.round(percent * 100)}%`} labelLine={false} fontSize={11}>
-                          {pieData.map((e, i) => <PieCell key={i} fill={e.color} />)}
-                        </Pie>
-                        <Tooltip formatter={(v) => [`${v} processo(s)`]} contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-                      </PieChart>
-                    </ResponsiveContainer>
+                    <Suspense fallback={<ChartFallback />}>
+                      <OutcomesDonutChart data={pieData} />
+                    </Suspense>
                     <div className="space-y-3">
                       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Por Colaborador</p>
                       {stats.filter(s => s.id !== 'none' && (s.won + s.lost + s.returned) > 0).map(s => {
@@ -731,18 +708,12 @@ export function ReportsPage() {
               {chartData.length > 0 && stats.filter(s => s.id !== 'none' && s.total > 0).length > 0 && (
                 <Card className="p-5">
                   <div className="flex items-center gap-2 mb-4"><TrendingUp className="w-5 h-5 text-primary-600" /><h2 className="font-semibold text-slate-900 dark:text-white">Processos por Mês — {selectedYear}</h2></div>
-                  <ResponsiveContainer width="100%" height={240}>
-                    <BarChart data={chartData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                      <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                      <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} allowDecimals={false} />
-                      <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      {stats.filter(s => s.id !== 'none' && s.total > 0).slice(0, 6).map((s, i) => (
-                        <Bar key={s.id} dataKey={s.nome.split(' ')[0]} fill={COLORS[i % COLORS.length]} radius={[4, 4, 0, 0]} />
-                      ))}
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <Suspense fallback={<ChartFallback />}>
+                    <ProcessesByMonthBarChart
+                      data={chartData}
+                      seriesNames={stats.filter(s => s.id !== 'none' && s.total > 0).slice(0, 6).map(s => s.nome.split(' ')[0])}
+                    />
+                  </Suspense>
                 </Card>
               )}
             </div>
