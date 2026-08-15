@@ -36,7 +36,7 @@ async function syncProcessCalendarEvents(opts: {
   async function upsertOrRemove(type: 'deadline' | 'hearing', value: string | null) {
     const existingId = existingByType[type]
     if (!value) {
-      if (existingId) await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', existingId)
+      if (existingId) await withErrorFeedback(supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', existingId), 'Erro ao remover evento da agenda')
       return
     }
     const date = value.slice(0, 10)
@@ -46,8 +46,8 @@ async function syncProcessCalendarEvents(opts: {
       type, date, time, process_id: processId, process_number: processNumber || null,
       client_name: clientName || null, status: 'scheduled',
     }
-    if (existingId) await supabase.from('calendar_events').update(payload).eq('id', existingId)
-    else await supabase.from('calendar_events').insert(payload)
+    if (existingId) await withErrorFeedback(supabase.from('calendar_events').update(payload).eq('id', existingId), 'Erro ao atualizar evento na agenda')
+    else await withErrorFeedback(supabase.from('calendar_events').insert(payload), 'Erro ao criar evento na agenda')
   }
 
   await Promise.all([
@@ -352,7 +352,7 @@ export function ProcessesPage() {
     const value = parseInt(metaInput, 10)
     if (!tenant || !value || value <= 0) return
     setSavingMeta(true)
-    const { error } = await supabase.from('tenants').update({ meta_fechamentos_mensal: value }).eq('id', tenant.id)
+    const { error } = await withErrorFeedback(supabase.from('tenants').update({ meta_fechamentos_mensal: value }).eq('id', tenant.id), 'Erro ao salvar meta')
     setSavingMeta(false)
     if (!error) { setTenant({ ...tenant, meta_fechamentos_mensal: value }); setEditingMeta(false) }
   }

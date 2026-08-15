@@ -189,7 +189,7 @@ function DashConfiguracoes() {
   )
 }
 
-function timeAgo(dateStr?: string | null): string {
+export function timeAgo(dateStr?: string | null): string {
   if (!dateStr) return ''
   const date = new Date(dateStr)
   const now = new Date()
@@ -204,7 +204,7 @@ function timeAgo(dateStr?: string | null): string {
   return `${days} dias atrás`
 }
 
-function taskTime(task: Task): { label: string; isOverdue: boolean } {
+export function taskTime(task: Task): { label: string; isOverdue: boolean } {
   const today = new Date().toISOString().split('T')[0]
   const due = task.due_date ? String(task.due_date).split('T')[0] : null
   if (!due) return { label: timeAgo(task.created_at), isOverdue: false }
