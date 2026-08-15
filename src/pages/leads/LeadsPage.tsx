@@ -17,6 +17,7 @@ import { formatDate, formatPhone, formatCurrency, LEAD_STATUS_COLORS, LEAD_STATU
 import { useAuth } from '@/contexts/AuthContext'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 // ─── Extended types ────────────────────────────────────────────────────────────
 interface ExtLead extends Lead {
@@ -239,26 +240,27 @@ export function LeadsPage() {
       whatsapp_account_id: leadForm.whatsapp_account_id || null,
     }
     delete payload.lead_score_label
-    if (editLeadId) {
-      await supabase.from('leads').update(payload).eq('id', editLeadId)
-    } else {
-      await supabase.from('leads').insert(payload)
-    }
+    const { error } = editLeadId
+      ? await withErrorFeedback(supabase.from('leads').update(payload).eq('id', editLeadId), 'Erro ao atualizar lead')
+      : await withErrorFeedback(supabase.from('leads').insert(payload), 'Erro ao criar lead')
     setSaving(false)
+    if (error) return
     setLeadModal(false)
     load()
   }
 
   async function deleteLead(id: string) {
     if (!(await confirmDialog('Excluir este lead?'))) return
-    await supabase.from('leads').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('leads').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir lead')
+    if (error) return
     if (detailLead?.id === id) setDetailLead(null)
     load()
   }
 
   async function updateLeadStatus(id: string, status: string) {
     const converted_at = status === 'won' ? new Date().toISOString() : null
-    await supabase.from('leads').update({ status, converted_at }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('leads').update({ status, converted_at }).eq('id', id), 'Erro ao atualizar status do lead')
+    if (error) return
     load()
     if (detailLead?.id === id) setDetailLead(prev => prev ? { ...prev, status: status as any, converted_at } : null)
   }
@@ -297,7 +299,7 @@ export function LeadsPage() {
     if (error) { toast('Erro ao converter lead em cliente: ' + error.message, 'error'); return }
     const clientId = (data?.id as string | undefined) ?? null
     const converted_at = new Date().toISOString()
-    await supabase.from('leads').update({ status: 'won', converted_at, converted_client_id: clientId }).eq('id', lead.id)
+    await withErrorFeedback(supabase.from('leads').update({ status: 'won', converted_at, converted_client_id: clientId }).eq('id', lead.id), 'Cliente criado, mas erro ao marcar lead como convertido')
     setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: 'won', converted_at, converted_client_id: clientId } : l))
     setDetailLead(prev => prev && prev.id === lead.id ? { ...prev, status: 'won', converted_at, converted_client_id: clientId } : prev)
     navigate('/clientes')
@@ -307,17 +309,18 @@ export function LeadsPage() {
   async function addInteraction() {
     if (!detailLead || !interactionForm.content.trim()) return
     setAddingInteraction(true)
-    await supabase.from('lead_interactions').insert({
+    const { error } = await withErrorFeedback(supabase.from('lead_interactions').insert({
       lead_id: detailLead.id,
       type: interactionForm.type,
       content: interactionForm.content,
       created_by: profile?.name || profile?.display_name || null,
-    })
-    setInteractionForm({ type: 'note', content: '' })
+    }), 'Erro ao registrar interação')
     setAddingInteraction(false)
+    if (error) return
+    setInteractionForm({ type: 'note', content: '' })
     loadInteractions(detailLead.id)
     // Update last_contact
-    await supabase.from('leads').update({ last_contact: new Date().toISOString().split('T')[0] }).eq('id', detailLead.id)
+    await withErrorFeedback(supabase.from('leads').update({ last_contact: new Date().toISOString().split('T')[0] }).eq('id', detailLead.id), 'Erro ao atualizar último contato')
     load()
   }
 
@@ -352,19 +355,19 @@ export function LeadsPage() {
       total_spend: metaForm.total_spend ? parseFloat(metaForm.total_spend) : null,
       campaigns_count: metaForm.campaigns_count ? parseInt(metaForm.campaigns_count) : null,
     }
-    if (editMetaId) {
-      await supabase.from('meta_accounts').update(payload).eq('id', editMetaId)
-    } else {
-      await supabase.from('meta_accounts').insert(payload)
-    }
+    const { error } = editMetaId
+      ? await withErrorFeedback(supabase.from('meta_accounts').update(payload).eq('id', editMetaId), 'Erro ao atualizar conta Meta')
+      : await withErrorFeedback(supabase.from('meta_accounts').insert(payload), 'Erro ao criar conta Meta')
     setSaving(false)
+    if (error) return
     setMetaModal(false)
     load()
   }
 
   async function deleteMeta(id: string) {
     if (!(await confirmDialog('Excluir esta conta Meta?'))) return
-    await supabase.from('meta_accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('meta_accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir conta Meta')
+    if (error) return
     load()
   }
 
@@ -389,25 +392,26 @@ export function LeadsPage() {
   async function saveWa() {
     if (!waForm.name.trim() || !waForm.phone_number.trim()) return
     setSaving(true)
-    if (editWaId) {
-      await supabase.from('whatsapp_accounts').update(waForm).eq('id', editWaId)
-    } else {
-      await supabase.from('whatsapp_accounts').insert(waForm)
-    }
+    const { error } = editWaId
+      ? await withErrorFeedback(supabase.from('whatsapp_accounts').update(waForm).eq('id', editWaId), 'Erro ao atualizar conta WhatsApp')
+      : await withErrorFeedback(supabase.from('whatsapp_accounts').insert(waForm), 'Erro ao criar conta WhatsApp')
     setSaving(false)
+    if (error) return
     setWaModal(false)
     load()
   }
 
   async function deleteWa(id: string) {
     if (!(await confirmDialog('Excluir esta conta WhatsApp?'))) return
-    await supabase.from('whatsapp_accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('whatsapp_accounts').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir conta WhatsApp')
+    if (error) return
     load()
   }
 
   async function toggleWaStatus(w: WhatsAppAccount) {
     const status = w.status === 'connected' ? 'disconnected' : 'connected'
-    await supabase.from('whatsapp_accounts').update({ status }).eq('id', w.id)
+    const { error } = await withErrorFeedback(supabase.from('whatsapp_accounts').update({ status }).eq('id', w.id), 'Erro ao atualizar status da conta WhatsApp')
+    if (error) return
     load()
   }
 

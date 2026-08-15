@@ -14,6 +14,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 function waLink(phone: string): string | null {
   const digits = phone.replace(/\D/g, '')
@@ -407,7 +408,8 @@ export function CollaboratorsPage() {
 
   async function deleteCollaborator(id: string) {
     if (!(await confirmDialog('Deseja excluir este parceiro?'))) return
-    await supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir parceiro')
+    if (error) return
     load()
   }
 
@@ -427,17 +429,19 @@ export function CollaboratorsPage() {
   }
   async function bulkSetAtivo(ativo: boolean) {
     setBulkWorking(true)
-    await supabase.from('colaboradores').update({ ativo }).in('id', Array.from(selectedIds))
+    const { error } = await withErrorFeedback(supabase.from('colaboradores').update({ ativo }).in('id', Array.from(selectedIds)), 'Erro ao atualizar parceiros selecionados')
     setBulkWorking(false)
     setSelectedIds(new Set())
+    if (error) return
     load()
   }
   async function bulkDelete() {
     if (!(await confirmDialog(`Excluir ${selectedIds.size} parceiro(s) selecionado(s)?`))) return
     setBulkWorking(true)
-    await supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    const { error } = await withErrorFeedback(supabase.from('colaboradores').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds)), 'Erro ao excluir parceiros selecionados')
     setBulkWorking(false)
     setSelectedIds(new Set())
+    if (error) return
     load()
   }
 

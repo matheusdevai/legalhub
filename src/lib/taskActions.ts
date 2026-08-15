@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { Task } from '@/types'
+import { toast } from '@/components/ui/Toast'
 
 export const RECURRENCE_LABELS: Record<string, string> = {
   weekly: 'Semanalmente',
@@ -33,7 +34,11 @@ export function nextRecurrenceDueDate(dueDate: string, interval: string | null):
 // ─── Concluir tarefa (com disparo de recorrência + aviso a quem atribuiu) ──────
 export async function markTaskDone(task: Task): Promise<{ completed_at: string }> {
   const completed_at = new Date().toISOString()
-  await supabase.from('tasks').update({ status: 'done', completed_at }).eq('id', task.id)
+  const { error } = await supabase.from('tasks').update({ status: 'done', completed_at }).eq('id', task.id)
+  if (error) {
+    toast(`Erro ao concluir tarefa: ${error.message}`, 'error')
+    throw error
+  }
 
   if (task.created_by && task.created_by !== task.assigned_to) {
     await notifyTaskCompletion(task.created_by, task.title)
@@ -43,7 +48,7 @@ export async function markTaskDone(task: Task): Promise<{ completed_at: string }
     const nextDueDate = nextRecurrenceDueDate(task.due_date, task.recurrence_interval)
     const pastEnd = !!task.recurrence_end_date && !!nextDueDate && nextDueDate > task.recurrence_end_date.slice(0, 10)
     if (nextDueDate && !pastEnd) {
-      await supabase.from('tasks').insert({
+      const { error: recurError } = await supabase.from('tasks').insert({
         title: task.title,
         description: task.description,
         process_id: task.process_id,
@@ -60,6 +65,7 @@ export async function markTaskDone(task: Task): Promise<{ completed_at: string }
         recurrence_interval: task.recurrence_interval,
         recurrence_end_date: task.recurrence_end_date,
       })
+      if (recurError) toast(`Erro ao gerar próxima ocorrência recorrente: ${recurError.message}`, 'error')
     }
   }
 
@@ -102,7 +108,7 @@ export async function ensureProcessDeadlineTask(process: {
   client_id: string | null
 }, previousDeadline: string | null, newDeadline: string | null): Promise<void> {
   if (!newDeadline || newDeadline === previousDeadline) return
-  await supabase.from('tasks').insert({
+  const { error } = await supabase.from('tasks').insert({
     title: `Verificar prazo processual -- ${process.number}`,
     process_id: process.id,
     client_id: process.client_id,
@@ -112,4 +118,5 @@ export async function ensureProcessDeadlineTask(process: {
     type: 'deadline',
     status: 'pending',
   })
+  if (error) toast(`Erro ao criar tarefa de prazo processual: ${error.message}`, 'error')
 }

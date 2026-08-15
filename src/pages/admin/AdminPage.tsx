@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { Tenant, Profile, SystemAnnouncement, SupportTicket } from '@/types'
 import { formatDate, ROLE_LABELS } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 export function AdminPage() {
   const [tenants, setTenants] = useState<Tenant[]>([])
@@ -40,8 +41,9 @@ export function AdminPage() {
   async function saveAnnouncement() {
     if (!announcementForm.title || !announcementForm.message) return
     setSaving(true)
-    await supabase.from('system_announcements').insert(announcementForm)
+    const { error } = await withErrorFeedback(supabase.from('system_announcements').insert(announcementForm), 'Erro ao criar anúncio')
     setSaving(false)
+    if (error) return
     setAnnouncementModal(false)
     setAnnouncementForm({ title: '', message: '', type: 'info' })
     load()
@@ -49,12 +51,14 @@ export function AdminPage() {
 
   async function deleteAnnouncement(id: string) {
     if (!(await confirmDialog('Excluir este anúncio?'))) return
-    await supabase.from('system_announcements').delete().eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('system_announcements').delete().eq('id', id), 'Erro ao excluir anúncio')
+    if (error) return
     load()
   }
 
   async function updateTicketStatus(id: string, status: string) {
-    await supabase.from('support_tickets').update({ status }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('support_tickets').update({ status }).eq('id', id), 'Erro ao atualizar status do chamado')
+    if (error) return
     load()
   }
 

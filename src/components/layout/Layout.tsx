@@ -7,6 +7,7 @@ import { Sidebar } from './Sidebar'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 import type { Notification } from '@/types'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -161,16 +162,17 @@ export function Layout({ children }: LayoutProps) {
 
   async function markAsRead(n: Notification) {
     if (!n.read) {
-      await supabase.from('notifications').update({ read: true }).eq('id', n.id)
-      setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x))
+      const { error } = await withErrorFeedback(supabase.from('notifications').update({ read: true }).eq('id', n.id), 'Erro ao marcar notificação como lida')
+      if (!error) setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read: true } : x))
     }
     if (n.link) { setNotifOpen(false); navigate(n.link) }
   }
 
   async function markAllAsRead() {
     if (!profile?.user_id) return
-    await supabase.from('notifications').update({ read: true })
-      .eq('user_id', profile.user_id).eq('read', false)
+    const { error } = await withErrorFeedback(supabase.from('notifications').update({ read: true })
+      .eq('user_id', profile.user_id).eq('read', false), 'Erro ao marcar notificações como lidas')
+    if (error) return
     setNotifications(prev => prev.map(x => ({ ...x, read: true })))
   }
 

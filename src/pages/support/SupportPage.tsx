@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { SupportTicket } from '@/types'
 import { formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 const STATUS_META: Record<string, { label: string; badge: string; icon: any }> = {
   open:        { label: 'Aberto',       badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',     icon: Clock },
@@ -57,22 +58,24 @@ export function SupportPage() {
   async function createTicket() {
     if (!subject.trim() || !message.trim()) return
     setSaving(true)
-    const { data: ticket } = await supabase.from('support_tickets').insert({
+    const { data: ticket, error } = await withErrorFeedback(supabase.from('support_tickets').insert({
       user_id: user?.id,
       user_email: profile?.email,
       user_name: profile?.name || profile?.display_name,
       subject,
       status: 'open',
-    }).select().single()
+    }).select().single(), 'Erro ao abrir chamado')
+
+    if (error) { setSaving(false); return }
 
     if (ticket) {
-      await supabase.from('support_messages').insert({
+      await withErrorFeedback(supabase.from('support_messages').insert({
         ticket_id: ticket.id,
         sender_id: user?.id,
         sender_name: profile?.name || profile?.display_name || 'Usuário',
         sender_role: 'user',
         content: message,
-      })
+      }), 'Chamado aberto, mas erro ao salvar a mensagem inicial')
     }
 
     setSaving(false)

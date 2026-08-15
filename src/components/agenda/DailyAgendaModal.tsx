@@ -5,6 +5,7 @@ import {
   ArrowRight, CheckCircle2, Sparkles, Sun, Sunset, Moon, CreditCard,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn, formatCurrency } from '@/lib/utils'
 
@@ -181,7 +182,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
     const today = new Date().toISOString().slice(0, 10)
     const key = `lawfy_daily_notif_${today}_${profile.user_id}`
     if (localStorage.getItem(key)) return
-    await supabase.from('notifications').insert(
+    const { error } = await withErrorFeedback(supabase.from('notifications').insert(
       agenda.map(item => ({
         user_id: profile.user_id,
         type: KIND_META[item.kind].notifType,
@@ -190,8 +191,9 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
         read: false,
         link: item.link,
       }))
-    )
-    localStorage.setItem(key, '1')
+    ), 'Erro ao criar notificações da agenda do dia')
+    // Só marca como feito se a gravação deu certo — senão nunca mais tenta de novo hoje.
+    if (!error) localStorage.setItem(key, '1')
   }
 
   function goTo(link: string) { onClose(); navigate(link) }

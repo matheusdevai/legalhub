@@ -21,6 +21,7 @@ import { fetchCitiesByState } from '@/lib/ibgeUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
@@ -245,7 +246,7 @@ export function ClientsPage() {
   async function saveTask() {
     if (!taskForm.title.trim()) return
     setSaving(true)
-    await supabase.from('tasks').insert({
+    const { error } = await withErrorFeedback(supabase.from('tasks').insert({
       title: taskForm.title,
       description: taskForm.description || null,
       due_date: taskForm.due_date || null,
@@ -256,9 +257,10 @@ export function ClientsPage() {
       assigned_to: taskForm.assigned_to || null,
       assigned_name: taskForm.assigned_name || null,
       created_by: profile?.user_id || null,
-    })
-    if (taskForm.assigned_to) await notifyTaskAssignment(taskForm.assigned_to, taskForm.title)
+    }), 'Erro ao criar tarefa')
     setSaving(false)
+    if (error) return
+    if (taskForm.assigned_to) await notifyTaskAssignment(taskForm.assigned_to, taskForm.title)
     closeTaskModal()
   }
   const [cpfLoading, setCpfLoading] = useState(false)
@@ -781,18 +783,18 @@ export function ClientsPage() {
         .from('financials').select('id').eq('client_id', clientId).eq('category', 'comissao')
         .is('deleted_at', null).maybeSingle()
       if (existing) {
-        await supabase.from('financials').update({
+        await withErrorFeedback(supabase.from('financials').update({
           description: descricao, amount: valorNum,
           paid_date: form.colaborador_pago_data || null, due_date: form.colaborador_pago_data || null,
           status: 'paid', client_name: form.name,
-        }).eq('id', existing.id)
+        }).eq('id', existing.id), 'Erro ao atualizar comissão do parceiro')
       } else {
-        await supabase.from('financials').insert({
+        await withErrorFeedback(supabase.from('financials').insert({
           type: 'payable', category: 'comissao', description: descricao,
           amount: valorNum, client_id: clientId, client_name: form.name,
           paid_date: form.colaborador_pago_data || null, due_date: form.colaborador_pago_data || null,
           status: 'paid', notes: col ? `Colaborador: ${col.nome}` : null,
-        })
+        }), 'Erro ao registrar comissão do parceiro')
       }
     }
 
@@ -800,7 +802,7 @@ export function ClientsPage() {
       const valorPago = parseFloat(form.processo_pago_valor)
       if (valorPago > 0) {
         const catLabel: Record<string, string> = { fees: 'Honorários', costs: 'Custas', other: 'Outros' }
-        await supabase.from('financials').insert({
+        await withErrorFeedback(supabase.from('financials').insert({
           type: 'receivable',
           category: form.processo_categoria || 'fees',
           description: `${catLabel[form.processo_categoria] || 'Honorários'} — ${form.name}`,
@@ -811,7 +813,7 @@ export function ClientsPage() {
           due_date: form.processo_pago_data || null,
           status: 'paid',
           notes: 'Registrado automaticamente no cadastro do cliente',
-        })
+        }), 'Erro ao registrar honorário do cliente')
       }
     }
 
@@ -846,7 +848,8 @@ export function ClientsPage() {
 
   async function deleteClient(id: string) {
     if (!(await confirmDialog('Deseja excluir este cliente?'))) return
-    await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir cliente')
+    if (error) return
     load()
   }
 
@@ -979,25 +982,28 @@ export function ClientsPage() {
   }
   async function bulkSetStatus(status: string) {
     setBulkWorking(true)
-    await supabase.from('clients').update({ status }).in('id', Array.from(selectedIds))
+    const { error } = await withErrorFeedback(supabase.from('clients').update({ status }).in('id', Array.from(selectedIds)), 'Erro ao atualizar status dos clientes selecionados')
     setBulkWorking(false)
     setSelectedIds(new Set())
+    if (error) return
     load()
   }
   async function bulkAssignLawyer(userId: string) {
     setBulkWorking(true)
     const user = systemUsers.find(u => u.user_id === userId)
-    await supabase.from('clients').update({ assigned_lawyer: user ? (user.name || user.display_name || null) : null }).in('id', Array.from(selectedIds))
+    const { error } = await withErrorFeedback(supabase.from('clients').update({ assigned_lawyer: user ? (user.name || user.display_name || null) : null }).in('id', Array.from(selectedIds)), 'Erro ao atribuir responsável aos clientes selecionados')
     setBulkWorking(false)
     setSelectedIds(new Set())
+    if (error) return
     load()
   }
   async function bulkDelete() {
     if (!(await confirmDialog(`Excluir ${selectedIds.size} cliente(s) selecionado(s)?`))) return
     setBulkWorking(true)
-    await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds))
+    const { error } = await withErrorFeedback(supabase.from('clients').update({ deleted_at: new Date().toISOString() }).in('id', Array.from(selectedIds)), 'Erro ao excluir clientes selecionados')
     setBulkWorking(false)
     setSelectedIds(new Set())
+    if (error) return
     load()
   }
   function bulkExport() {

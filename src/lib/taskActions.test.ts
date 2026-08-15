@@ -126,6 +126,19 @@ describe('markTaskDone — avisa quem atribuiu a tarefa, quando concluída', () 
   })
 })
 
+describe('markTaskDone — não notifica nem gera recorrência se a escrita falhar', () => {
+  beforeEach(() => { insertMock.mockClear(); updateEqMock.mockClear(); rpcMock.mockClear() })
+
+  it('lança o erro e não chama insert (recorrência) nem rpc (notificação) quando o update falha', async () => {
+    updateEqMock.mockResolvedValueOnce({ error: { message: 'permissão negada' } })
+    const { markTaskDone } = await import('./taskActions')
+    await expect(markTaskDone(baseTask({ recurring: true, created_by: 'admin-1', assigned_to: 'lawyer-2' })))
+      .rejects.toEqual({ message: 'permissão negada' })
+    expect(insertMock).not.toHaveBeenCalled()
+    expect(rpcMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('displayTaskDescription', () => {
   it('remove o prefixo client_id:{uuid} | usado internamente pra pré-preencher o cliente', () => {
     expect(displayTaskDescription('client_id:c48cd9fd-ff1b-462b-b50d-1221ed245234 | Cadastrado em 19/05/2026. Verificar documentação e iniciar processo'))

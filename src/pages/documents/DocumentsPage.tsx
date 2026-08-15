@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 interface Document {
   id: string
@@ -139,10 +140,13 @@ export function DocumentsPage() {
   async function save() {
     if (!form.title.trim()) return
     setSaving(true)
+    let error: { message: string } | null = null
     if (editingLibrary) {
       const payload = { title: form.title, type: form.type, category: form.category || null, content: form.content }
-      if (editId) await supabase.from('document_library_templates').update(payload).eq('id', editId)
-      else await supabase.from('document_library_templates').insert(payload)
+      const res = editId
+        ? await withErrorFeedback(supabase.from('document_library_templates').update(payload).eq('id', editId), 'Erro ao atualizar modelo')
+        : await withErrorFeedback(supabase.from('document_library_templates').insert(payload), 'Erro ao criar modelo')
+      error = res.error
     } else {
       const payload = {
         title: form.title, type: form.type,
@@ -150,23 +154,29 @@ export function DocumentsPage() {
         is_template: form.type === 'template',
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
       }
-      if (editId) await supabase.from('documents').update(payload).eq('id', editId)
-      else await supabase.from('documents').insert(payload)
+      const res = editId
+        ? await withErrorFeedback(supabase.from('documents').update(payload).eq('id', editId), 'Erro ao atualizar documento')
+        : await withErrorFeedback(supabase.from('documents').insert(payload), 'Erro ao criar documento')
+      error = res.error
     }
-    setSaving(false); setModalOpen(false)
+    setSaving(false)
+    if (error) return
+    setModalOpen(false)
     setForm({ title: '', type: 'template', category: '', content: '', tags: '' })
     setEditId(null); setEditingLibrary(false); load()
   }
 
   async function deleteDoc(id: string) {
     if (!(await confirmDialog('Deseja excluir este documento?'))) return
-    await supabase.from('documents').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('documents').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir documento')
+    if (error) return
     load()
   }
 
   async function deleteLibraryTemplate(id: string) {
     if (!(await confirmDialog('Excluir este modelo da Biblioteca Pública? Ele deixará de ficar visível para todos os escritórios.'))) return
-    await supabase.from('document_library_templates').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('document_library_templates').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir modelo')
+    if (error) return
     load()
   }
 

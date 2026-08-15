@@ -24,6 +24,7 @@ import { openExportWindow } from '@/lib/exportUtils'
 import { useAuth } from '@/contexts/AuthContext'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar'
@@ -221,7 +222,8 @@ export function CalendarPage() {
           start: { date: ev.date },
           end: { date: ev.date },
         })
-        await supabase.from('calendar_events').update({ google_event_id: created.id, sync_google: true }).eq('id', ev.id)
+        const { error } = await withErrorFeedback(supabase.from('calendar_events').update({ google_event_id: created.id, sync_google: true }).eq('id', ev.id), 'Erro ao sincronizar evento com o Google Agenda')
+        if (error) continue
         setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, google_event_id: created.id, sync_google: true } : e))
       } catch { /* tenta de novo no próximo carregamento */ }
     }
@@ -235,7 +237,7 @@ export function CalendarPage() {
       .not('google_event_id', 'is', null)
     for (const o of orphaned || []) {
       try { await gcalRequest(`/calendars/primary/events/${o.google_event_id}`, 'DELETE', token) } catch { /* pode já ter sido removido */ }
-      await supabase.from('calendar_events').update({ google_event_id: null, sync_google: false }).eq('id', o.id)
+      await withErrorFeedback(supabase.from('calendar_events').update({ google_event_id: null, sync_google: false }).eq('id', o.id), 'Erro ao remover evento do Google Agenda')
     }
   }, [uid])
 
@@ -401,13 +403,15 @@ export function CalendarPage() {
     if (ev?.google_event_id && token) {
       try { await gcalRequest(`/calendars/primary/events/${ev.google_event_id}`, 'DELETE', token) } catch {}
     }
-    await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir evento')
+    if (error) return
     setSelectedEvent(null)
     load()
   }
 
   async function markDone(id: string) {
-    await supabase.from('calendar_events').update({ status: 'completed' }).eq('id', id)
+    const { error } = await withErrorFeedback(supabase.from('calendar_events').update({ status: 'completed' }).eq('id', id), 'Erro ao concluir evento')
+    if (error) return
     setSelectedEvent(null)
     load()
   }

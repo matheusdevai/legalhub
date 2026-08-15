@@ -20,6 +20,7 @@ import { Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'ia' | 'configuracoes'
 
@@ -485,7 +486,7 @@ export function Dashboard() {
   async function saveQuickTask() {
     if (!quickTaskForm.title.trim()) return
     setQuickTaskSaving(true)
-    await supabase.from('tasks').insert({
+    const { error } = await withErrorFeedback(supabase.from('tasks').insert({
       title: quickTaskForm.title.trim(),
       description: quickTaskForm.description || null,
       due_date: quickTaskForm.due_date || null,
@@ -494,9 +495,10 @@ export function Dashboard() {
       status: 'pending',
       assigned_to: profile?.user_id || null,
       assigned_name: profile?.name || profile?.display_name || null,
-    })
+    }), 'Erro ao criar tarefa')
     // Tarefa rápida sempre é atribuída ao próprio usuário, então não precisa notificar.
     setQuickTaskSaving(false)
+    if (error) return
     setQuickTaskOpen(false)
     setQuickTaskForm(EMPTY_QUICK_TASK)
     // reload tasks list
@@ -523,7 +525,8 @@ export function Dashboard() {
   }
 
   async function deleteTask(taskId: string) {
-    await supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', taskId)
+    const { error } = await withErrorFeedback(supabase.from('tasks').update({ deleted_at: new Date().toISOString() }).eq('id', taskId), 'Erro ao excluir tarefa')
+    if (error) return
     setListaTasks(prev => prev.filter(t => t.id !== taskId))
     setQuadroTasks(prev => prev.filter(t => t.id !== taskId))
     setTasks(prev => prev.filter(t => t.id !== taskId))

@@ -111,7 +111,7 @@ export function Login() {
     e.preventDefault()
     setChatSending(true)
     try {
-      await supabase.from('support_tickets').insert({
+      const { error } = await supabase.from('support_tickets').insert({
         tenant_id: null,
         user_id: null,
         user_email: chatEmail,
@@ -119,6 +119,7 @@ export function Login() {
         subject: chatMsg.slice(0, 120),
         status: 'open',
       })
+      if (error) throw error
     } catch {
       window.open(
         `mailto:contato@legalhub.com.br?subject=Contato via site&body=Nome: ${encodeURIComponent(chatName)}%0AEmail: ${encodeURIComponent(chatEmail)}%0AMensagem: ${encodeURIComponent(chatMsg)}`

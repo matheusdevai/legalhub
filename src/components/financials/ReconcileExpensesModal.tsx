@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Receipt, ArrowRight } from 'lucide-react'
 import { Modal, Button, Input } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 import { formatCurrency, formatDate, cn } from '@/lib/utils'
 import { Financial } from '@/types'
 
@@ -67,17 +68,19 @@ export function ReconcileExpensesModal({ open, onClose, clientId, clientName, on
       ? `Honorário bruto: ${formatCurrency(gross)}. Gastos descontados (${selectedExpenses.length}): ${formatCurrency(selectedTotal)}. Líquido: ${formatCurrency(net)}.`
       : `Honorário: ${formatCurrency(gross)}. Nenhum gasto descontado.`
 
-    const { data: created, error } = await supabase.from('financials').insert({
+    const { data: created, error } = await withErrorFeedback(supabase.from('financials').insert({
       type: 'receivable', category: 'fees', description: description.trim(),
       amount: net, due_date: dueDate || null, status: 'pending',
       client_id: clientId, client_name: clientName,
       notes: breakdown,
-    }).select().single()
+    }).select().single(), 'Erro ao lançar honorário')
 
-    if (!error && created && selectedExpenses.length > 0) {
-      await supabase.from('financials')
+    if (error) { setSaving(false); return }
+
+    if (created && selectedExpenses.length > 0) {
+      await withErrorFeedback(supabase.from('financials')
         .update({ reconciled: true, reconciled_in_id: created.id })
-        .in('id', selectedExpenses.map(e => e.id))
+        .in('id', selectedExpenses.map(e => e.id)), 'Honorário lançado, mas erro ao marcar gastos como reconciliados')
     }
     setSaving(false)
     onDone()

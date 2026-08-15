@@ -11,6 +11,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
 import { NotificationPrefs } from '@/types'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   new_tasks: true, task_due: true, new_processes: false,
@@ -99,11 +100,12 @@ export function SettingsPage() {
   async function saveProfile() {
     if (!profile) return
     setSaving(true)
-    await supabase.from('profiles').update({ name, city, phone }).eq('id', profile.id)
+    const { error } = await withErrorFeedback(supabase.from('profiles').update({ name, city, phone }).eq('id', profile.id), 'Erro ao salvar perfil')
+    setSaving(false)
+    if (error) return
     await refreshProfile()
     setSaved(true)
     setTimeout(() => setSaved(false), 3000)
-    setSaving(false)
   }
 
   async function toggleNotification(key: keyof NotificationPrefs) {
@@ -111,9 +113,10 @@ export function SettingsPage() {
     const next = { ...notifPrefs, [key]: !notifPrefs[key] }
     setNotifPrefs(next)
     setSavingNotifKey(key)
-    await supabase.from('profiles').update({ notification_prefs: next }).eq('id', profile.id)
-    await refreshProfile()
+    const { error } = await withErrorFeedback(supabase.from('profiles').update({ notification_prefs: next }).eq('id', profile.id), 'Erro ao salvar preferência de notificação')
     setSavingNotifKey(null)
+    if (error) return
+    await refreshProfile()
   }
 
   async function loadAuditLog(limit = auditLimit) {

@@ -8,6 +8,7 @@ import {
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, EmptyState, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
+import { withErrorFeedback } from '@/lib/errorFeedback'
 import { Profile } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate } from '@/lib/utils'
@@ -197,14 +198,15 @@ export function UsersPage() {
   async function saveAccount() {
     if (!profile?.id) return
     setSavingAccount(true)
-    await supabase.from('profiles').update({
+    const { error } = await withErrorFeedback(supabase.from('profiles').update({
       name: tenantName,
       display_name: tenantName,
       oab_number: oabNumber,
       oab_seccional: oabSeccional,
-    }).eq('id', profile.id)
-    await refreshProfile()
+    }).eq('id', profile.id), 'Erro ao salvar dados da conta')
     setSavingAccount(false)
+    if (error) return
+    await refreshProfile()
     setAccountSaved(true)
     setTimeout(() => setAccountSaved(false), 2500)
   }
