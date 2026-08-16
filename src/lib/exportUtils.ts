@@ -3,6 +3,8 @@
 // Gera uma janela de exportação estilizada, consistente em todas as páginas.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { supabase } from '@/lib/supabase'
+
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 
@@ -440,6 +442,18 @@ function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, 
 export function openExportWindow(opts: ExportOptions): void {
   const { title, subtitle, filename, stats, columns, rows, csvContent, groups, sections } = opts
   const date = new Date().toLocaleString('pt-BR')
+
+  // Alarme de exportação em massa (Etapa 3): mais de 500 registros de uma vez
+  // gera aviso ao dono. Único ponto de entrada de exportação do app, então
+  // instrumentar aqui cobre todas as páginas de uma vez.
+  const totalExportedRows = sections
+    ? sections.reduce((sum, s) => sum + s.rows.length, 0)
+    : groups
+    ? groups.reduce((sum, g) => sum + g.rows.length, 0)
+    : rows.length
+  if (totalExportedRows > 500) {
+    supabase.functions.invoke('security-monitor', { body: { acao: 'bulk_access', count: totalExportedRows, context: title } }).catch(() => {})
+  }
   const csvBase64 = btoa(unescape(encodeURIComponent(csvContent)))
   const logoUrl = window.location.origin + '/logomarca.png'
   const driveFileName = `${filename}-${new Date().toISOString().slice(0, 10)}`

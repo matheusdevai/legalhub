@@ -53,6 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // On fresh login, clear the CNJ sync flag so the modal shows again
         if (event === 'SIGNED_IN') {
           sessionStorage.removeItem(`lawfy_cnj_sync_${session.user.id}`)
+          // Registra o login para o monitoramento de segurança (Etapa 2): dispositivo
+          // novo, local novo ou fora do horário de trabalho geram alerta por e-mail
+          // para o dono. Falha aqui nunca deve travar o login do usuário.
+          supabase.functions.invoke('security-monitor', { body: { acao: 'login' } }).catch(() => {})
         }
       } else {
         setProfile(null)
@@ -64,6 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      // Alimenta o alarme de força bruta (Etapa 3): mais de 20 senhas erradas
+      // em 10 min, no total ou para o mesmo e-mail, gera aviso ao dono.
+      supabase.functions.invoke('security-monitor', { body: { acao: 'login_failed', email } }).catch(() => {})
+    }
     return { error: error as Error | null }
   }
 

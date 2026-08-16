@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react'
 import {
   User, Lock, Bell, Building2, CreditCard, Palette, Globe,
   CheckCircle2, AlertCircle, Eye, EyeOff, Shield, Smartphone, Mail,
-  History, Plus, Pencil, Trash2,
+  History, Plus, Pencil, Trash2, ShieldAlert, LogIn, KeyRound, UserCog,
+  Download, ShieldX,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Input, Select, EmptyState } from '@/components/ui'
@@ -27,7 +28,7 @@ const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; icon: any; label: stri
   { key: 'new_clients',      icon: User,       label: 'Novos clientes',           desc: 'Quando um cliente é cadastrado' },
 ]
 
-type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'plan' | 'audit'
+type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'plan' | 'audit' | 'alerts'
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'profile',       label: 'Perfil',         icon: User },
@@ -63,6 +64,67 @@ const ACTION_META: Record<string, { label: string; icon: any; color: string }> =
   delete: { label: 'Excluiu', icon: Trash2, color: 'text-red-500 dark:text-red-400' },
 }
 
+interface SecurityEvent {
+  id: string
+  event_type: string
+  severity: 'info' | 'warning' | 'critical'
+  user_id: string | null
+  user_email: string | null
+  user_name: string | null
+  ip_address: string | null
+  user_agent: string | null
+  detail: Record<string, unknown> | null
+  occurred_at: string
+}
+
+const SECURITY_EVENT_META: Record<string, { label: string; icon: any }> = {
+  login_anomaly: { label: 'Entrada incomum', icon: LogIn },
+  email_changed: { label: 'E-mail de acesso alterado', icon: Mail },
+  password_changed: { label: 'Senha alterada', icon: KeyRound },
+  brute_force: { label: 'Possível força bruta no login', icon: ShieldX },
+  mass_export: { label: 'Exportação/consulta em massa', icon: Download },
+  admin_created: { label: 'Novo administrador criado', icon: UserCog },
+  admin_promoted: { label: 'Usuário promovido a administrador', icon: UserCog },
+  mass_delete: { label: 'Exclusão em massa', icon: Trash2 },
+}
+
+const SEVERITY_META: Record<string, { label: string; badge: string }> = {
+  info: { label: 'Informativo', badge: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
+  warning: { label: 'Atenção', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' },
+  critical: { label: 'Crítico', badge: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' },
+}
+
+// Traduz o evento para uma frase única, em português simples — o painel deve
+// ser entendível sem precisar abrir o campo `detail` (JSON cru).
+function describeSecurityEvent(evt: SecurityEvent): string {
+  const d = evt.detail || {}
+  const quem = evt.user_name || evt.user_email || 'Alguém'
+  switch (evt.event_type) {
+    case 'login_anomaly': {
+      const motivos = Array.isArray(d.motivos) ? (d.motivos as string[]).join('; ') : ''
+      return `${quem} entrou de forma incomum${evt.ip_address ? ` (IP ${evt.ip_address})` : ''}${motivos ? `: ${motivos}` : ''}.`
+    }
+    case 'email_changed':
+      return `${quem} trocou o e-mail de acesso${d.email_antigo && d.email_novo ? ` de ${d.email_antigo} para ${d.email_novo}` : ''}.`
+    case 'password_changed':
+      return `${quem} trocou a senha de acesso.`
+    case 'brute_force':
+      return `Alvo: ${evt.user_email || '—'} · ${d.tentativas_mesmo_usuario ?? '?'} tentativas para o mesmo e-mail, ${d.tentativas_totais ?? '?'} no total em ${d.janela_minutos ?? 10} minutos${evt.ip_address ? ` (IP ${evt.ip_address})` : ''}.`
+    case 'mass_export':
+      return `${quem} exportou/consultou ${d.quantidade ?? '?'} registros de uma vez${d.origem ? ` (${d.origem})` : ''}.`
+    case 'admin_created':
+      return `${quem} foi criado já como ${d.novo_papel === 'super_admin' ? 'super administrador' : 'administrador'}.`
+    case 'admin_promoted':
+      return `${quem} foi promovido a ${d.novo_papel === 'super_admin' ? 'super administrador' : 'administrador'}.`
+    case 'mass_delete':
+      return d.motivo
+        ? `${quem} fez uma exclusão definitiva (fora do padrão do sistema) na tabela ${d.tabela}.`
+        : `${quem} excluiu ${d.quantidade ?? 'vários'} registros em ${d.janela_minutos ?? 10} minutos (tabela: ${d.tabela_do_disparo ?? '—'}).`
+    default:
+      return quem
+  }
+}
+
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
   const { theme, toggleTheme } = useTheme()
@@ -81,6 +143,12 @@ export function SettingsPage() {
   const AUDIT_PAGE_SIZE = 200
   const [auditLimit, setAuditLimit] = useState(AUDIT_PAGE_SIZE)
   const [auditHasMore, setAuditHasMore] = useState(false)
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([])
+  const [securityLoading, setSecurityLoading] = useState(false)
+  const [securityTypeFilter, setSecurityTypeFilter] = useState('')
+  const SECURITY_PAGE_SIZE = 100
+  const [securityLimit, setSecurityLimit] = useState(SECURITY_PAGE_SIZE)
+  const [securityHasMore, setSecurityHasMore] = useState(false)
 
   useEffect(() => {
     if (!profile) return
@@ -138,9 +206,30 @@ export function SettingsPage() {
     loadAuditLog(next)
   }
 
+  async function loadSecurityEvents(limit = securityLimit) {
+    setSecurityLoading(true)
+    let query = supabase.from('security_events').select('*').order('occurred_at', { ascending: false }).limit(limit + 1)
+    if (securityTypeFilter) query = query.eq('event_type', securityTypeFilter)
+    const { data } = await query
+    const rows = (data || []) as SecurityEvent[]
+    setSecurityHasMore(rows.length > limit)
+    setSecurityEvents(rows.slice(0, limit))
+    setSecurityLoading(false)
+  }
+
+  function loadMoreSecurityEvents() {
+    const next = securityLimit + SECURITY_PAGE_SIZE
+    setSecurityLimit(next)
+    loadSecurityEvents(next)
+  }
+
   useEffect(() => {
     if (tab === 'audit' && isAdmin) { setAuditLimit(AUDIT_PAGE_SIZE); loadAuditLog(AUDIT_PAGE_SIZE) }
   }, [tab, auditEntityFilter, isAdmin])
+
+  useEffect(() => {
+    if (tab === 'alerts' && isAdmin) { setSecurityLimit(SECURITY_PAGE_SIZE); loadSecurityEvents(SECURITY_PAGE_SIZE) }
+  }, [tab, securityTypeFilter, isAdmin])
 
   async function changePassword() {
     if (!newPassword || newPassword.length < 6) {
@@ -180,7 +269,10 @@ export function SettingsPage() {
           {/* Sidebar tabs */}
           <div className="w-full lg:w-52 flex-shrink-0">
             <Card className="p-2 overflow-hidden">
-              {[...TABS, ...(isAdmin ? [{ id: 'audit' as Tab, label: 'Auditoria', icon: History }] : [])].map(t => {
+              {[...TABS, ...(isAdmin ? [
+                { id: 'audit' as Tab, label: 'Auditoria', icon: History },
+                { id: 'alerts' as Tab, label: 'Alertas de Segurança', icon: ShieldAlert },
+              ] : [])].map(t => {
                 const Icon = t.icon
                 return (
                   <button
@@ -568,6 +660,77 @@ export function SettingsPage() {
                   </div>
                 )}
               </Card>
+            )}
+
+            {/* ALERTS TAB */}
+            {tab === 'alerts' && isAdmin && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-3">
+                  {(['critical', 'warning', 'info'] as const).map(sev => (
+                    <Card key={sev} className="p-4 text-center">
+                      <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                        {securityEvents.filter(e => e.severity === sev).length}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{SEVERITY_META[sev].label}</p>
+                    </Card>
+                  ))}
+                </div>
+
+                <Card className="overflow-hidden">
+                  <div className="px-6 py-5 border-b border-gray-100 dark:border-dark-700 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-base font-semibold text-gray-900 dark:text-white">Alertas de Segurança</h2>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Entradas incomuns, tentativas de invasão e ações sensíveis, mais recentes primeiro</p>
+                    </div>
+                    <select
+                      value={securityTypeFilter}
+                      onChange={e => setSecurityTypeFilter(e.target.value)}
+                      className="px-3 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300"
+                    >
+                      <option value="">Todos os tipos</option>
+                      {Object.entries(SECURITY_EVENT_META).map(([key, meta]) => (
+                        <option key={key} value={key}>{meta.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="max-h-[560px] overflow-y-auto divide-y divide-gray-50 dark:divide-dark-700">
+                    {securityLoading ? (
+                      <p className="text-sm text-gray-400 text-center py-10">Carregando...</p>
+                    ) : securityEvents.length === 0 ? (
+                      <EmptyState icon={ShieldAlert} title="Nenhum alerta de segurança" description="Ótimo sinal — nada incomum foi detectado até agora." />
+                    ) : securityEvents.map(evt => {
+                      const meta = SECURITY_EVENT_META[evt.event_type] || { label: evt.event_type, icon: ShieldAlert }
+                      const Icon = meta.icon
+                      const sev = SEVERITY_META[evt.severity] || SEVERITY_META.warning
+                      return (
+                        <div key={evt.id} className="px-6 py-3.5 flex items-start gap-3">
+                          <Icon className="w-4 h-4 mt-0.5 flex-shrink-0 text-gray-400" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-semibold text-gray-900 dark:text-white">{meta.label}</span>
+                              <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-bold', sev.badge)}>{sev.label}</span>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mt-0.5">
+                              {describeSecurityEvent(evt)}
+                            </p>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">{formatDate(evt.occurred_at, "dd/MM/yyyy 'às' HH:mm")}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {!securityLoading && securityHasMore && (
+                    <div className="px-6 py-3 border-t border-gray-50 dark:border-dark-700 text-center">
+                      <button
+                        onClick={loadMoreSecurityEvents}
+                        className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                      >
+                        Carregar mais alertas
+                      </button>
+                    </div>
+                  )}
+                </Card>
+              </div>
             )}
 
           </div>
