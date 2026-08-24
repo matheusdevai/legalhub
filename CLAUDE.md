@@ -292,6 +292,8 @@ npm run preview         # preview do build
 npm test                # vitest run — testes unitários (src/**/*.test.ts[x])
 npm run test:watch      # vitest em modo watch
 npm run test:coverage   # vitest run --coverage
+npx vitest run src/lib/taskActions.test.ts        # rodar um único arquivo de teste
+npx vitest run -t "nome do teste"                 # rodar só um teste pelo nome (any arquivo)
 ```
 
 ## Testes

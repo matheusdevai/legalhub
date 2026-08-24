@@ -829,7 +829,7 @@ export function ClientsPage() {
       setSavedClientName(form.name)
       setTaskForm({
         title: `Protocolar processo de ${form.name}`,
-        description: `client_id:${clientId} | Cadastrado em ${new Date().toLocaleDateString('pt-BR')}${areaDesc}${modDesc}. Verificar documentação e protocolar o processo.`,
+        description: `Cadastrado em ${new Date().toLocaleDateString('pt-BR')}${areaDesc}${modDesc}. Verificar documentação e protocolar o processo.`,
         priority: 'medium', type: 'custom',
         due_date: '',
         assigned_to: form.assigned_lawyer_uid || '',
