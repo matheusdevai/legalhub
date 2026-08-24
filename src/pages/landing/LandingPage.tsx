@@ -5,7 +5,7 @@ import {
   ShieldCheck, Layers, LineChart, ArrowRight, Menu, X, CheckCircle2,
   Sparkles, UserPlus, Settings2, Rocket, Building2, Lock, Zap,
   AlertTriangle, Clock, FolderOpen, Wallet, TrendingDown, CalendarClock,
-  Quote, Star, Bot, FileText, ChevronRight, ChevronDown, Gift, BookOpen,
+  Quote, Star, Bot, FileText, ChevronRight, ChevronDown, ChevronLeft, Gift, BookOpen,
   ShieldAlert, KeyRound, FileCheck2, Server, BadgeCheck, Crown,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,14 +13,14 @@ import { cn } from '@/lib/utils'
 
 /** Logomarca oficial (a mesma do Login e do Sidebar) — ícone recortado num chip
  *  escuro, já que /logomarca.png é branca e foi feita para fundo escuro. */
-function BrandMark({ size = 32 }: { size?: number }) {
+function BrandMark({ size = 32, light = false }: { size?: number; light?: boolean }) {
   return (
     <div className="flex items-center gap-2.5">
       <div className="rounded-xl overflow-hidden flex-shrink-0 bg-sidebar-900" style={{ width: size, height: size }}>
         <img src="/logomarca.png" alt="LegalHub"
           style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
       </div>
-      <span className="font-bold text-lg text-slate-900 tracking-tight">LegalHub</span>
+      <span className={cn('font-bold text-lg tracking-tight', light ? 'text-white' : 'text-slate-900')}>LegalHub</span>
     </div>
   )
 }
@@ -150,6 +150,18 @@ const FEATURES = [
     title: 'Copiloto de IA',
     description: 'Um assistente dentro do próprio sistema, pronto para ajudar sua equipe a encontrar informação e agilizar tarefas do dia a dia.',
   },
+]
+
+// Nós do diagrama hub-and-spoke (versão desktop da seção Recursos)
+const HUB_NODES = [
+  { icon: Layers, label: 'Dashboard' },
+  { icon: Users, label: 'Clientes' },
+  { icon: Briefcase, label: 'Processos' },
+  { icon: CalendarDays, label: 'Agenda' },
+  { icon: DollarSign, label: 'Financeiro' },
+  { icon: Bell, label: 'Publicações' },
+  { icon: Building2, label: 'Portal do Cliente' },
+  { icon: Bot, label: 'Copiloto de IA' },
 ]
 
 const MORE_FEATURES = [
@@ -330,7 +342,7 @@ function AnimatedStatValue({ value, className }: { value: string; className?: st
     return () => obs.disconnect()
   }, [])
 
-  return <p ref={ref} className={cn('text-lg font-bold leading-none', className)}>{display}</p>
+  return <p ref={ref} className={cn('font-bold leading-none', className)}>{display}</p>
 }
 
 /** Mockup interativo de cada módulo, exibido na seção "Veja por dentro". */
@@ -460,6 +472,49 @@ function ModulePreview({ id }: { id: ModuleId }) {
   )
 }
 
+/** Diagrama hub-and-spoke: logo central com os módulos orbitando ao redor (só desktop). */
+function FeatureHub() {
+  const radius = 230
+  return (
+    <div className="relative mx-auto hidden lg:block" style={{ width: 560, height: 560 }}>
+      {/* Anel orbital */}
+      <div className="absolute inset-0 rounded-full border border-dashed border-white/10" />
+      <div className="absolute inset-16 rounded-full border border-white/5" />
+
+      {/* Centro */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
+        <div
+          className="w-28 h-28 rounded-full flex items-center justify-center"
+          style={{
+            background: 'radial-gradient(circle, rgba(211,160,87,0.25), rgba(211,160,87,0.02) 70%)',
+          }}
+        >
+          <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center bg-dark-900 border border-gold-400/30" style={{ boxShadow: '0 0 40px rgba(211,160,87,0.35)' }}>
+            <img src="/logomarca.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Nós orbitando */}
+      {HUB_NODES.map((node, i) => {
+        const angle = (360 / HUB_NODES.length) * i - 90
+        return (
+          <div
+            key={node.label}
+            className="absolute top-1/2 left-1/2"
+            style={{ transform: `rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)` }}
+          >
+            <Reveal delay={i * 60} className="-translate-x-1/2 -translate-y-1/2 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-sm whitespace-nowrap hover:bg-white/[0.08] hover:border-gold-400/30 transition-colors">
+              <node.icon className="w-4 h-4 text-gold-400 flex-shrink-0" />
+              <span className="text-sm font-medium text-white">{node.label}</span>
+            </Reveal>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /** Fundo com pontos sutis + manchas de luz navy/dourada, para seções claras. */
 function SoftBackdrop({ className = '' }: { className?: string }) {
   return (
@@ -493,6 +548,7 @@ export function LandingPage() {
   const [faqOpen, setFaqOpen] = useState<number | null>(0)
   const [activeModule, setActiveModule] = useState<ModuleId>('dashboard')
   const [processCount, setProcessCount] = useState(600)
+  const [testimonialIndex, setTestimonialIndex] = useState(0)
 
   const recommendedPlanId = processCount <= 600 ? 'starter' : processCount <= 1200 ? 'professional' : 'enterprise'
   const activeTab = MODULE_TABS.find(t => t.id === activeModule)!
@@ -536,31 +592,44 @@ export function LandingPage() {
         }}
       >
         <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-          <BrandMark size={32} />
+          <BrandMark size={32} light={!scrolled} />
 
           <nav className="hidden md:flex items-center gap-8">
             {NAV_LINKS.map(l => (
-              <a key={l.href} href={l.href} className="relative text-sm text-slate-600 hover:text-slate-900 transition-colors group">
+              <a
+                key={l.href}
+                href={l.href}
+                className={cn(
+                  'relative text-sm transition-colors group',
+                  scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'
+                )}
+              >
                 {l.label}
-                <span className="absolute -bottom-1.5 left-0 w-0 h-px bg-gold-500 transition-all duration-300 group-hover:w-full" />
+                <span className="absolute -bottom-1.5 left-0 w-0 h-px bg-gold-400 transition-all duration-300 group-hover:w-full" />
               </a>
             ))}
           </nav>
 
           <div className="hidden md:flex items-center gap-3">
-            <button onClick={() => goToLogin('login')} className="text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors px-3 py-2">
+            <button
+              onClick={() => goToLogin('login')}
+              className={cn(
+                'text-sm font-medium transition-colors px-3 py-2',
+                scrolled ? 'text-slate-600 hover:text-slate-900' : 'text-slate-300 hover:text-white'
+              )}
+            >
               Entrar
             </button>
             <button
               onClick={() => goToLogin('signup')}
-              className="relative overflow-hidden flex items-center gap-1.5 text-sm font-semibold text-white px-4 py-2.5 rounded-xl transition-all active:scale-[0.97] hover:brightness-110 bg-dark-900"
-              style={{ boxShadow: '0 4px 18px rgba(10,22,40,0.35)' }}
+              className="relative overflow-hidden flex items-center gap-1.5 text-sm font-semibold text-dark-900 px-4 py-2.5 rounded-full transition-all active:scale-[0.97] hover:brightness-105 bg-gold-500"
+              style={{ boxShadow: '0 4px 18px rgba(211,160,87,0.35)' }}
             >
               Começar agora <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <button className="md:hidden text-slate-700" onClick={() => setMenuOpen(v => !v)}>
+          <button className={cn('md:hidden', scrolled ? 'text-slate-700' : 'text-white')} onClick={() => setMenuOpen(v => !v)}>
             {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
@@ -578,7 +647,7 @@ export function LandingPage() {
               </button>
               <button
                 onClick={() => goToLogin('signup')}
-                className="w-full text-center text-sm font-semibold text-white rounded-xl py-2.5 bg-dark-900"
+                className="w-full text-center text-sm font-semibold text-dark-900 rounded-full py-2.5 bg-gold-500"
               >
                 Começar agora
               </button>
@@ -588,51 +657,63 @@ export function LandingPage() {
       </header>
 
       {/* ══ HERO ══ */}
-      <section className="relative pt-32 pb-24 sm:pt-40 sm:pb-32 px-5 sm:px-8 overflow-hidden">
-        <SoftBackdrop />
-        <div className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-8 items-center">
+      <section className="relative pt-32 pb-20 sm:pt-40 px-5 sm:px-8 overflow-hidden" style={{ background: 'linear-gradient(180deg, #0a1628 0%, #0d1f3c 55%, #0a1628 100%)' }}>
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.5]"
+          style={{
+            backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)',
+            backgroundSize: '26px 26px',
+            maskImage: 'radial-gradient(ellipse 70% 60% at 65% 5%, black, transparent)',
+          }}
+        />
+        <div
+          className="pointer-events-none absolute -top-24 right-0 w-[36rem] h-[36rem] rounded-full blur-3xl opacity-[0.20] animate-[float_9s_ease-in-out_infinite]"
+          style={{ background: 'radial-gradient(circle, #3b82f6, transparent 70%)' }}
+        />
+        <div
+          className="pointer-events-none absolute top-1/3 -left-32 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-[0.16] animate-[float_11s_ease-in-out_infinite_1.5s]"
+          style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
+        />
+
+        <div className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-8 items-center pb-20">
 
           {/* Coluna de texto */}
-          <div className="lg:col-span-6 text-center lg:text-left">
+          <div className="min-w-0 lg:col-span-6 text-center lg:text-left">
             <Reveal>
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-dark-900 border border-dark-900/15 bg-dark-900/[0.03] mb-7">
-                <span className="w-1.5 h-1.5 rounded-full bg-gold-500" />
-                Gestão jurídica em um só lugar
-              </div>
+              <p className="text-base sm:text-lg text-slate-300 font-light mb-1.5">Gestão jurídica completa.</p>
             </Reveal>
 
             <Reveal delay={80}>
-              <h1 className="font-serif text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.08] text-slate-900" style={{ textWrap: 'balance' } as React.CSSProperties}>
-                Chega de prazo perdido e planilha solta.{' '}
-                <span className="italic text-gold-600">Gestão jurídica de verdade.</span>
+              <h1 className="font-serif text-4xl sm:text-5xl lg:text-[3.4rem] font-semibold tracking-tight leading-[1.1] text-white" style={{ textWrap: 'balance' } as React.CSSProperties}>
+                Para escritórios que{' '}
+                <span className="italic text-gold-400">não podem perder prazo</span>.
               </h1>
             </Reveal>
 
             <Reveal delay={160}>
-              <p className="mt-7 text-base sm:text-lg text-slate-500 max-w-xl mx-auto lg:mx-0 leading-relaxed">
+              <p className="mt-6 text-base sm:text-lg text-slate-300 max-w-xl mx-auto lg:mx-0 leading-relaxed">
                 Centralize clientes, processos, tarefas, agenda e financeiro do seu escritório de advocacia
-                em uma única plataforma — com sincronização automática ao CNJ e ao Google Agenda, e dados
-                sempre à mão para decidir com segurança.
+                em uma única plataforma — com sincronização automática ao CNJ e ao Google Agenda.
               </p>
             </Reveal>
 
             <Reveal delay={240}>
-              <div className="mt-10 flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-3">
+              <div className="mt-9 flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-3">
                 <button
                   onClick={() => goToLogin('signup')}
-                  className="relative overflow-hidden group w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] hover:-translate-y-0.5 bg-dark-900"
-                  style={{ boxShadow: '0 8px 28px rgba(10,22,40,0.35)' }}
+                  className="relative overflow-hidden group w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-dark-900 transition-all active:scale-[0.98] hover:-translate-y-0.5 bg-gold-500 hover:brightness-105"
+                  style={{ boxShadow: '0 10px 30px rgba(211,160,87,0.35)' }}
                 >
                   <span
                     className="absolute inset-0 opacity-0 group-hover:opacity-100"
-                    style={{ background: 'linear-gradient(115deg,transparent,rgba(255,255,255,0.35),transparent)', animation: 'shine 1.1s ease' }}
+                    style={{ background: 'linear-gradient(115deg,transparent,rgba(255,255,255,0.45),transparent)', animation: 'shine 1.1s ease' }}
                   />
-                  <span className="relative">Começar agora</span>
+                  <span className="relative">Teste grátis por 7 dias</span>
                   <ArrowRight className="relative w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                 </button>
                 <button
                   onClick={() => goToLogin('login')}
-                  className="w-full sm:w-auto px-7 py-3.5 rounded-xl text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-all"
+                  className="w-full sm:w-auto px-7 py-3.5 rounded-full text-sm font-semibold text-white border border-white/20 hover:bg-white/5 transition-all"
                 >
                   Já tenho uma conta
                 </button>
@@ -642,8 +723,8 @@ export function LandingPage() {
             <Reveal delay={300}>
               <div className="mt-7 flex flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2">
                 {['Sem cartão de crédito', 'Cancele quando quiser', 'Dados isolados por escritório'].map(item => (
-                  <span key={item} className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                  <span key={item} className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
                     {item}
                   </span>
                 ))}
@@ -651,59 +732,65 @@ export function LandingPage() {
             </Reveal>
           </div>
 
-          {/* Coluna do mockup — painel escuro, igual à cara real do sistema */}
-          <Reveal delay={360} className="lg:col-span-6 relative">
-            <div
-              className="rounded-2xl overflow-hidden bg-dark-900"
-              style={{ boxShadow: '0 40px 100px -20px rgba(10,22,40,0.45)' }}
-            >
-              <div className="flex items-center gap-1.5 px-4 py-3 border-b border-white/10 bg-dark-800">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-400/70" />
-                <span className="w-2.5 h-2.5 rounded-full bg-gold-400/70" />
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/70" />
-                <div className="ml-4 flex-1 max-w-xs h-6 rounded-md bg-white/5 border border-white/10" />
-              </div>
-              <div className="flex">
-                {/* Mini sidebar, igual à sidebar real do sistema */}
-                <div className="hidden sm:flex flex-col items-center gap-3 py-6 px-3 border-r border-white/10">
-                  {[Users, Briefcase, CalendarDays, DollarSign].map((Icon, i) => (
-                    <div key={i} className={cn(
-                      'w-8 h-8 rounded-lg flex items-center justify-center',
-                      i === 0 ? 'bg-gold-500' : 'bg-white/5'
-                    )}>
-                      <Icon className={cn('w-4 h-4', i === 0 ? 'text-dark-900' : 'text-slate-300')} />
-                    </div>
-                  ))}
+          {/* Coluna do mockup — painel flutuante em perspectiva */}
+          <Reveal delay={360} className="min-w-0 lg:col-span-6 relative" style={{ perspective: '1600px' }}>
+            <div className="relative mx-auto w-full max-w-[520px]" style={{ transform: 'rotateY(-6deg) rotateX(3deg)' }}>
+              <div
+                className="pointer-events-none absolute -inset-8 -z-10 rounded-[2.5rem] blur-2xl opacity-50"
+                style={{ background: 'radial-gradient(ellipse at 30% 20%, #3b82f6, transparent 60%)' }}
+              />
+              <div
+                className="rounded-2xl overflow-hidden bg-dark-900 border border-white/10"
+                style={{ boxShadow: '0 50px 120px -20px rgba(0,0,0,0.55), 0 0 80px -25px rgba(211,160,87,0.3)' }}
+              >
+                <div className="flex items-center gap-1.5 px-4 py-3 border-b border-white/10 bg-dark-800">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-400/70" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-gold-400/70" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/70" />
+                  <div className="ml-4 flex-1 max-w-xs h-6 rounded-md bg-white/5 border border-white/10" />
                 </div>
+                <div className="flex">
+                  {/* Mini sidebar, igual à sidebar real do sistema */}
+                  <div className="hidden sm:flex flex-col items-center gap-3 py-6 px-3 border-r border-white/10">
+                    {[Users, Briefcase, CalendarDays, DollarSign].map((Icon, i) => (
+                      <div key={i} className={cn(
+                        'w-8 h-8 rounded-lg flex items-center justify-center',
+                        i === 0 ? 'bg-gold-500' : 'bg-white/5'
+                      )}>
+                        <Icon className={cn('w-4 h-4', i === 0 ? 'text-dark-900' : 'text-slate-300')} />
+                      </div>
+                    ))}
+                  </div>
 
-                <div className="flex-1 p-5 sm:p-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {[
-                    { label: 'Processos ativos', value: '128', accent: 'bg-gold-500' },
-                    { label: 'Tarefas concluídas no mês', value: '342', accent: 'bg-emerald-400' },
-                    { label: 'Honorários a receber', value: 'R$ 84.2k', accent: 'bg-white' },
-                  ].map(card => (
-                    <div key={card.label} className="rounded-xl p-5 border border-white/10 bg-white/[0.04] transition-transform hover:-translate-y-0.5">
-                      <p className="text-2xl font-bold text-white">{card.value}</p>
-                      <p className="text-xs text-slate-400 mt-1">{card.label}</p>
-                      <div className={cn('h-1 w-8 rounded-full mt-3', card.accent)} />
-                    </div>
-                  ))}
-                  <div className="sm:col-span-3 rounded-xl border border-white/10 p-5 bg-white/[0.03]">
-                    <div className="flex items-center justify-between mb-4">
-                      <p className="text-sm font-semibold text-slate-200">Quadro de atividades</p>
-                      <span className="text-[11px] text-slate-500">Sincronizado com a agenda</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {['Hoje', 'Próximos 7 dias', 'Fazendo', 'Concluídas'].map((col, i) => (
-                        <div key={col} className="rounded-lg border border-white/10 p-3 bg-white/[0.03]">
-                          <p className="text-[11px] font-semibold text-slate-400 mb-2">{col}</p>
-                          <div className="space-y-1.5">
-                            {Array.from({ length: i === 3 ? 1 : 2 }).map((_, j) => (
-                              <div key={j} className="h-2 rounded-full bg-white/10" style={{ width: `${70 - j * 15}%` }} />
-                            ))}
+                  <div className="flex-1 p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                    {[
+                      { label: 'Processos ativos', value: '128', accent: 'bg-gold-500' },
+                      { label: 'Tarefas concluídas no mês', value: '342', accent: 'bg-emerald-400' },
+                      { label: 'Honorários a receber', value: 'R$ 84.2k', accent: 'bg-white' },
+                    ].map(card => (
+                      <div key={card.label} className="rounded-xl p-4 border border-white/10 bg-white/[0.04] transition-transform hover:-translate-y-0.5">
+                        <p className="text-xl font-bold text-white">{card.value}</p>
+                        <p className="text-[11px] text-slate-400 mt-1">{card.label}</p>
+                        <div className={cn('h-1 w-8 rounded-full mt-2.5', card.accent)} />
+                      </div>
+                    ))}
+                    <div className="sm:col-span-3 rounded-xl border border-white/10 p-4 bg-white/[0.03]">
+                      <div className="flex items-center justify-between mb-3.5">
+                        <p className="text-sm font-semibold text-slate-200">Quadro de atividades</p>
+                        <span className="text-[11px] text-slate-500">Sincronizado com a agenda</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                        {['Hoje', 'Próximos 7 dias', 'Fazendo', 'Concluídas'].map((col, i) => (
+                          <div key={col} className="rounded-lg border border-white/10 p-2.5 bg-white/[0.03]">
+                            <p className="text-[10px] font-semibold text-slate-400 mb-2">{col}</p>
+                            <div className="space-y-1.5">
+                              {Array.from({ length: i === 3 ? 1 : 2 }).map((_, j) => (
+                                <div key={j} className="h-2 rounded-full bg-white/10" style={{ width: `${70 - j * 15}%` }} />
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -712,8 +799,8 @@ export function LandingPage() {
 
             {/* Cards flutuantes de destaque */}
             <div
-              className="hidden lg:flex absolute -left-8 top-10 items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-white"
-              style={{ boxShadow: '0 12px 32px rgba(15,23,42,0.14)', animation: 'floatCard 6s ease-in-out infinite', ['--rot' as any]: '-3deg' }}
+              className="hidden lg:flex absolute -left-4 top-6 items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-white"
+              style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.25)', animation: 'floatCard 6s ease-in-out infinite', ['--rot' as any]: '-3deg' }}
             >
               <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-50">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -725,8 +812,8 @@ export function LandingPage() {
             </div>
 
             <div
-              className="hidden lg:flex absolute -right-6 -bottom-8 items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-white"
-              style={{ boxShadow: '0 12px 32px rgba(15,23,42,0.14)', animation: 'floatCard 7s ease-in-out infinite 1s', ['--rot' as any]: '2deg' }}
+              className="hidden lg:flex absolute -right-2 -bottom-6 items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-white"
+              style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.25)', animation: 'floatCard 7s ease-in-out infinite 1s', ['--rot' as any]: '2deg' }}
             >
               <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gold-50">
                 <Bell className="w-4 h-4 text-gold-600" />
@@ -738,20 +825,19 @@ export function LandingPage() {
             </div>
           </Reveal>
         </div>
-      </section>
 
-      {/* ══ TRUST / STATS BAR ══ */}
-      <section className="relative py-10 px-5 sm:px-8 bg-dark-900">
-        <div className="max-w-6xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Tiles de estatísticas */}
+        <div className="relative max-w-6xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4">
           {STATS.map((s, i) => (
-            <Reveal key={s.label} delay={i * 80} className="flex items-center gap-3 justify-center lg:justify-start">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/10">
-                <s.icon className="w-5 h-5 text-gold-400" />
-              </div>
-              <div>
-                <AnimatedStatValue value={s.value} className="text-white" />
-                <p className="text-[11px] text-slate-400 mt-1">{s.label}</p>
-              </div>
+            <Reveal
+              key={s.label}
+              delay={i * 80}
+              className="rounded-2xl p-5 border border-white/10 hover:border-gold-400/30 transition-colors"
+              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))' }}
+            >
+              <s.icon className="w-5 h-5 text-gold-400 mb-3" />
+              <AnimatedStatValue value={s.value} className="text-white text-xl sm:text-2xl" />
+              <p className="text-xs text-slate-400 mt-1">{s.label}</p>
             </Reveal>
           ))}
         </div>
@@ -846,11 +932,43 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ══ RECURSOS — bento com destaque para o módulo carro-chefe ══ */}
-      <section id="recursos" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100">
+      {/* ══ RECURSOS — hub-and-spoke + bento ══ */}
+      <section id="recursos" className="relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #0a1628 0%, #0d1f3c 100%)' }}>
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.4]"
+          style={{
+            backgroundImage: 'radial-gradient(#1e293b 1px, transparent 1px)',
+            backgroundSize: '26px 26px',
+            maskImage: 'radial-gradient(ellipse 60% 60% at 50% 40%, black, transparent)',
+          }}
+        />
+        <div className="relative max-w-6xl mx-auto px-5 sm:px-8 pt-24 sm:pt-32 pb-8">
+          <Reveal className="max-w-2xl mx-auto text-center mb-8">
+            <Eyebrow dark>Funcionalidades</Eyebrow>
+            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">Um ecossistema, todo o escritório conectado</h2>
+            <p className="mt-4 text-slate-400 leading-relaxed">
+              Cada módulo conversa com os outros — nenhuma informação fica presa em um canto do sistema.
+            </p>
+          </Reveal>
+
+          <FeatureHub />
+
+          {/* Versão em grade para telas menores */}
+          <div className="lg:hidden grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl mx-auto">
+            {HUB_NODES.map(node => (
+              <div key={node.label} className="flex flex-col items-center gap-2 text-center rounded-xl border border-white/10 bg-white/[0.03] px-3 py-4">
+                <node.icon className="w-4 h-4 text-gold-400" />
+                <span className="text-xs font-medium text-white">{node.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100">
         <div className="max-w-6xl mx-auto">
           <Reveal className="max-w-2xl mx-auto text-center mb-16">
-            <Eyebrow>Funcionalidades</Eyebrow>
+            <Eyebrow>Em detalhes</Eyebrow>
             <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">Tudo que o seu escritório precisa</h2>
             <p className="mt-4 text-slate-500 leading-relaxed">
               Um sistema pensado para o dia a dia jurídico — do primeiro contato do cliente até a conclusão do processo.
@@ -930,33 +1048,63 @@ export function LandingPage() {
         </div>
       </section>
 
-      {/* ══ DEPOIMENTOS ══ */}
-      <section id="depoimentos" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100">
-        <div className="max-w-6xl mx-auto">
-          <Reveal className="max-w-2xl mx-auto text-center mb-16">
+      {/* ══ DEPOIMENTOS — carrossel ══ */}
+      <section id="depoimentos" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100 bg-slate-50/60">
+        <div className="max-w-2xl mx-auto">
+          <Reveal className="text-center mb-16">
             <Eyebrow>Depoimentos</Eyebrow>
             <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">Quem usa, recomenda</h2>
           </Reveal>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {TESTIMONIALS.map((t, i) => (
-              <Reveal key={i} delay={i * 100} className="rounded-2xl border border-slate-200 bg-white p-7 flex flex-col">
-                <Quote className="w-6 h-6 text-gold-300 mb-4" />
-                <div className="flex items-center gap-0.5 mb-3">
-                  {Array.from({ length: 5 }).map((_, j) => <Star key={j} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}
-                </div>
-                <p className="text-sm text-slate-600 leading-relaxed flex-1">{t.quote}</p>
-                <div className="flex items-center gap-3 mt-6 pt-5 border-t border-slate-100">
-                  <div className="w-9 h-9 rounded-full bg-dark-900 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-                    {t.name.charAt(0)}
+          <div className="relative">
+            {(() => {
+              const t = TESTIMONIALS[testimonialIndex]
+              return (
+                <Reveal key={testimonialIndex} className="rounded-3xl border border-slate-200 bg-white p-8 sm:p-10 flex flex-col items-center text-center">
+                  <Quote className="w-7 h-7 text-gold-300 mb-4" />
+                  <div className="flex items-center gap-0.5 mb-4">
+                    {Array.from({ length: 5 }).map((_, j) => <Star key={j} className="w-4 h-4 fill-amber-400 text-amber-400" />)}
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-900 truncate">{t.name}</p>
-                    <p className="text-xs text-slate-400 truncate">{t.role}</p>
+                  <p className="text-base text-slate-600 leading-relaxed">{t.quote}</p>
+                  <div className="flex items-center gap-3 mt-7 pt-6 border-t border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-dark-900 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
+                      {t.name.charAt(0)}
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{t.name}</p>
+                      <p className="text-xs text-slate-400 truncate">{t.role}</p>
+                    </div>
                   </div>
-                </div>
-              </Reveal>
-            ))}
+                </Reveal>
+              )
+            })()}
+
+            <div className="flex items-center justify-center gap-5 mt-7">
+              <button
+                onClick={() => setTestimonialIndex(i => (i - 1 + TESTIMONIALS.length) % TESTIMONIALS.length)}
+                className="w-9 h-9 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:text-dark-900 hover:border-slate-300 transition-colors"
+                aria-label="Depoimento anterior"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <div className="flex items-center gap-1.5">
+                {TESTIMONIALS.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setTestimonialIndex(i)}
+                    aria-label={`Ver depoimento ${i + 1}`}
+                    className={cn('h-1.5 rounded-full transition-all', i === testimonialIndex ? 'w-5 bg-gold-500' : 'w-1.5 bg-slate-300')}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => setTestimonialIndex(i => (i + 1) % TESTIMONIALS.length)}
+                className="w-9 h-9 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:text-dark-900 hover:border-slate-300 transition-colors"
+                aria-label="Próximo depoimento"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -1109,14 +1257,37 @@ export function LandingPage() {
                 <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
                 <p className="mt-1.5 text-xs text-slate-500 leading-relaxed min-h-[2.5rem]">{plan.tagline}</p>
 
-                <div className="mt-5 flex items-baseline gap-1">
-                  <span className="text-sm text-slate-400">R$</span>
-                  <span className="font-serif text-4xl font-semibold tracking-tight text-slate-900">{plan.price}</span>
-                  <span className="text-sm text-slate-400">/mês</span>
+                <div className="mt-5">
+                  {plan.price > PROMO_MONTHLY_PRICE ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-slate-400 line-through">R$ {plan.price}/mês</span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                          {Math.round((1 - PROMO_MONTHLY_PRICE / plan.price) * 100)}% OFF
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-1 mt-1">
+                        <span className="text-sm text-slate-400">R$</span>
+                        <span className="font-serif text-4xl font-semibold tracking-tight text-slate-900">{PROMO_MONTHLY_PRICE}</span>
+                        <span className="text-sm text-slate-400">/mês</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-gold-700 font-medium">
+                        nos 3 primeiros meses — depois R$ {plan.price}/mês
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-sm text-slate-400">R$</span>
+                        <span className="font-serif text-4xl font-semibold tracking-tight text-slate-900">{plan.price}</span>
+                        <span className="text-sm text-slate-400">/mês</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-gold-700 font-medium">
+                        já é o valor promocional dos 3 primeiros meses
+                      </p>
+                    </>
+                  )}
                 </div>
-                <p className="mt-1 text-[11px] text-gold-700 font-medium">
-                  R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses
-                </p>
 
                 <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-dark-900 bg-dark-900/5 rounded-lg px-3 py-1.5 w-fit">
                   <Briefcase className="w-3.5 h-3.5" />
