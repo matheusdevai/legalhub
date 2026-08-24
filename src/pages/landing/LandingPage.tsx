@@ -15,12 +15,17 @@ import { cn } from '@/lib/utils'
  *  escuro, já que /logomarca.png é branca e foi feita para fundo escuro. */
 function BrandMark({ size = 32, light = false }: { size?: number; light?: boolean }) {
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-3">
       <div className="rounded-xl overflow-hidden flex-shrink-0 bg-sidebar-900" style={{ width: size, height: size }}>
         <img src="/logomarca.png" alt="LegalHub"
           style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
       </div>
-      <span className={cn('font-bold text-lg tracking-tight', light ? 'text-white' : 'text-slate-900')}>LegalHub</span>
+      <span
+        className={cn('font-bold tracking-tight', light ? 'text-white' : 'text-slate-900')}
+        style={{ fontSize: size * 0.56 }}
+      >
+        LegalHub
+      </span>
     </div>
   )
 }
@@ -604,7 +609,7 @@ export function LandingPage() {
         }}
       >
         <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-          <BrandMark size={32} light={!scrolled} />
+          <BrandMark size={44} light={!scrolled} />
 
           <nav className="hidden md:flex items-center gap-8">
             {NAV_LINKS.map(l => (
@@ -1434,7 +1439,7 @@ export function LandingPage() {
       <footer className="relative border-t border-slate-100 px-5 sm:px-8 py-12">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex flex-col items-center sm:items-start gap-2">
-            <BrandMark size={28} />
+            <BrandMark size={36} />
             <p className="text-xs text-slate-400">Gestão jurídica inteligente para escritórios de advocacia.</p>
           </div>
           <nav className="flex items-center gap-6">
