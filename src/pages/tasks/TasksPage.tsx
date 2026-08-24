@@ -655,12 +655,29 @@ export function TasksPage() {
     const preClient = match ? clients.find(c => c.id === match[1]) : null
     const clientId = t.client_id || preClient?.id || null
     const client = clientId ? clients.find(c => c.id === clientId) : preClient
+    const normalize = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
     const matchOption = (value: string | null | undefined, options: string[]) => {
-      const v = value?.trim().toLowerCase()
-      return (v && options.find(o => o.toLowerCase() === v)) || ''
+      const v = value?.trim()
+      return (v && options.find(o => normalize(o) === normalize(v))) || ''
     }
-    const grupoAcao = matchOption((client as any)?.area_direito, GRUPOS_ACAO)
-    const tipoAcao = grupoAcao ? matchOption((client as any)?.beneficio_previdenciario, TIPOS_ACAO[grupoAcao] || []) : ''
+    // area_direito/beneficio_previdenciario do cliente são texto livre (datalist, não
+    // select fechado) — se não baterem com nenhuma opção fixa, mantém o texto digitado
+    // no cadastro em vez de deixar o campo em branco no processo.
+    const rawArea = (client as any)?.area_direito?.trim() || ''
+    const grupoAcao = rawArea ? (matchOption(rawArea, GRUPOS_ACAO) || rawArea) : ''
+    const rawTipo = (client as any)?.beneficio_previdenciario?.trim() || ''
+    const tipoMatch = grupoAcao ? matchOption(rawTipo, TIPOS_ACAO[grupoAcao] || []) : ''
+    const tipoAcao = grupoAcao
+      ? (tipoMatch || (TIPOS_ACAO[grupoAcao] ? '' : rawTipo))
+      : ''
+    // Se o benefício digitado no cadastro não bateu com nenhuma opção fixa do grupo
+    // (ex: grupo válido "Previdenciário" mas texto livre diferente), não descarta a
+    // informação — só não força a seleção, pra não marcar um tipo de ação errado.
+    const notasExtras: string[] = []
+    if (client?.notes?.trim()) notasExtras.push(client.notes.trim())
+    if (rawTipo && grupoAcao && TIPOS_ACAO[grupoAcao] && !tipoMatch) {
+      notasExtras.push(`Benefício informado no cadastro do cliente: ${rawTipo}`)
+    }
     setPendenciaNote('')
     setShowPendenciaInput(false)
     setCompletionModal({
@@ -674,6 +691,7 @@ export function TasksPage() {
       colaborador_id: client?.colaborador_id || '',
       grupo_acao: grupoAcao,
       type: tipoAcao,
+      description: notasExtras.join('\n'),
       data_protocolo: new Date().toISOString().slice(0, 10),
     })
   }
@@ -1796,6 +1814,9 @@ export function TasksPage() {
                         className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
                       >
                         <option value="">Selecione o grupo de ação</option>
+                        {completionForm.grupo_acao && !GRUPOS_ACAO.includes(completionForm.grupo_acao) && (
+                          <option value={completionForm.grupo_acao}>{completionForm.grupo_acao} (do cadastro do cliente)</option>
+                        )}
                         {GRUPOS_ACAO.map(g => <option key={g} value={g}>{g}</option>)}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -1812,6 +1833,9 @@ export function TasksPage() {
                         className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
                       >
                         <option value="">Selecione o tipo de ação</option>
+                        {completionForm.type && !(TIPOS_ACAO[completionForm.grupo_acao] || []).includes(completionForm.type) && (
+                          <option value={completionForm.type}>{completionForm.type} (do cadastro do cliente)</option>
+                        )}
                         {(TIPOS_ACAO[completionForm.grupo_acao] || []).map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
