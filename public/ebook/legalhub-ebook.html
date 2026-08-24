@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guia Completo do LegalHub</title>
+<meta name="description" content="Guia completo de como usar o LegalHub — gestão jurídica de verdade para o seu escritório." />
+<style>
+  :root {
+    --navy-900: #0a1628;
+    --navy-800: #0f1e36;
+    --blue-600: #2563eb;
+    --blue-50: #eff6ff;
+    --slate-900: #0f172a;
+    --slate-600: #475569;
+    --slate-500: #64748b;
+    --slate-200: #e2e8f0;
+    --slate-100: #f1f5f9;
+    --amber-500: #f59e0b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: var(--slate-900);
+    background: var(--slate-100);
+  }
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    background: #fff;
+  }
+  .toolbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px;
+    padding: 12px 20px;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--slate-200);
+  }
+  .toolbar-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: var(--slate-900); }
+  .toolbar-brand img { width: 24px; height: 24px; border-radius: 6px; object-fit: cover; object-position: 0 50%; background: var(--navy-900); }
+  .btn-print {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--blue-600); color: #fff; border: none;
+    font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 10px;
+    cursor: pointer;
+  }
+  .btn-print:hover { filter: brightness(1.08); }
+
+  /* ── Capa ── */
+  .cover {
+    position: relative;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 48px 32px;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, #14274a, var(--navy-900) 70%);
+    color: #fff;
+    overflow: hidden;
+  }
+  .cover::before, .cover::after {
+    content: ''; position: absolute; border-radius: 50%; filter: blur(70px); opacity: .28;
+  }
+  .cover::before { width: 420px; height: 420px; background: var(--blue-600); top: -120px; right: -100px; }
+  .cover::after { width: 360px; height: 360px; background: #60a5fa; bottom: -140px; left: -100px; opacity: .18; }
+  .cover-logo { display: flex; align-items: center; gap: 10px; margin-bottom: 64px; position: relative; }
+  .cover-logo img { width: 34px; height: 34px; border-radius: 9px; object-fit: cover; object-position: 0 50%; background: var(--navy-900); }
+  .cover-logo span { font-weight: 800; font-size: 19px; letter-spacing: -0.02em; }
+  .cover-kicker {
+    position: relative;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+    color: #93c5fd; margin-bottom: 18px;
+  }
+  .cover h1 {
+    position: relative;
+    font-size: 42px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em;
+    max-width: 620px; margin: 0 0 20px;
+  }
+  .cover h1 em { font-style: normal; color: #60a5fa; }
+  .cover p.lead {
+    position: relative;
+    font-size: 16px; color: #cbd5e1; max-width: 480px; line-height: 1.6; margin: 0 0 56px;
+  }
+  .cover-footer {
+    position: relative;
+    font-size: 12px; color: #64748b; border-top: 1px solid rgba(255,255,255,0.12);
+    padding-top: 18px; width: 100%; max-width: 360px;
+  }
+
+  /* ── Conteúdo ── */
+  .content { padding: 64px 56px 88px; }
+  .toc { page-break-after: always; }
+  .toc h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--blue-600); font-weight: 800; margin: 0 0 28px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+  .toc li {
+    counter-increment: toc;
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 11px 0; border-bottom: 1px dashed var(--slate-200);
+    font-size: 14.5px; color: var(--slate-900);
+  }
+  .toc li::before {
+    content: counter(toc, decimal-leading-zero);
+    color: var(--blue-600); font-weight: 700; font-size: 12.5px; font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .toc a { color: inherit; text-decoration: none; }
+  .toc a:hover { color: var(--blue-600); }
+
+  .intro { page-break-after: always; }
+  .intro h2 { font-size: 26px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 18px; }
+  .intro p { font-size: 15px; line-height: 1.75; color: var(--slate-600); margin: 0 0 16px; }
+  .intro blockquote {
+    margin: 28px 0 0; padding: 18px 22px; border-radius: 14px;
+    background: var(--blue-50); border-left: 3px solid var(--blue-600);
+    font-size: 14.5px; color: #1e3a8a; line-height: 1.65;
+  }
+
+  .chapter { page-break-before: always; padding-top: 8px; }
+  .chapter-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; border-radius: 10px;
+    background: var(--navy-900); color: #fff; font-weight: 800; font-size: 13px;
+    margin-bottom: 16px;
+  }
+  .chapter h2 { font-size: 23px; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 6px; }
+  .chapter .kicker { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--slate-500); margin: 0 0 14px; }
+  .chapter p { font-size: 14.5px; line-height: 1.75; color: var(--slate-600); margin: 0 0 16px; }
+  .chapter ul { margin: 0 0 18px; padding: 0; list-style: none; }
+  .chapter ul li {
+    position: relative; padding: 0 0 0 22px; margin-bottom: 9px;
+    font-size: 14px; line-height: 1.6; color: var(--slate-900);
+  }
+  .chapter ul li::before {
+    content: ''; position: absolute; left: 0; top: 7px;
+    width: 7px; height: 7px; border-radius: 2px; background: var(--blue-600);
+  }
+  .chapter ul li b { font-weight: 700; }
+  .tip {
+    margin-top: 20px; padding: 16px 20px; border-radius: 14px;
+    background: #fffbeb; border: 1px solid #fde68a;
+    font-size: 13.5px; line-height: 1.6; color: #92400e;
+  }
+  .tip b { color: #78350f; }
+
+  .closing { page-break-before: always; text-align: center; padding-top: 90px; }
+  .closing h2 { font-size: 26px; font-weight: 800; margin: 0 0 14px; }
+  .closing p { font-size: 15px; color: var(--slate-600); max-width: 460px; margin: 0 auto 28px; line-height: 1.7; }
+  .closing .cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--blue-600); color: #fff; font-weight: 700; font-size: 14px;
+    padding: 13px 26px; border-radius: 12px; text-decoration: none;
+  }
+  .closing .foot { margin-top: 56px; font-size: 11.5px; color: var(--slate-500); }
+
+  @media print {
+    .no-print { display: none !important; }
+    body { background: #fff; }
+    .page { max-width: none; }
+    .cover { min-height: 100vh; }
+  }
+  @media (max-width: 640px) {
+    .content { padding: 40px 22px 64px; }
+    .cover h1 { font-size: 30px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="toolbar no-print">
+    <div class="toolbar-brand"><img src="/logomarca.png" alt="" />LegalHub — Guia Completo</div>
+    <button class="btn-print" onclick="window.print()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      Baixar em PDF
+    </button>
+  </div>
+
+  <div class="page">
+
+    <!-- CAPA -->
+    <section class="cover">
+      <div class="cover-logo"><img src="/logomarca.png" alt="" /><span>LegalHub</span></div>
+      <p class="cover-kicker">Guia completo · Edição 2026</p>
+      <h1>Como tirar o máximo proveito da sua <em>gestão jurídica</em> com o LegalHub</h1>
+      <p class="lead">Um passo a passo prático de todos os módulos do sistema — de clientes a financeiro — para o seu escritório organizar prazos, processos e equipe em um só lugar.</p>
+      <div class="cover-footer">Material exclusivo para assinantes LegalHub · legalhubgestor.vercel.app</div>
+    </section>
+
+    <div class="content">
+
+      <!-- SUMÁRIO -->
+      <section class="toc">
+        <h2>Sumário</h2>
+        <ol>
+          <li><a href="#c1">Primeiros passos</a></li>
+          <li><a href="#c2">Dashboard — o painel de comando do escritório</a></li>
+          <li><a href="#c3">Clientes</a></li>
+          <li><a href="#c4">Processos</a></li>
+          <li><a href="#c5">Tarefas & Atividades</a></li>
+          <li><a href="#c6">Agenda conectada ao Google</a></li>
+          <li><a href="#c7">Financeiro</a></li>
+          <li><a href="#c8">Publicações & Intimações</a></li>
+          <li><a href="#c9">Portal do Cliente</a></li>
+          <li><a href="#c10">Documentos</a></li>
+          <li><a href="#c11">Colaboradores & Parceiros</a></li>
+          <li><a href="#c12">Relatórios & Desempenho</a></li>
+          <li><a href="#c13">Copiloto de IA</a></li>
+          <li><a href="#c14">Segurança e isolamento por escritório</a></li>
+        </ol>
+      </section>
+
+      <!-- INTRODUÇÃO -->
+      <section class="intro">
+        <h2>Introdução</h2>
+        <p>Se você chegou até aqui, provavelmente já sentiu na pele o que é perder um prazo por falta de aviso, procurar informação de um cliente em três lugares diferentes, ou fechar o mês sem saber ao certo quanto o escritório tem a receber. O LegalHub nasceu para resolver exatamente isso.</p>
+        <p>Este guia mostra, módulo por módulo, como o sistema organiza o dia a dia de um escritório de advocacia — desde o primeiro cadastro de cliente até o acompanhamento financeiro e de desempenho da equipe. A ideia não é substituir a sua rotina, e sim dar a ela um lugar único, conectado e confiável para acontecer.</p>
+        <blockquote>Use este material como referência: volte a ele sempre que quiser explorar um módulo com mais profundidade ou apresentar o sistema para um novo integrante da equipe.</blockquote>
+      </section>
+
+      <!-- 1. PRIMEIROS PASSOS -->
+      <section class="chapter" id="c1">
+        <div class="chapter-num">01</div>
+        <p class="kicker">Começando com o pé direito</p>
+        <h2>Primeiros passos</h2>
+        <p>Colocar o escritório no ar leva minutos, não dias. Não é preciso instalar nada nem informar cartão de crédito para começar a explorar o sistema.</p>
+        <ul>
+          <li><b>Crie sua conta</b> informando os dados do escritório — o LegalHub já cria o seu espaço isolado (tenant), separado de qualquer outro escritório na plataforma.</li>
+          <li><b>Complete o onboarding</b> guiado: número da OAB, seccional e cidade ajudam o sistema a te entregar dados relevantes desde o primeiro acesso.</li>
+          <li><b>Convide sua equipe</b> em Colaboradores/Usuários, definindo o papel de cada pessoa — administrador, advogado, estagiário ou financeiro.</li>
+          <li><b>Importe sua base de clientes</b> por CSV, se já tiver uma planilha pronta — o sistema identifica e evita duplicados automaticamente.</li>
+        </ul>
+        <div class="tip"><b>Dica profissional:</b> comece cadastrando os processos em andamento antes dos encerrados — assim o Dashboard já nasce mostrando o que realmente importa no seu dia a dia.</div>
+      </section>
+
+      <!-- 2. DASHBOARD -->
+      <section class="chapter" id="c2">
+        <div class="chapter-num">02</div>
+        <p class="kicker">Sua central de comando</p>
+        <h2>Dashboard — o painel de comando do escritório</h2>
+        <p>O Dashboard é o ponto de partida de cada login. Ele reúne, em cinco visões diferentes, tudo que precisa da sua atenção agora.</p>
+        <ul>
+          <li><b>Visão geral</b> — estatísticas do dia: tarefas concluídas, pendentes e vencidas, além de um mini-calendário.</li>
+          <li><b>Lista</b> — todas as tarefas organizadas entre "não lidas" e "todas as demais", para nunca perder o que chegou de novo.</li>
+          <li><b>Quadro</b> — um kanban com colunas de Hoje, Próximos, Fazendo e Concluídas, para gerenciar visualmente o fluxo de trabalho.</li>
+          <li><b>Desempenho</b> — gráficos de produtividade da equipe (Taskscore) e um calendário completo de atividades.</li>
+          <li><b>IA</b> — acesso rápido ao Copiloto de Inteligência Artificial do sistema.</li>
+        </ul>
+      </section>
+
+      <!-- 3. CLIENTES -->
+      <section class="chapter" id="c3">
+        <div class="chapter-num">03</div>
+        <p class="kicker">O centro de tudo</p>
+        <h2>Clientes</h2>
+        <p>Cada processo, tarefa e cobrança do escritório se conecta a um cliente. Por isso o cadastro de Clientes foi pensado para ser rápido de preencher e difícil de duplicar.</p>
+        <ul>
+          <li>Cadastro completo de pessoa física ou jurídica, com busca automática de dados por CPF/CNPJ.</li>
+          <li>Importação em massa por CSV, com dedupe contra a base já existente e dentro do próprio arquivo importado.</li>
+          <li>Alerta de possível cliente duplicado por nome ou telefone parecido, com sugestão de autopreenchimento.</li>
+          <li>Ao cadastrar um novo cliente, o sistema já cria automaticamente a tarefa "Protocolar processo" — ninguém esquece do próximo passo.</li>
+        </ul>
+      </section>
+
+      <!-- 4. PROCESSOS -->
+      <section class="chapter" id="c4">
+        <div class="chapter-num">04</div>
+        <p class="kicker">Do protocolo ao encerramento</p>
+        <h2>Processos</h2>
+        <p>Acompanhe cada caso por fase, com todos os dados jurídicos e financeiros organizados em um só cadastro.</p>
+        <ul>
+          <li>Fases do processo: Negociação, Conhecimento, Recursal, Execução e Encerrado.</li>
+          <li>Grupos de ação: Cível, Criminal, Trabalhista, Tributário, Administrativo, Família, Previdenciário, Empresarial, Imobiliário e Outro.</li>
+          <li>Campos completos de gestão: número de protocolo, tribunal, juiz, parte contrária, valor da causa, honorários e percentual.</li>
+          <li>Anexos do processo organizados por pasta, com armazenamento seguro isolado por escritório.</li>
+        </ul>
+      </section>
+
+      <!-- 5. TAREFAS -->
+      <section class="chapter" id="c5">
+        <div class="chapter-num">05</div>
+        <p class="kicker">Nada passa despercebido</p>
+        <h2>Tarefas & Atividades</h2>
+        <p>Um quadro kanban dedicado para o que precisa ser feito — com recorrência automática para o que se repete.</p>
+        <ul>
+          <li>Recorrência semanal, mensal ou anual, respeitando uma data-limite quando configurada.</li>
+          <li>Notificações automáticas de atribuição, para quem recebe a tarefa saber na hora.</li>
+          <li>Cálculo automático de prazo processual, em dias úteis ou corridos.</li>
+          <li>Conclusão de tarefa pode gerar automaticamente um lançamento financeiro ou atualização de processo vinculado.</li>
+        </ul>
+      </section>
+
+      <!-- 6. AGENDA -->
+      <section class="chapter" id="c6">
+        <div class="chapter-num">06</div>
+        <p class="kicker">Um só calendário, sem retrabalho</p>
+        <h2>Agenda conectada ao Google</h2>
+        <p>Uma tarefa com prazo dentro do LegalHub vira, automaticamente, um compromisso na agenda do escritório e no Google Calendar de cada advogado responsável.</p>
+        <ul>
+          <li>Sincronização bidirecional com o Google Calendar de cada usuário.</li>
+          <li>Eventos de audiência, prazo e reunião, todos vinculados ao processo ou cliente de origem.</li>
+          <li>Resumo diário da agenda, disponível a qualquer momento dentro do sistema.</li>
+        </ul>
+      </section>
+
+      <!-- 7. FINANCEIRO -->
+      <section class="chapter" id="c7">
+        <div class="chapter-num">07</div>
+        <p class="kicker">Controle real do caixa</p>
+        <h2>Financeiro</h2>
+        <p>Contas a pagar e a receber, comissões de parceiros e as despesas pessoais de cada colaborador, tudo organizado por mês.</p>
+        <ul>
+          <li><b>Contas a receber</b> — honorários e reembolsos vinculados a cliente e processo.</li>
+          <li><b>Contas a pagar</b> — despesas do escritório e comissões de colaboradores, geradas automaticamente quando um colaborador é marcado como pago.</li>
+          <li><b>Minhas Despesas</b> — planilha mensal pessoal, com upload de comprovante, metas de orçamento por categoria e exportação em CSV, planilha ou PDF.</li>
+          <li>Gráficos de entradas e saídas para visualizar a saúde financeira do escritório mês a mês.</li>
+        </ul>
+      </section>
+
+      <!-- 8. PUBLICAÇÕES -->
+      <section class="chapter" id="c8">
+        <div class="chapter-num">08</div>
+        <p class="kicker">O prazo nunca mais te pega de surpresa</p>
+        <h2>Publicações & Intimações</h2>
+        <p>Sincronização automática com as principais fontes de publicação processual do país.</p>
+        <ul>
+          <li>Integração com CNJ (DataJud), PJe, Escavador e Jusbrasil.</li>
+          <li>Toda nova publicação vinculada automaticamente ao processo correspondente.</li>
+          <li>Alertas para que nenhuma intimação fique sem leitura ou sem providência.</li>
+        </ul>
+      </section>
+
+      <!-- 9. PORTAL DO CLIENTE -->
+      <section class="chapter" id="c9">
+        <div class="chapter-num">09</div>
+        <p class="kicker">Transparência que reduz ligação</p>
+        <h2>Portal do Cliente</h2>
+        <p>Um espaço exclusivo, com acesso próprio, onde cada cliente acompanha exatamente os seus processos — nada além disso.</p>
+        <ul>
+          <li>Visualização de andamento processual, documentos e financeiro do próprio caso.</li>
+          <li>Acesso sempre filtrado pelo cliente correspondente, isolado dos demais clientes do escritório.</li>
+          <li>Menos ligações de "como está meu processo?" e mais confiança na relação com o escritório.</li>
+        </ul>
+      </section>
+
+      <!-- 10. DOCUMENTOS -->
+      <section class="chapter" id="c10">
+        <div class="chapter-num">10</div>
+        <p class="kicker">Tudo no lugar certo</p>
+        <h2>Documentos</h2>
+        <p>Uma biblioteca central de documentos e modelos, além dos anexos vinculados a cada processo.</p>
+        <ul>
+          <li>Upload seguro, com armazenamento isolado por escritório.</li>
+          <li>Modelos reutilizáveis para petições, contratos e procurações.</li>
+          <li>Organização por processo, cliente ou categoria.</li>
+        </ul>
+      </section>
+
+      <!-- 11. COLABORADORES -->
+      <section class="chapter" id="c11">
+        <div class="chapter-num">11</div>
+        <p class="kicker">Sua rede de indicação, organizada</p>
+        <h2>Colaboradores & Parceiros</h2>
+        <p>Cadastre parceiros e colaboradores externos, com comissão configurável por indicação.</p>
+        <ul>
+          <li>Percentual de comissão definido por colaborador.</li>
+          <li>Ao marcar uma comissão como paga, o lançamento financeiro correspondente é criado automaticamente.</li>
+          <li>Visão de clientes e processos por colaborador, para acompanhar o retorno de cada parceria.</li>
+        </ul>
+      </section>
+
+      <!-- 12. RELATÓRIOS -->
+      <section class="chapter" id="c12">
+        <div class="chapter-num">12</div>
+        <p class="kicker">Decisão com dado, não com achismo</p>
+        <h2>Relatórios & Desempenho</h2>
+        <p>Enxergue o escritório com clareza: quem está entregando o quê, e onde o gargalo está.</p>
+        <ul>
+          <li>Relatórios de produtividade por advogado, estagiário e colaborador.</li>
+          <li>Indicadores de processos ativos, tarefas concluídas e honorários no período.</li>
+          <li>Exportação para acompanhamento externo, quando necessário.</li>
+        </ul>
+      </section>
+
+      <!-- 13. IA -->
+      <section class="chapter" id="c13">
+        <div class="chapter-num">13</div>
+        <p class="kicker">Um assistente dentro do sistema</p>
+        <h2>Copiloto de IA</h2>
+        <p>Um assistente de inteligência artificial embutido no próprio LegalHub, pronto para ajudar a equipe a encontrar informação e agilizar tarefas do dia a dia — sem precisar sair do sistema ou trocar de ferramenta.</p>
+      </section>
+
+      <!-- 14. SEGURANÇA -->
+      <section class="chapter" id="c14">
+        <div class="chapter-num">14</div>
+        <p class="kicker">A base de tudo</p>
+        <h2>Segurança e isolamento por escritório</h2>
+        <p>Nenhum módulo importa se os dados não estiverem protegidos. O LegalHub foi construído com isolamento de dados como regra, não como exceção.</p>
+        <ul>
+          <li>Cada escritório opera em um ambiente isolado — dados de um tenant nunca são visíveis para outro.</li>
+          <li>Controle de acesso por função: administrador, advogado, estagiário, financeiro ou cliente do Portal, cada um enxergando só o que deve.</li>
+          <li>Conexões sempre criptografadas (SSL/TLS) entre o seu navegador e o sistema.</li>
+          <li>Nenhum registro é apagado de forma definitiva por engano — o sistema usa exclusão reversível (soft delete) como padrão.</li>
+        </ul>
+        <div class="tip"><b>Boa prática:</b> revise periodicamente quem tem acesso a cada papel dentro do sistema — é a forma mais simples de manter o escritório seguro conforme a equipe cresce.</div>
+      </section>
+
+      <!-- ENCERRAMENTO -->
+      <section class="closing">
+        <h2>Seu escritório, organizado de verdade</h2>
+        <p>Esse é o LegalHub por completo — dos primeiros passos ao controle fino de segurança. Agora é usar no dia a dia e deixar o sistema fazer o trabalho repetitivo por você.</p>
+        <a class="cta no-print" href="/login">Acessar minha conta →</a>
+        <p class="foot">© 2026 LegalHub · Gestão jurídica inteligente para escritórios de advocacia</p>
+      </section>
+
+    </div>
+  </div>
+
+</body>
+</html>

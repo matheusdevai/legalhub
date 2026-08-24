@@ -5,7 +5,8 @@ import {
   ShieldCheck, Layers, LineChart, ArrowRight, Menu, X, CheckCircle2,
   Sparkles, UserPlus, Settings2, Rocket, Building2, Lock, Zap,
   AlertTriangle, Clock, FolderOpen, Wallet, TrendingDown, CalendarClock,
-  Quote, Star, Bot, FileText, ChevronRight,
+  Quote, Star, Bot, FileText, ChevronRight, ChevronDown, Gift, BookOpen,
+  ShieldAlert, KeyRound, FileCheck2, Server, BadgeCheck, Crown,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -54,7 +55,8 @@ const NAV_LINKS = [
   { href: '#dores', label: 'Por que o LegalHub' },
   { href: '#recursos', label: 'Funcionalidades' },
   { href: '#como-funciona', label: 'Como funciona' },
-  { href: '#depoimentos', label: 'Depoimentos' },
+  { href: '#planos', label: 'Planos' },
+  { href: '#faq', label: 'Dúvidas' },
 ]
 
 // ─── Dores do cliente que o sistema resolve ────────────────────────────────
@@ -193,6 +195,93 @@ const TESTIMONIALS = [
   },
 ]
 
+const PROMO_MONTHLY_PRICE = 176
+
+// ─── Planos ─────────────────────────────────────────────────────────────────
+const PLANS = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    tagline: 'Para quem está começando a organizar o escritório',
+    price: 176,
+    processLimit: 'Até 600 processos ativos',
+    features: [
+      'Dashboard completo (visão geral, lista, quadro e desempenho)',
+      'Clientes com busca automática de CPF/CNPJ',
+      'Processos por fase e grupo de ação',
+      'Tarefas com recorrência e cálculo de prazo',
+      'Agenda sincronizada com o Google Calendar',
+      'Financeiro (contas a pagar e a receber)',
+      'Suporte por e-mail',
+    ],
+  },
+  {
+    id: 'professional',
+    name: 'Professional',
+    tagline: 'Para escritórios em crescimento, com equipe e clientes ativos',
+    price: 352,
+    processLimit: 'Até 1.200 processos ativos',
+    highlight: true,
+    features: [
+      'Tudo do plano Starter',
+      'Publicações & Intimações automáticas (CNJ, PJe, Escavador, Jusbrasil)',
+      'Portal do Cliente exclusivo',
+      'Relatórios de desempenho da equipe',
+      'Colaboradores & Parceiros com comissão automática',
+      'Suporte prioritário',
+    ],
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    tagline: 'Para escritórios com alto volume e times maiores',
+    price: 700,
+    processLimit: 'Processos ilimitados',
+    features: [
+      'Tudo do plano Professional',
+      'Copiloto de Inteligência Artificial',
+      'Onboarding assistido para toda a equipe',
+      'Suporte dedicado',
+    ],
+  },
+]
+
+const SECURITY_BADGES = [
+  { icon: Server, label: 'Dados isolados por escritório', description: 'Cada tenant opera em ambiente separado — nenhum escritório enxerga dados de outro.' },
+  { icon: KeyRound, label: 'Controle de acesso por função', description: 'Administrador, advogado, estagiário, financeiro e cliente do Portal — cada um vê só o que deve.' },
+  { icon: Lock, label: 'Conexão criptografada (SSL/TLS)', description: 'Toda comunicação entre o seu navegador e o sistema é criptografada.' },
+  { icon: FileCheck2, label: 'Exclusão reversível dos dados', description: 'Nada é apagado de forma definitiva por engano — o padrão do sistema é soft delete.' },
+  { icon: ShieldAlert, label: 'Pensado para a LGPD', description: 'Registro de consentimento por cliente e controle de quem acessa cada dado.' },
+  { icon: BadgeCheck, label: 'Sem fidelidade', description: 'Assinatura mensal recorrente — cancele quando quiser, sem multa.' },
+]
+
+const FAQS = [
+  {
+    q: 'Preciso de cartão de crédito para começar?',
+    a: 'Não. Você cria a conta e conhece o sistema sem precisar informar dados de pagamento.',
+  },
+  {
+    q: 'Como funciona a promoção de lançamento?',
+    a: `Ao assinar agora, você paga R$ ${PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, independentemente do plano escolhido. Depois desse período, passa a valer o valor normal do plano contratado. Como bônus, você também recebe o e-book completo do LegalHub direto dentro do sistema.`,
+  },
+  {
+    q: 'Posso trocar de plano depois?',
+    a: 'Sim. Você pode fazer upgrade ou downgrade de plano a qualquer momento, conforme o volume de processos do seu escritório crescer.',
+  },
+  {
+    q: 'Existe fidelidade ou multa de cancelamento?',
+    a: 'Não. A cobrança é mensal e recorrente, sem contrato de fidelidade — você pode cancelar quando quiser.',
+  },
+  {
+    q: 'Meus dados ficam seguros e isolados dos de outros escritórios?',
+    a: 'Sim. O isolamento por escritório é a base da arquitetura do sistema: cada tenant só acessa os próprios dados, com controle de acesso por função em cada papel do time.',
+  },
+  {
+    q: 'O que acontece se eu ultrapassar o limite de processos do meu plano?',
+    a: 'Você recebe um aviso dentro do sistema e pode migrar para o plano seguinte a qualquer momento, sem perder nenhum dado já cadastrado.',
+  },
+]
+
 /** Fundo com pontos sutis + manchas de luz azul, para seções claras. */
 function SoftBackdrop({ className = '' }: { className?: string }) {
   return (
@@ -222,6 +311,7 @@ export function LandingPage() {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [faqOpen, setFaqOpen] = useState<number | null>(0)
 
   useEffect(() => {
     function onScroll() { setScrolled(window.scrollY > 8) }
@@ -643,15 +733,175 @@ export function LandingPage() {
               </Reveal>
             ))}
           </div>
+        </div>
+      </section>
 
-          <Reveal delay={200} className="mt-16 grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {['Multi-tenant e multiusuário', 'Controle de acesso por função', 'Relatórios de desempenho'].map(item => (
-              <div key={item} className="flex items-center gap-2.5 text-sm text-slate-600">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                {item}
-              </div>
-            ))}
+      {/* ══ SEGURANÇA / CONFIANÇA ══ */}
+      <section id="seguranca" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100 bg-slate-950 overflow-hidden">
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.4]"
+          style={{
+            backgroundImage: 'radial-gradient(#1e293b 1px, transparent 1px)',
+            backgroundSize: '26px 26px',
+            maskImage: 'radial-gradient(ellipse 60% 60% at 50% 30%, black, transparent)',
+          }}
+        />
+        <div
+          className="pointer-events-none absolute top-0 left-1/3 w-[30rem] h-[30rem] rounded-full blur-3xl opacity-[0.16]"
+          style={{ background: 'radial-gradient(circle, #2563eb, transparent 70%)' }}
+        />
+        <div className="relative max-w-6xl mx-auto">
+          <Reveal className="max-w-2xl mx-auto text-center mb-16">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-blue-300 border border-blue-800/60 bg-blue-500/10 mb-5">
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              Segurança em primeiro lugar
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-white">
+              Assinar significa confiar seus dados a alguém — é isso que levamos a sério
+            </h2>
+            <p className="mt-4 text-slate-400 leading-relaxed">
+              Sem letra miúda: veja exatamente o que protege as informações do seu escritório e dos seus clientes.
+            </p>
           </Reveal>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {SECURITY_BADGES.map((s, i) => (
+              <Reveal key={s.label} delay={i * 70} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.05] transition-colors">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-blue-500/15 mb-4">
+                  <s.icon className="w-5 h-5 text-blue-400" />
+                </div>
+                <h3 className="text-sm font-semibold text-white">{s.label}</h3>
+                <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">{s.description}</p>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ PLANOS ══ */}
+      <section id="planos" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100 bg-slate-50/60">
+        <div className="max-w-6xl mx-auto">
+          <Reveal className="max-w-2xl mx-auto text-center mb-10">
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-600">Planos</span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Um plano para cada tamanho de escritório</h2>
+            <p className="mt-4 text-slate-500 leading-relaxed">
+              Cobrança mensal recorrente, sem fidelidade. Faça upgrade quando o seu escritório crescer.
+            </p>
+          </Reveal>
+
+          <Reveal delay={80} className="max-w-3xl mx-auto mb-14 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-white p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-amber-100">
+              <Gift className="w-5 h-5 text-amber-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-900">
+                Oferta de lançamento: assine hoje e pague R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, em qualquer plano
+              </p>
+              <p className="mt-1 text-xs text-amber-700/90 flex items-center gap-1.5 justify-center sm:justify-start">
+                <BookOpen className="w-3.5 h-3.5 flex-shrink-0" />
+                Bônus: você recebe o e-book completo do LegalHub direto dentro do sistema
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {PLANS.map((plan, i) => (
+              <Reveal
+                key={plan.id}
+                delay={i * 90}
+                className={cn(
+                  'relative rounded-3xl p-7 sm:p-8 flex flex-col h-full',
+                  plan.highlight
+                    ? 'border-2 border-blue-600 bg-white lg:-translate-y-3'
+                    : 'border border-slate-200 bg-white'
+                )}
+                style={plan.highlight ? { boxShadow: '0 24px 60px -16px rgba(37,99,235,0.28)' } : { boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
+              >
+                {plan.highlight && (
+                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold text-white bg-blue-600">
+                    <Crown className="w-3 h-3" /> Mais popular
+                  </span>
+                )}
+
+                <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
+                <p className="mt-1.5 text-xs text-slate-500 leading-relaxed min-h-[2.5rem]">{plan.tagline}</p>
+
+                <div className="mt-5 flex items-baseline gap-1">
+                  <span className="text-sm text-slate-400">R$</span>
+                  <span className="text-4xl font-bold tracking-tight text-slate-900">{plan.price}</span>
+                  <span className="text-sm text-slate-400">/mês</span>
+                </div>
+                <p className="mt-1 text-[11px] text-amber-600 font-medium">
+                  R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses
+                </p>
+
+                <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 rounded-lg px-3 py-1.5 w-fit">
+                  <Briefcase className="w-3.5 h-3.5" />
+                  {plan.processLimit}
+                </div>
+
+                <ul className="mt-6 space-y-3 flex-1">
+                  {plan.features.map(f => (
+                    <li key={f} className="flex items-start gap-2.5 text-sm text-slate-600 leading-snug">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+
+                <button
+                  onClick={() => goToLogin('signup')}
+                  className={cn(
+                    'mt-8 w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]',
+                    plan.highlight
+                      ? 'text-white bg-blue-600 hover:brightness-110'
+                      : 'text-blue-700 bg-blue-50 hover:bg-blue-100'
+                  )}
+                >
+                  Assinar {plan.name} <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal delay={260} className="mt-10 text-center text-xs text-slate-400">
+            Todos os planos incluem suporte, atualizações contínuas e dados isolados por escritório. Sem cartão de crédito para começar.
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ══ FAQ ══ */}
+      <section id="faq" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100">
+        <div className="max-w-3xl mx-auto">
+          <Reveal className="text-center mb-12">
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-600">Dúvidas frequentes</span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Antes de assinar, tire suas dúvidas</h2>
+          </Reveal>
+
+          <div className="space-y-3">
+            {FAQS.map((item, i) => {
+              const open = faqOpen === i
+              return (
+                <Reveal key={item.q} delay={i * 50} className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  <button
+                    onClick={() => setFaqOpen(open ? null : i)}
+                    className="w-full flex items-center justify-between gap-4 px-5 sm:px-6 py-4 text-left"
+                  >
+                    <span className="text-sm font-semibold text-slate-900">{item.q}</span>
+                    <ChevronDown className={cn('w-4 h-4 text-slate-400 flex-shrink-0 transition-transform', open && 'rotate-180')} />
+                  </button>
+                  <div
+                    className="grid transition-all duration-300 ease-out"
+                    style={{ gridTemplateRows: open ? '1fr' : '0fr' }}
+                  >
+                    <div className="overflow-hidden">
+                      <p className="px-5 sm:px-6 pb-4 text-sm text-slate-500 leading-relaxed">{item.a}</p>
+                    </div>
+                  </div>
+                </Reveal>
+              )
+            })}
+          </div>
         </div>
       </section>
 
@@ -674,9 +924,13 @@ export function LandingPage() {
             className="pointer-events-none absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl opacity-20 animate-[float_10s_ease-in-out_infinite_1s]"
             style={{ background: 'radial-gradient(circle, #1e3a8a, transparent 70%)' }}
           />
+          <div className="relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-white border border-white/25 bg-white/10 mb-6">
+            <Gift className="w-3.5 h-3.5" />
+            R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses + e-book de bônus
+          </div>
           <h2 className="relative text-3xl sm:text-4xl font-bold tracking-tight text-white">Pronto para organizar seu escritório?</h2>
           <p className="relative mt-4 text-blue-100 max-w-xl mx-auto leading-relaxed">
-            Crie sua conta e comece a centralizar clientes, processos e tarefas hoje mesmo.
+            Crie sua conta e comece a centralizar clientes, processos e tarefas hoje mesmo — sem cartão de crédito e sem fidelidade.
           </p>
           <div className="relative mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
             <button

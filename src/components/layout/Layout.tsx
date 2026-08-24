@@ -8,7 +8,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { withErrorFeedback } from '@/lib/errorFeedback'
-import type { Notification } from '@/types'
+import { isEbookEligible, EBOOK_URL } from '@/lib/promoUtils'
+import type { Notification, Profile } from '@/types'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import {
@@ -16,7 +17,7 @@ import {
   CheckSquare, Users, Briefcase, DollarSign,
   User, CreditCard, HelpCircle, LogOut, X, Wrench,
   Calendar, AlertCircle, CheckCheck, CreditCard as PaymentIcon,
-  Info, Search,
+  Info, Search, BookOpen,
 } from 'lucide-react'
 
 type SearchResults = {
@@ -46,6 +47,38 @@ function useClickOutside(ref: React.RefObject<HTMLElement>, handler: () => void)
 
 function MaintenanceBanner() {
   return null
+}
+
+/** Banner de bônus para quem assinou dentro da janela da promoção de lançamento. */
+function EbookPromoBanner({ profile }: { profile: Profile | null }) {
+  const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('ebook_banner_dismissed') === '1')
+
+  if (dismissed || !isEbookEligible(profile?.created_at)) return null
+
+  function dismiss() {
+    sessionStorage.setItem('ebook_banner_dismissed', '1')
+    setDismissed(true)
+  }
+
+  return (
+    <div className="no-print flex items-center gap-3 px-4 sm:px-6 py-2.5 border-b border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/15">
+      <BookOpen className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+      <p className="flex-1 text-xs sm:text-sm text-amber-800 dark:text-amber-300 min-w-0">
+        <span className="font-semibold">Bônus de lançamento:</span> seu escritório tem direito ao e-book completo do LegalHub — um guia de como aproveitar cada módulo do sistema.
+      </p>
+      <a
+        href={EBOOK_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="flex-shrink-0 text-xs font-semibold text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 rounded-lg px-3 py-1.5 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+      >
+        Baixar e-book
+      </a>
+      <button onClick={dismiss} className="flex-shrink-0 text-amber-500 hover:text-amber-700 dark:hover:text-amber-300" aria-label="Fechar">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
 }
 
 const NOTIF_ICONS: Record<string, React.ElementType> = {
@@ -487,6 +520,7 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Maintenance banner */}
         <MaintenanceBanner />
+        <EbookPromoBanner profile={profile} />
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
