@@ -176,6 +176,16 @@ const STATS = [
   { icon: Lock, value: 'Por função', label: 'Controle de acesso' },
 ]
 
+// ─── Demo interativa por módulo ────────────────────────────────────────────
+const MODULE_TABS = [
+  { id: 'dashboard', label: 'Dashboard', icon: Layers },
+  { id: 'clientes', label: 'Clientes', icon: Users },
+  { id: 'processos', label: 'Processos', icon: Briefcase },
+  { id: 'financeiro', label: 'Financeiro', icon: DollarSign },
+  { id: 'agenda', label: 'Agenda', icon: CalendarDays },
+] as const
+type ModuleId = typeof MODULE_TABS[number]['id']
+
 // Depoimentos — placeholders prontos para receber avaliações reais de clientes.
 const TESTIMONIALS = [
   {
@@ -282,6 +292,165 @@ const FAQS = [
   },
 ]
 
+/** Conta de 0 até o valor assim que o número entra na viewport (ex: "10+", "100%"). */
+function AnimatedStatValue({ value }: { value: string }) {
+  const match = value.match(/^(\d+)(.*)$/)
+  const ref = useRef<HTMLParagraphElement>(null)
+  const [display, setDisplay] = useState(match ? `0${match[2]}` : value)
+
+  useEffect(() => {
+    if (!match || !ref.current) return
+    const target = parseInt(match[1], 10)
+    const suffix = match[2]
+    let done = false
+    const obs = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting || done) return
+      done = true
+      const start = performance.now()
+      const duration = 900
+      function tick(now: number) {
+        const progress = Math.min(1, (now - start) / duration)
+        const eased = 1 - Math.pow(1 - progress, 3)
+        setDisplay(`${Math.round(eased * target)}${suffix}`)
+        if (progress < 1) requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+      obs.disconnect()
+    }, { threshold: 0.4 })
+    obs.observe(ref.current)
+    return () => obs.disconnect()
+  }, [])
+
+  return <p ref={ref} className="text-lg font-bold text-slate-900 leading-none">{display}</p>
+}
+
+/** Mockup interativo de cada módulo, exibido na seção "Veja por dentro". */
+function ModulePreview({ id }: { id: ModuleId }) {
+  if (id === 'dashboard') {
+    return (
+      <div key={id} className="animate-fade-in grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          { label: 'Processos ativos', value: '128', accent: 'bg-blue-500' },
+          { label: 'Tarefas concluídas no mês', value: '342', accent: 'bg-emerald-500' },
+          { label: 'Honorários a receber', value: 'R$ 84.2k', accent: 'bg-violet-500' },
+        ].map(card => (
+          <div key={card.label} className="rounded-xl p-5 border border-slate-200 bg-slate-50">
+            <p className="text-2xl font-bold text-slate-900">{card.value}</p>
+            <p className="text-xs text-slate-500 mt-1">{card.label}</p>
+            <div className={cn('h-1 w-8 rounded-full mt-3', card.accent)} />
+          </div>
+        ))}
+        <div className="sm:col-span-3 rounded-xl border border-slate-200 p-5 bg-white">
+          <p className="text-sm font-semibold text-slate-700 mb-4">Desempenho da semana</p>
+          <div className="flex items-end gap-2.5 h-24">
+            {[40, 65, 50, 80, 60, 95, 70].map((h, i) => (
+              <div key={i} className="flex-1 rounded-t-md bg-blue-500/80" style={{ height: `${h}%` }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (id === 'clientes') {
+    return (
+      <div key={id} className="animate-fade-in space-y-2.5">
+        {[
+          { name: 'Ana Ribeiro', type: 'Pessoa física', status: 'Ativo' },
+          { name: 'Construtora Nova Era', type: 'Pessoa jurídica', status: 'Ativo' },
+          { name: 'Carlos Menezes', type: 'Pessoa física', status: 'Prospect' },
+          { name: 'Grupo Alvorada Ltda', type: 'Pessoa jurídica', status: 'Ativo' },
+        ].map(c => (
+          <div key={c.name} className="flex items-center gap-3 rounded-xl border border-slate-100 px-4 py-3">
+            <div className="w-9 h-9 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 flex-shrink-0">
+              {c.name.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-slate-800 truncate">{c.name}</p>
+              <p className="text-[11px] text-slate-400">{c.type}</p>
+            </div>
+            <span className={cn(
+              'text-[11px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0',
+              c.status === 'Ativo' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+            )}>
+              {c.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (id === 'processos') {
+    return (
+      <div key={id} className="animate-fade-in space-y-2.5">
+        {[
+          { number: '0001234-56.2025.8.26.0100', phase: 'Negociação', color: 'bg-blue-50 text-blue-600' },
+          { number: '0007788-11.2024.5.02.0030', phase: 'Recursal', color: 'bg-violet-50 text-violet-600' },
+          { number: '0002211-90.2023.8.26.0002', phase: 'Execução', color: 'bg-amber-50 text-amber-600' },
+          { number: '0009900-44.2022.8.26.0053', phase: 'Encerrado', color: 'bg-emerald-50 text-emerald-600' },
+        ].map(p => (
+          <div key={p.number} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-4 py-3">
+            <p className="text-xs font-mono text-slate-600 truncate">{p.number}</p>
+            <span className={cn('text-[11px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0', p.color)}>{p.phase}</span>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (id === 'financeiro') {
+    return (
+      <div key={id} className="animate-fade-in grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <div className="rounded-xl border border-slate-200 p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600 mb-3">Contas a receber</p>
+          {[['Honorários — Ana Ribeiro', 'R$ 3.200'], ['Honorários — Grupo Alvorada', 'R$ 8.900']].map(([l, v]) => (
+            <div key={l} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+              <span className="text-xs text-slate-600">{l}</span>
+              <span className="text-xs font-semibold text-emerald-600">{v}</span>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-slate-200 p-5">
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-500 mb-3">Contas a pagar</p>
+          {[['Comissão — Parceiro Silva', 'R$ 1.100'], ['Despesas do escritório', 'R$ 2.450']].map(([l, v]) => (
+            <div key={l} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+              <span className="text-xs text-slate-600">{l}</span>
+              <span className="text-xs font-semibold text-red-500">{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div key={id} className="animate-fade-in">
+      <div className="grid grid-cols-7 gap-1.5 mb-4">
+        {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => (
+          <p key={i} className="text-center text-[10px] font-semibold text-slate-400">{d}</p>
+        ))}
+        {Array.from({ length: 30 }).map((_, i) => {
+          const day = i + 1
+          const highlight = [8, 14, 21, 27].includes(day)
+          return (
+            <div key={i} className={cn(
+              'aspect-square rounded-md flex items-center justify-center text-[11px]',
+              highlight ? 'bg-blue-600 text-white font-semibold' : 'bg-slate-50 text-slate-500'
+            )}>
+              {day}
+            </div>
+          )
+        })}
+      </div>
+      <div className="rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <CalendarDays className="w-4 h-4 text-blue-600 flex-shrink-0" />
+        <p className="text-xs text-slate-600">Audiência do processo 0007788-11 sincronizada com o Google Calendar de Dra. Ana.</p>
+      </div>
+    </div>
+  )
+}
+
 /** Fundo com pontos sutis + manchas de luz azul, para seções claras. */
 function SoftBackdrop({ className = '' }: { className?: string }) {
   return (
@@ -311,10 +480,18 @@ export function LandingPage() {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  const [showStickyCta, setShowStickyCta] = useState(false)
   const [faqOpen, setFaqOpen] = useState<number | null>(0)
+  const [activeModule, setActiveModule] = useState<ModuleId>('dashboard')
+  const [processCount, setProcessCount] = useState(600)
+
+  const recommendedPlanId = processCount <= 600 ? 'starter' : processCount <= 1200 ? 'professional' : 'enterprise'
 
   useEffect(() => {
-    function onScroll() { setScrolled(window.scrollY > 8) }
+    function onScroll() {
+      setScrolled(window.scrollY > 8)
+      setShowStickyCta(window.scrollY > 700)
+    }
     window.addEventListener('scroll', onScroll)
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
@@ -553,7 +730,7 @@ export function LandingPage() {
                 <s.icon className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-lg font-bold text-slate-900 leading-none">{s.value}</p>
+                <AnimatedStatValue value={s.value} />
                 <p className="text-[11px] text-slate-500 mt-1">{s.label}</p>
               </div>
             </Reveal>
@@ -594,6 +771,52 @@ export function LandingPage() {
               </Reveal>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* ══ DEMO INTERATIVA ══ */}
+      <section id="demo" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-slate-100 overflow-hidden">
+        <SoftBackdrop />
+        <div className="relative max-w-5xl mx-auto">
+          <Reveal className="max-w-2xl mx-auto text-center mb-10">
+            <span className="text-xs font-bold uppercase tracking-widest text-blue-600">Veja por dentro</span>
+            <h2 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">Um sistema, todos os módulos do escritório</h2>
+            <p className="mt-4 text-slate-500 leading-relaxed">
+              Clique em cada módulo e veja como a informação se organiza dentro do LegalHub.
+            </p>
+          </Reveal>
+
+          <Reveal delay={80} className="flex flex-wrap items-center justify-center gap-2 mb-8">
+            {MODULE_TABS.map(tab => {
+              const active = activeModule === tab.id
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveModule(tab.id)}
+                  className={cn(
+                    'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.97]',
+                    active ? 'text-white bg-blue-600' : 'text-slate-600 bg-white border border-slate-200 hover:border-slate-300'
+                  )}
+                  style={active ? { boxShadow: '0 8px 20px rgba(37,99,235,0.28)' } : undefined}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              )
+            })}
+          </Reveal>
+
+          <Reveal delay={140} className="rounded-2xl border border-slate-200 bg-white overflow-hidden" style={{ boxShadow: '0 30px 80px -24px rgba(15,23,42,0.16)' }}>
+            <div className="flex items-center gap-1.5 px-4 py-3 border-b border-slate-100 bg-slate-50">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-300" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-300" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-300" />
+              <div className="ml-4 flex-1 max-w-xs h-6 rounded-md bg-white border border-slate-200" />
+            </div>
+            <div className="p-6 sm:p-8 min-h-[320px] sm:min-h-[300px]">
+              <ModulePreview id={activeModule} />
+            </div>
+          </Reveal>
         </div>
       </section>
 
@@ -804,22 +1027,53 @@ export function LandingPage() {
             </div>
           </Reveal>
 
+          <Reveal delay={120} className="max-w-xl mx-auto mb-14 rounded-2xl border border-slate-200 bg-white p-5 sm:p-6">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <label htmlFor="process-slider" className="text-sm font-semibold text-slate-700">
+                Quantos processos ativos o seu escritório tem?
+              </label>
+              <span className="flex-shrink-0 text-sm font-bold text-blue-600">
+                {processCount}{processCount >= 2000 ? '+' : ''}
+              </span>
+            </div>
+            <input
+              id="process-slider"
+              type="range"
+              min={50}
+              max={2000}
+              step={50}
+              value={processCount}
+              onChange={e => setProcessCount(Number(e.target.value))}
+              className="w-full accent-blue-600 cursor-pointer"
+            />
+            <p className="mt-3 text-xs text-slate-500 flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+              Plano recomendado: <span className="font-semibold text-slate-700">{PLANS.find(p => p.id === recommendedPlanId)?.name}</span>
+            </p>
+          </Reveal>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
             {PLANS.map((plan, i) => (
               <Reveal
                 key={plan.id}
                 delay={i * 90}
                 className={cn(
-                  'relative rounded-3xl p-7 sm:p-8 flex flex-col h-full',
+                  'relative rounded-3xl p-7 sm:p-8 flex flex-col h-full transition-shadow',
                   plan.highlight
                     ? 'border-2 border-blue-600 bg-white lg:-translate-y-3'
-                    : 'border border-slate-200 bg-white'
+                    : 'border border-slate-200 bg-white',
+                  plan.id === recommendedPlanId && !plan.highlight && 'ring-2 ring-emerald-400/60'
                 )}
                 style={plan.highlight ? { boxShadow: '0 24px 60px -16px rgba(37,99,235,0.28)' } : { boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
               >
                 {plan.highlight && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold text-white bg-blue-600">
                     <Crown className="w-3 h-3" /> Mais popular
+                  </span>
+                )}
+                {plan.id === recommendedPlanId && (
+                  <span className="absolute -top-3 right-5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                    <CheckCircle2 className="w-3 h-3" /> Ideal pra você
                   </span>
                 )}
 
@@ -966,6 +1220,23 @@ export function LandingPage() {
           <p className="text-xs text-slate-400">© 2026 LegalHub · Todos os direitos reservados</p>
         </div>
       </footer>
+
+      {/* ══ CTA FIXO (mobile) ══ */}
+      <div
+        className={cn(
+          'sm:hidden fixed bottom-0 inset-x-0 z-40 px-4 pb-4 pt-3 transition-transform duration-300',
+          showStickyCta ? 'translate-y-0' : 'translate-y-full'
+        )}
+        style={{ background: 'linear-gradient(to top, rgba(255,255,255,0.98) 60%, rgba(255,255,255,0))' }}
+      >
+        <button
+          onClick={() => goToLogin('signup')}
+          className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-semibold text-white bg-blue-600 active:scale-[0.98] transition-transform"
+          style={{ boxShadow: '0 12px 32px rgba(37,99,235,0.35)' }}
+        >
+          Começar agora <ArrowRight className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   )
 }
