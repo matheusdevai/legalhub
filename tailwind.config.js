@@ -41,9 +41,20 @@ export default {
           600: '#1e304f',
           500: '#283d5e',
         },
+        gold: {
+          50:  '#fbf3e4',
+          100: '#f5e4c4',
+          200: '#eacb92',
+          300: '#dfb166',
+          400: '#d3a057',
+          500: '#c08b3e',
+          600: '#a6752f',
+          700: '#8a5f26',
+        },
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
+        serif: ['Fraunces', 'Georgia', 'serif'],
       },
       boxShadow: {
         'sidebar':    '1px 0 0 0 #e2e8f0',
