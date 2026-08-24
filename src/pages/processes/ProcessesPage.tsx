@@ -1018,6 +1018,7 @@ export function ProcessesPage() {
                         </span>
                       </th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tipo de Ação</th>
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Modalidade</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Requerimento</th>
                       <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Cadastro</th>
@@ -1054,6 +1055,16 @@ export function ProcessesPage() {
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs text-gray-600 dark:text-gray-300">{p.area || p.type || '—'}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {p.modalidade ? (
+                            <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                              p.modalidade === 'judicial'
+                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400')}>
+                              {p.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}
+                            </span>
+                          ) : <span className="text-xs text-gray-400">—</span>}
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.number}</span>
