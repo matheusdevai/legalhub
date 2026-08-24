@@ -1310,6 +1310,23 @@ export function ProcessesPage() {
                 </div>
               </div>
 
+              {/* Modalidade */}
+              <div>
+                <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Modalidade</label>
+                <div className="relative">
+                  <select
+                    value={form.modalidade}
+                    onChange={e => setForm({ ...form, modalidade: e.target.value })}
+                    className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
+                  >
+                    <option value="">Selecione</option>
+                    <option value="judicial">Judicial</option>
+                    <option value="administrativo">Administrativo</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+
               {/* Fase */}
               <div>
                 <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Fase *</label>
@@ -2401,6 +2418,22 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
             >
               <option value="">Selecione o tipo de ação</option>
               {(TIPOS_ACAO[form.area] || []).map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* Modalidade */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+            Modalidade
+          </label>
+          <div className="relative">
+            <select value={form.modalidade} onChange={f('modalidade')}
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none">
+              <option value="">Selecione</option>
+              <option value="judicial">Judicial</option>
+              <option value="administrativo">Administrativo</option>
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>

@@ -691,6 +691,7 @@ export function TasksPage() {
       colaborador_id: client?.colaborador_id || '',
       grupo_acao: grupoAcao,
       type: tipoAcao,
+      modalidade: (client as any)?.modalidade || '',
       description: notasExtras.join('\n'),
       data_protocolo: new Date().toISOString().slice(0, 10),
     })
@@ -1837,6 +1838,23 @@ export function TasksPage() {
                           <option value={completionForm.type}>{completionForm.type} (do cadastro do cliente)</option>
                         )}
                         {(TIPOS_ACAO[completionForm.grupo_acao] || []).map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+
+                  {/* Modalidade */}
+                  <div>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Modalidade</label>
+                    <div className="relative">
+                      <select
+                        value={completionForm.modalidade}
+                        onChange={e => setCompletionForm({ ...completionForm, modalidade: e.target.value })}
+                        className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
+                      >
+                        <option value="">Selecione</option>
+                        <option value="judicial">Judicial</option>
+                        <option value="administrativo">Administrativo</option>
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                     </div>
