@@ -63,7 +63,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       {/* Decorative glow top */}
       <div
         className="absolute top-0 left-0 right-0 h-40 pointer-events-none"
-        style={{ background: 'radial-gradient(ellipse at 50% -20%, rgba(6,182,212,0.12) 0%, transparent 70%)' }}
+        style={{ background: 'radial-gradient(ellipse at 50% -20%, rgba(211,160,87,0.12) 0%, transparent 70%)' }}
       />
 
       {/* Logo */}
@@ -148,21 +148,21 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                       collapsed && 'justify-center px-0 w-full',
                     )}
                     style={({ isActive }) => isActive ? {
-                      background: 'linear-gradient(135deg, rgba(6,182,212,0.15) 0%, rgba(37,99,235,0.12) 100%)',
-                      boxShadow: 'inset 1px 0 0 rgba(6,182,212,0.5)',
+                      background: 'linear-gradient(135deg, rgba(211,160,87,0.18) 0%, rgba(211,160,87,0.06) 100%)',
+                      boxShadow: 'inset 1px 0 0 rgba(211,160,87,0.6)',
                     } : {}}
                   >
                     {({ isActive }) => (
                       <>
                         <Icon style={{ width: 15, height: 15 }} className={cn(
                           'flex-shrink-0 transition-colors',
-                          isActive ? 'text-cyan-400' : 'text-white/40 group-hover:text-white/70',
+                          isActive ? 'text-gold-400' : 'text-white/40 group-hover:text-white/70',
                         )} />
                         {!collapsed && (
                           <span className={cn('truncate', isActive && 'font-semibold')}>{label}</span>
                         )}
                         {isActive && collapsed && (
-                          <span className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-cyan-400 rounded-l-full" />
+                          <span className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-gold-400 rounded-l-full" />
                         )}
                       </>
                     )}
@@ -192,10 +192,10 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               } : {}}>
               {({ isActive }) => (
                 <>
-                  <Shield style={{ width: 15, height: 15 }} className={cn('flex-shrink-0', isActive ? 'text-cyan-400' : 'text-white/40 group-hover:text-white/70')} />
+                  <Shield style={{ width: 15, height: 15 }} className={cn('flex-shrink-0', isActive ? 'text-gold-400' : 'text-white/40 group-hover:text-white/70')} />
                   {!collapsed && <span className={cn(isActive && 'font-semibold')}>Painel Admin</span>}
                   {isActive && collapsed && (
-                    <span className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-cyan-400 rounded-l-full" />
+                    <span className="absolute right-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-gold-400 rounded-l-full" />
                   )}
                 </>
               )}

@@ -137,7 +137,7 @@ export function Login() {
   const inputCls =
     'w-full px-4 py-3 text-sm border border-slate-200 rounded-xl bg-white ' +
     'text-slate-800 placeholder-slate-400 outline-none ' +
-    'focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all'
+    'focus:border-gold-400 focus:ring-2 focus:ring-gold-50 transition-all'
 
   // ── Conteúdo do formulário (chamado como função pura, nunca como <FormContent />) ─
   function FormContent() {
@@ -169,7 +169,7 @@ export function Login() {
                     Senha
                   </label>
                   <button type="button" onClick={() => switchMode('forgot')}
-                    className="text-xs text-blue-500 hover:text-blue-600 font-medium">
+                    className="text-xs text-gold-600 hover:text-gold-700 font-medium">
                     Esqueceu sua senha?
                   </button>
                 </div>
@@ -239,7 +239,7 @@ export function Login() {
                 </div>
                 <p className="font-semibold text-green-800 text-sm">Conta criada!</p>
                 <p className="text-xs text-green-700 mt-1">Verifique seu e-mail para confirmar.</p>
-                <button onClick={() => switchMode('login')} className="mt-3 text-xs text-blue-500 font-semibold hover:underline">
+                <button onClick={() => switchMode('login')} className="mt-3 text-xs text-gold-600 font-semibold hover:underline">
                   Ir para o login
                 </button>
               </div>
@@ -319,13 +319,13 @@ export function Login() {
               <p className="text-[13px] text-slate-500 mt-1.5">Enviaremos um link de redefinição.</p>
             </div>
             {forgotDone ? (
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-5 text-center">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                  <Mail className="w-5 h-5 text-blue-500" />
+              <div className="bg-gold-50 border border-gold-100 rounded-2xl p-5 text-center">
+                <div className="w-10 h-10 bg-gold-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                  <Mail className="w-5 h-5 text-gold-600" />
                 </div>
-                <p className="font-semibold text-blue-800 text-sm">E-mail enviado!</p>
-                <p className="text-xs text-blue-600 mt-1">Verifique sua caixa de entrada.</p>
-                <button onClick={() => switchMode('login')} className="mt-3 text-xs text-blue-500 font-semibold hover:underline">Voltar ao login</button>
+                <p className="font-semibold text-slate-900 text-sm">E-mail enviado!</p>
+                <p className="text-xs text-gold-700 mt-1">Verifique sua caixa de entrada.</p>
+                <button onClick={() => switchMode('login')} className="mt-3 text-xs text-gold-600 font-semibold hover:underline">Voltar ao login</button>
               </div>
             ) : (
               <form onSubmit={handleForgot} className="space-y-5">
@@ -360,8 +360,11 @@ export function Login() {
       {/* ══ DESKTOP ══ */}
       <div className="hidden lg:flex h-screen overflow-hidden">
 
-        {/* Painel de marca — mesma direção visual da landing page (branco + azul) */}
-        <div className="relative w-[42%] xl:w-[38%] flex-shrink-0 overflow-hidden bg-blue-700 flex flex-col">
+        {/* Painel de marca — mesma direção visual da landing page (navy + dourado) */}
+        <div
+          className="relative w-[42%] xl:w-[38%] flex-shrink-0 overflow-hidden flex flex-col"
+          style={{ background: 'linear-gradient(160deg, #0a1628 0%, #162540 100%)' }}
+        >
           <div
             className="pointer-events-none absolute inset-0 opacity-[0.06]"
             style={{
@@ -370,12 +373,12 @@ export function Login() {
             }}
           />
           <div
-            className="pointer-events-none absolute -top-28 -left-28 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-30"
-            style={{ background: 'radial-gradient(circle, #60a5fa, transparent 70%)' }}
+            className="pointer-events-none absolute -top-28 -left-28 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-[0.22]"
+            style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
           />
           <div
             className="pointer-events-none absolute -bottom-28 -right-16 w-[24rem] h-[24rem] rounded-full blur-3xl opacity-25"
-            style={{ background: 'radial-gradient(circle, #1e3a8a, transparent 70%)' }}
+            style={{ background: 'radial-gradient(circle, #283d5e, transparent 70%)' }}
           />
 
           <div className="relative flex-1 flex flex-col justify-between px-12 xl:px-16 py-12">
@@ -388,11 +391,15 @@ export function Login() {
             </div>
 
             <div>
-              <h1 className="text-3xl xl:text-4xl font-bold text-white leading-tight" style={{ textWrap: 'balance' } as React.CSSProperties}>
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold text-white border border-white/15 bg-white/[0.06] mb-6">
+                <span className="w-1.5 h-1.5 rounded-full bg-gold-400" />
+                Gestão jurídica em um só lugar
+              </div>
+              <h1 className="font-serif text-3xl xl:text-4xl font-semibold text-white leading-tight" style={{ textWrap: 'balance' } as React.CSSProperties}>
                 Tecnologia e inteligência para transformar a gestão do{' '}
-                <span className="text-blue-200">seu escritório</span>.
+                <span className="italic text-gold-400">seu escritório</span>.
               </h1>
-              <p className="mt-4 text-sm text-blue-100/90 leading-relaxed max-w-sm">
+              <p className="mt-4 text-sm text-slate-300 leading-relaxed max-w-sm">
                 Centralize processos, automatize tarefas e tome decisões com segurança e dados.
               </p>
 
@@ -404,16 +411,16 @@ export function Login() {
                 ].map(item => (
                   <div key={item.label}>
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/10 mb-2.5">
-                      <item.icon className="w-4 h-4 text-blue-200" />
+                      <item.icon className="w-4 h-4 text-gold-400" />
                     </div>
-                    <p className="text-xs text-blue-100/90 leading-snug">{item.label}</p>
+                    <p className="text-xs text-slate-300 leading-snug">{item.label}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-blue-100/70">
-              <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <Lock className="w-3.5 h-3.5 flex-shrink-0 text-gold-500/80" />
               Seus dados estão protegidos com criptografia de ponta a ponta.
             </div>
           </div>
@@ -474,15 +481,15 @@ export function Login() {
           >
             {/* Header */}
             <div className="flex items-center gap-3 px-5 py-4 flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg,#0a1628,#1e3a8a)' }}>
+              style={{ background: 'linear-gradient(135deg,#0a1628,#162540)' }}>
               <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
                 <img src="/logomarca.png" alt="LegalHub"
                   style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white leading-none">Equipe LegalHub</p>
-                <p className="text-[11px] text-cyan-400 mt-0.5 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
+                <p className="text-[11px] text-gold-400 mt-0.5 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gold-400 inline-block" />
                   Online agora
                 </p>
               </div>
@@ -498,7 +505,7 @@ export function Login() {
               {/* Bolha de boas-vindas */}
               <div className="flex gap-2.5">
                 <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 mt-0.5"
-                  style={{ background: '#0a1628' }}>
+                  style={{ background: '#0a1628', border: '1px solid rgba(211,160,87,0.3)' }}>
                   <img src="/logomarca.png" alt=""
                     style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
                 </div>
@@ -515,9 +522,9 @@ export function Login() {
 
               {chatStep === 'sent' && (
                 <div className="flex justify-end">
-                  <div className="bg-blue-600 text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-sm max-w-[85%]">
+                  <div className="bg-dark-900 text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-sm max-w-[85%]">
                     <p className="text-sm leading-relaxed">Mensagem enviada! ✅</p>
-                    <p className="text-xs text-blue-200 mt-1">Nossa equipe entrará em contato em breve.</p>
+                    <p className="text-xs text-slate-300 mt-1">Nossa equipe entrará em contato em breve.</p>
                   </div>
                 </div>
               )}
@@ -531,20 +538,20 @@ export function Login() {
                   <input
                     type="text" placeholder="Seu nome" required
                     value={chatName} onChange={e => setChatName(e.target.value)}
-                    className="px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all" />
+                    className="px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-50 transition-all" />
                   <input
                     type="email" placeholder="Seu e-mail" required
                     value={chatEmail} onChange={e => setChatEmail(e.target.value)}
-                    className="px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all" />
+                    className="px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-50 transition-all" />
                 </div>
                 <div className="flex gap-2">
                   <input
                     type="text" placeholder="Como podemos ajudar?" required
                     value={chatMsg} onChange={e => setChatMsg(e.target.value)}
-                    className="flex-1 px-3 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 transition-all" />
+                    className="flex-1 px-3 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-50 transition-all" />
                   <button type="submit" disabled={chatSending}
                     className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95 disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg,#1e3a8a,#2563eb)' }}>
+                    style={{ background: 'linear-gradient(135deg,#0a1628,#162540)' }}>
                     {chatSending
                       ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                       : <Send className="w-4 h-4 text-white" />}
@@ -561,7 +568,7 @@ export function Login() {
         <button
           onClick={openChat}
           className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm font-semibold shadow-lg transition-all hover:scale-105 active:scale-95"
-          style={{ background: 'linear-gradient(135deg,#0a1628,#1e3a8a)', boxShadow: '0 8px 24px rgba(30,58,138,0.45)' }}>
+          style={{ background: 'linear-gradient(135deg,#0a1628,#162540)', boxShadow: '0 8px 24px rgba(10,22,40,0.45)' }}>
           <MessageCircle className="w-4 h-4" />
           Fale com nosso time
         </button>
