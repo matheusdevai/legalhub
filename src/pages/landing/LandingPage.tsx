@@ -54,7 +54,7 @@ function Reveal({ children, delay = 0, className = '', style }: { children: Reac
 /** Rótulo pequeno em versalete, usado no topo de cada seção. Dourado sobre claro ou sobre escuro. */
 function Eyebrow({ children, dark = false }: { children: React.ReactNode; dark?: boolean }) {
   return (
-    <span className={cn('text-xs font-bold uppercase tracking-[0.14em]', dark ? 'text-gold-300' : 'text-gold-700')}>
+    <span className={cn('text-xs font-bold uppercase tracking-[0.14em]', dark ? 'text-sky-300' : 'text-sky-700')}>
       {children}
     </span>
   )
@@ -353,7 +353,7 @@ function ModulePreview({ id }: { id: ModuleId }) {
         {[
           { label: 'Processos ativos', value: '128', accent: 'bg-dark-900' },
           { label: 'Tarefas concluídas no mês', value: '342', accent: 'bg-emerald-500' },
-          { label: 'Honorários a receber', value: 'R$ 84.2k', accent: 'bg-gold-500' },
+          { label: 'Honorários a receber', value: 'R$ 84.2k', accent: 'bg-sky-500' },
         ].map(card => (
           <div key={card.label} className="rounded-xl p-5 border border-slate-200 bg-slate-50">
             <p className="text-2xl font-bold text-slate-900">{card.value}</p>
@@ -383,7 +383,7 @@ function ModulePreview({ id }: { id: ModuleId }) {
           { name: 'Grupo Alvorada Ltda', type: 'Pessoa jurídica', status: 'Ativo' },
         ].map(c => (
           <div key={c.name} className="flex items-center gap-3 rounded-xl border border-slate-100 px-4 py-3">
-            <div className="w-9 h-9 rounded-full bg-gold-100 flex items-center justify-center text-xs font-bold text-gold-700 flex-shrink-0">
+            <div className="w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center text-xs font-bold text-sky-700 flex-shrink-0">
               {c.name.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
@@ -406,7 +406,7 @@ function ModulePreview({ id }: { id: ModuleId }) {
     return (
       <div key={id} className="animate-fade-in space-y-2.5">
         {[
-          { number: '0001234-56.2025.8.26.0100', phase: 'Negociação', color: 'bg-gold-50 text-gold-700' },
+          { number: '0001234-56.2025.8.26.0100', phase: 'Negociação', color: 'bg-sky-50 text-sky-700' },
           { number: '0007788-11.2024.5.02.0030', phase: 'Recursal', color: 'bg-violet-50 text-violet-600' },
           { number: '0002211-90.2023.8.26.0002', phase: 'Execução', color: 'bg-amber-50 text-amber-600' },
           { number: '0009900-44.2022.8.26.0053', phase: 'Encerrado', color: 'bg-emerald-50 text-emerald-600' },
@@ -465,7 +465,7 @@ function ModulePreview({ id }: { id: ModuleId }) {
         })}
       </div>
       <div className="rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-        <CalendarDays className="w-4 h-4 text-gold-600 flex-shrink-0" />
+        <CalendarDays className="w-4 h-4 text-sky-600 flex-shrink-0" />
         <p className="text-xs text-slate-600">Audiência do processo 0007788-11 sincronizada com o Google Calendar de Dra. Ana.</p>
       </div>
     </div>
@@ -477,19 +477,20 @@ function FeatureHub() {
   const radius = 230
   return (
     <div className="relative mx-auto hidden lg:block" style={{ width: 560, height: 560 }}>
-      {/* Anel orbital */}
-      <div className="absolute inset-0 rounded-full border border-dashed border-white/10" />
-      <div className="absolute inset-16 rounded-full border border-white/5" />
+      {/* Anéis orbitais girando lentamente */}
+      <div className="absolute inset-0 rounded-full border border-dashed border-white/10 animate-spin-slow" />
+      <div className="absolute inset-16 rounded-full border border-white/5 animate-spin-slow-reverse" />
+      <div className="absolute inset-0 rounded-full" style={{ background: 'conic-gradient(from 0deg, transparent, rgba(56,189,248,0.08), transparent 30%)', animation: 'spin 18s linear infinite' }} />
 
       {/* Centro */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center justify-center">
         <div
-          className="w-28 h-28 rounded-full flex items-center justify-center"
+          className="w-28 h-28 rounded-full flex items-center justify-center animate-pulse-glow"
           style={{
-            background: 'radial-gradient(circle, rgba(211,160,87,0.25), rgba(211,160,87,0.02) 70%)',
+            background: 'radial-gradient(circle, rgba(56,189,248,0.25), rgba(56,189,248,0.02) 70%)',
           }}
         >
-          <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center bg-dark-900 border border-gold-400/30" style={{ boxShadow: '0 0 40px rgba(211,160,87,0.35)' }}>
+          <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center bg-dark-900 border border-sky-400/30" style={{ boxShadow: '0 0 40px rgba(56,189,248,0.35)' }}>
             <img src="/logomarca.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
           </div>
         </div>
@@ -504,8 +505,8 @@ function FeatureHub() {
             className="absolute top-1/2 left-1/2"
             style={{ transform: `rotate(${angle}deg) translate(${radius}px) rotate(${-angle}deg)` }}
           >
-            <Reveal delay={i * 60} className="-translate-x-1/2 -translate-y-1/2 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-sm whitespace-nowrap hover:bg-white/[0.08] hover:border-gold-400/30 transition-colors">
-              <node.icon className="w-4 h-4 text-gold-400 flex-shrink-0" />
+            <Reveal delay={i * 60} className="-translate-x-1/2 -translate-y-1/2 flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/10 bg-white/[0.04] backdrop-blur-sm whitespace-nowrap hover:bg-white/[0.08] hover:border-sky-400/30 transition-colors">
+              <node.icon className="w-4 h-4 text-sky-400 flex-shrink-0" />
               <span className="text-sm font-medium text-white">{node.label}</span>
             </Reveal>
           </div>
@@ -533,7 +534,7 @@ function SoftBackdrop({ className = '' }: { className?: string }) {
       />
       <div
         className="absolute top-1/3 -right-32 w-[28rem] h-[28rem] rounded-full blur-3xl opacity-[0.16] animate-[float_11s_ease-in-out_infinite_1.5s]"
-        style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
+        style={{ background: 'radial-gradient(circle, #38bdf8, transparent 70%)' }}
       />
     </div>
   )
@@ -549,6 +550,17 @@ export function LandingPage() {
   const [activeModule, setActiveModule] = useState<ModuleId>('dashboard')
   const [processCount, setProcessCount] = useState(600)
   const [testimonialIndex, setTestimonialIndex] = useState(0)
+  const [heroTilt, setHeroTilt] = useState({ x: 3, y: -6 })
+
+  function handleHeroTiltMove(e: React.MouseEvent<HTMLDivElement>) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const px = (e.clientX - rect.left) / rect.width - 0.5
+    const py = (e.clientY - rect.top) / rect.height - 0.5
+    setHeroTilt({ x: py * -16 + 3, y: px * 16 - 6 })
+  }
+  function handleHeroTiltLeave() {
+    setHeroTilt({ x: 3, y: -6 })
+  }
 
   const recommendedPlanId = processCount <= 600 ? 'starter' : processCount <= 1200 ? 'professional' : 'enterprise'
   const activeTab = MODULE_TABS.find(t => t.id === activeModule)!
@@ -605,7 +617,7 @@ export function LandingPage() {
                 )}
               >
                 {l.label}
-                <span className="absolute -bottom-1.5 left-0 w-0 h-px bg-gold-400 transition-all duration-300 group-hover:w-full" />
+                <span className="absolute -bottom-1.5 left-0 w-0 h-px bg-sky-400 transition-all duration-300 group-hover:w-full" />
               </a>
             ))}
           </nav>
@@ -622,8 +634,8 @@ export function LandingPage() {
             </button>
             <button
               onClick={() => goToLogin('signup')}
-              className="relative overflow-hidden flex items-center gap-1.5 text-sm font-semibold text-dark-900 px-4 py-2.5 rounded-full transition-all active:scale-[0.97] hover:brightness-105 bg-gold-500"
-              style={{ boxShadow: '0 4px 18px rgba(211,160,87,0.35)' }}
+              className="relative overflow-hidden flex items-center gap-1.5 text-sm font-semibold text-dark-900 px-4 py-2.5 rounded-full transition-all active:scale-[0.97] hover:brightness-105 bg-sky-500"
+              style={{ boxShadow: '0 4px 18px rgba(56,189,248,0.35)' }}
             >
               Começar agora <ArrowRight className="w-3.5 h-3.5" />
             </button>
@@ -647,7 +659,7 @@ export function LandingPage() {
               </button>
               <button
                 onClick={() => goToLogin('signup')}
-                className="w-full text-center text-sm font-semibold text-dark-900 rounded-full py-2.5 bg-gold-500"
+                className="w-full text-center text-sm font-semibold text-dark-900 rounded-full py-2.5 bg-sky-500"
               >
                 Começar agora
               </button>
@@ -672,7 +684,7 @@ export function LandingPage() {
         />
         <div
           className="pointer-events-none absolute top-1/3 -left-32 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-[0.16] animate-[float_11s_ease-in-out_infinite_1.5s]"
-          style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, #38bdf8, transparent 70%)' }}
         />
 
         <div className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-8 items-center pb-20">
@@ -686,7 +698,12 @@ export function LandingPage() {
             <Reveal delay={80}>
               <h1 className="font-serif text-4xl sm:text-5xl lg:text-[3.4rem] font-semibold tracking-tight leading-[1.1] text-white" style={{ textWrap: 'balance' } as React.CSSProperties}>
                 Para escritórios que{' '}
-                <span className="italic text-gold-400">não podem perder prazo</span>.
+                <span
+                  className="italic bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient-x"
+                  style={{ backgroundImage: 'linear-gradient(90deg, #38bdf8, #818cf8, #38bdf8)' }}
+                >
+                  não podem perder prazo
+                </span>.
               </h1>
             </Reveal>
 
@@ -701,8 +718,8 @@ export function LandingPage() {
               <div className="mt-9 flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-3">
                 <button
                   onClick={() => goToLogin('signup')}
-                  className="relative overflow-hidden group w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-dark-900 transition-all active:scale-[0.98] hover:-translate-y-0.5 bg-gold-500 hover:brightness-105"
-                  style={{ boxShadow: '0 10px 30px rgba(211,160,87,0.35)' }}
+                  className="relative overflow-hidden group w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-dark-900 transition-all active:scale-[0.98] hover:-translate-y-0.5 bg-sky-500 hover:brightness-105"
+                  style={{ boxShadow: '0 10px 30px rgba(56,189,248,0.35)' }}
                 >
                   <span
                     className="absolute inset-0 opacity-0 group-hover:opacity-100"
@@ -733,19 +750,28 @@ export function LandingPage() {
           </div>
 
           {/* Coluna do mockup — painel flutuante em perspectiva */}
-          <Reveal delay={360} className="min-w-0 lg:col-span-6 relative" style={{ perspective: '1600px' }}>
-            <div className="relative mx-auto w-full max-w-[520px]" style={{ transform: 'rotateY(-6deg) rotateX(3deg)' }}>
+          <Reveal delay={360} className="min-w-0 lg:col-span-6 relative">
+            <div
+              className="relative mx-auto w-full max-w-[520px]"
+              style={{ perspective: '1600px' }}
+              onMouseMove={handleHeroTiltMove}
+              onMouseLeave={handleHeroTiltLeave}
+            >
+            <div
+              className="relative transition-transform duration-200 ease-out"
+              style={{ transform: `rotateY(${heroTilt.y}deg) rotateX(${heroTilt.x}deg)` }}
+            >
               <div
-                className="pointer-events-none absolute -inset-8 -z-10 rounded-[2.5rem] blur-2xl opacity-50"
+                className="pointer-events-none absolute -inset-8 -z-10 rounded-[2.5rem] blur-2xl opacity-50 animate-pulse-glow"
                 style={{ background: 'radial-gradient(ellipse at 30% 20%, #3b82f6, transparent 60%)' }}
               />
               <div
                 className="rounded-2xl overflow-hidden bg-dark-900 border border-white/10"
-                style={{ boxShadow: '0 50px 120px -20px rgba(0,0,0,0.55), 0 0 80px -25px rgba(211,160,87,0.3)' }}
+                style={{ boxShadow: '0 50px 120px -20px rgba(0,0,0,0.55), 0 0 80px -25px rgba(56,189,248,0.3)' }}
               >
                 <div className="flex items-center gap-1.5 px-4 py-3 border-b border-white/10 bg-dark-800">
                   <span className="w-2.5 h-2.5 rounded-full bg-red-400/70" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-gold-400/70" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-sky-400/70" />
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/70" />
                   <div className="ml-4 flex-1 max-w-xs h-6 rounded-md bg-white/5 border border-white/10" />
                 </div>
@@ -755,7 +781,7 @@ export function LandingPage() {
                     {[Users, Briefcase, CalendarDays, DollarSign].map((Icon, i) => (
                       <div key={i} className={cn(
                         'w-8 h-8 rounded-lg flex items-center justify-center',
-                        i === 0 ? 'bg-gold-500' : 'bg-white/5'
+                        i === 0 ? 'bg-sky-500' : 'bg-white/5'
                       )}>
                         <Icon className={cn('w-4 h-4', i === 0 ? 'text-dark-900' : 'text-slate-300')} />
                       </div>
@@ -764,7 +790,7 @@ export function LandingPage() {
 
                   <div className="flex-1 p-5 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                     {[
-                      { label: 'Processos ativos', value: '128', accent: 'bg-gold-500' },
+                      { label: 'Processos ativos', value: '128', accent: 'bg-sky-500' },
                       { label: 'Tarefas concluídas no mês', value: '342', accent: 'bg-emerald-400' },
                       { label: 'Honorários a receber', value: 'R$ 84.2k', accent: 'bg-white' },
                     ].map(card => (
@@ -796,6 +822,7 @@ export function LandingPage() {
                 </div>
               </div>
             </div>
+            </div>
 
             {/* Cards flutuantes de destaque */}
             <div
@@ -815,8 +842,8 @@ export function LandingPage() {
               className="hidden lg:flex absolute -right-2 -bottom-6 items-center gap-2.5 px-4 py-3 rounded-xl border border-slate-200 bg-white"
               style={{ boxShadow: '0 12px 32px rgba(0,0,0,0.25)', animation: 'floatCard 7s ease-in-out infinite 1s', ['--rot' as any]: '2deg' }}
             >
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gold-50">
-                <Bell className="w-4 h-4 text-gold-600" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-sky-50">
+                <Bell className="w-4 h-4 text-sky-600" />
               </div>
               <div>
                 <p className="text-xs font-semibold text-slate-800">Nova intimação CNJ</p>
@@ -832,10 +859,10 @@ export function LandingPage() {
             <Reveal
               key={s.label}
               delay={i * 80}
-              className="rounded-2xl p-5 border border-white/10 hover:border-gold-400/30 transition-colors"
+              className="rounded-2xl p-5 border border-white/10 hover:border-sky-400/30 transition-colors"
               style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))' }}
             >
-              <s.icon className="w-5 h-5 text-gold-400 mb-3" />
+              <s.icon className="w-5 h-5 text-sky-400 mb-3" />
               <AnimatedStatValue value={s.value} className="text-white text-xl sm:text-2xl" />
               <p className="text-xs text-slate-400 mt-1">{s.label}</p>
             </Reveal>
@@ -867,7 +894,7 @@ export function LandingPage() {
                   </div>
                   <div className="lg:col-span-5">
                     <div className="flex items-center gap-2 mb-2">
-                      <p.icon className="w-4 h-4 text-gold-600 flex-shrink-0" />
+                      <p.icon className="w-4 h-4 text-sky-600 flex-shrink-0" />
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">O problema</p>
                     </div>
                     <p className="text-base text-slate-800 leading-relaxed">{p.problem}</p>
@@ -876,7 +903,7 @@ export function LandingPage() {
                     <ArrowRight className="w-4 h-4 text-slate-300" />
                   </div>
                   <div className="lg:col-span-5">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gold-700 mb-2">Com o LegalHub</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 mb-2">Com o LegalHub</p>
                     <p className="text-base text-slate-600 leading-relaxed">{p.solution}</p>
                   </div>
                 </div>
@@ -911,9 +938,9 @@ export function LandingPage() {
                       'flex-shrink-0 md:flex-shrink flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap',
                       active ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     )}
-                    style={active ? { boxShadow: 'inset 2px 0 0 0 #d3a057' } : undefined}
+                    style={active ? { boxShadow: 'inset 2px 0 0 0 #38bdf8' } : undefined}
                   >
-                    <tab.icon className={cn('w-4 h-4 flex-shrink-0', active ? 'text-gold-400' : 'text-slate-500')} />
+                    <tab.icon className={cn('w-4 h-4 flex-shrink-0', active ? 'text-sky-400' : 'text-slate-500')} />
                     {tab.label}
                   </button>
                 )
@@ -923,7 +950,7 @@ export function LandingPage() {
             {/* Painel do módulo ativo */}
             <div className="flex-1 p-6 sm:p-10 min-h-[340px]">
               <div className="flex items-center gap-2 mb-6">
-                <activeTab.icon className="w-4 h-4 text-gold-600" />
+                <activeTab.icon className="w-4 h-4 text-sky-600" />
                 <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">{activeTab.label}</p>
               </div>
               <ModulePreview id={activeModule} />
@@ -957,7 +984,7 @@ export function LandingPage() {
           <div className="lg:hidden grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-2xl mx-auto">
             {HUB_NODES.map(node => (
               <div key={node.label} className="flex flex-col items-center gap-2 text-center rounded-xl border border-white/10 bg-white/[0.03] px-3 py-4">
-                <node.icon className="w-4 h-4 text-gold-400" />
+                <node.icon className="w-4 h-4 text-sky-400" />
                 <span className="text-xs font-medium text-white">{node.label}</span>
               </div>
             ))}
@@ -984,20 +1011,20 @@ export function LandingPage() {
                   'group relative rounded-2xl p-7 overflow-hidden transition-all duration-300',
                   f.flagship
                     ? 'sm:col-span-2 bg-dark-900 hover:-translate-y-1'
-                    : 'border border-slate-200 hover:border-gold-200 hover:-translate-y-1 bg-white'
+                    : 'border border-slate-200 hover:border-sky-200 hover:-translate-y-1 bg-white'
                 )}
                 style={f.flagship ? { boxShadow: '0 20px 50px -20px rgba(10,22,40,0.5)' } : undefined}
               >
                 {f.flagship && (
                   <div
                     className="pointer-events-none absolute -top-16 -right-16 w-56 h-56 rounded-full blur-3xl opacity-[0.18]"
-                    style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
+                    style={{ background: 'radial-gradient(circle, #38bdf8, transparent 70%)' }}
                   />
                 )}
                 <div
                   className={cn(
                     'relative w-11 h-11 rounded-xl flex items-center justify-center mb-4 transition-transform group-hover:scale-110',
-                    f.flagship ? 'bg-gold-500' : 'bg-dark-900'
+                    f.flagship ? 'bg-sky-500' : 'bg-dark-900'
                   )}
                 >
                   <f.icon className={cn('w-5 h-5', f.flagship ? 'text-dark-900' : 'text-white')} />
@@ -1013,7 +1040,7 @@ export function LandingPage() {
             <div className="flex flex-wrap gap-3">
               {MORE_FEATURES.map(m => (
                 <div key={m.label} className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-600">
-                  <m.icon className="w-4 h-4 text-gold-600 flex-shrink-0" />
+                  <m.icon className="w-4 h-4 text-sky-600 flex-shrink-0" />
                   {m.label}
                 </div>
               ))}
@@ -1036,7 +1063,7 @@ export function LandingPage() {
               <Reveal key={s.title} delay={i * 120} className="relative text-center">
                 <div className="relative z-10 w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-5 bg-dark-900" style={{ boxShadow: '0 10px 24px -8px rgba(10,22,40,0.4)' }}>
                   <s.icon className="w-6 h-6 text-white" />
-                  <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-dark-900 bg-gold-500">
+                  <span className="absolute -top-2 -right-2 w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center text-dark-900 bg-sky-500">
                     {i + 1}
                   </span>
                 </div>
@@ -1061,7 +1088,7 @@ export function LandingPage() {
               const t = TESTIMONIALS[testimonialIndex]
               return (
                 <Reveal key={testimonialIndex} className="rounded-3xl border border-slate-200 bg-white p-8 sm:p-10 flex flex-col items-center text-center">
-                  <Quote className="w-7 h-7 text-gold-300 mb-4" />
+                  <Quote className="w-7 h-7 text-sky-300 mb-4" />
                   <div className="flex items-center gap-0.5 mb-4">
                     {Array.from({ length: 5 }).map((_, j) => <Star key={j} className="w-4 h-4 fill-amber-400 text-amber-400" />)}
                   </div>
@@ -1093,7 +1120,7 @@ export function LandingPage() {
                     key={i}
                     onClick={() => setTestimonialIndex(i)}
                     aria-label={`Ver depoimento ${i + 1}`}
-                    className={cn('h-1.5 rounded-full transition-all', i === testimonialIndex ? 'w-5 bg-gold-500' : 'w-1.5 bg-slate-300')}
+                    className={cn('h-1.5 rounded-full transition-all', i === testimonialIndex ? 'w-5 bg-sky-500' : 'w-1.5 bg-slate-300')}
                   />
                 ))}
               </div>
@@ -1147,12 +1174,12 @@ export function LandingPage() {
         />
         <div
           className="pointer-events-none absolute top-0 left-1/3 w-[30rem] h-[30rem] rounded-full blur-3xl opacity-[0.14]"
-          style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
+          style={{ background: 'radial-gradient(circle, #38bdf8, transparent 70%)' }}
         />
         <div className="relative max-w-6xl mx-auto">
           <Reveal className="max-w-2xl mx-auto text-center mb-16">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-gold-300 border border-gold-500/30 bg-gold-500/10 mb-5">
-              <ShieldCheck className="w-3.5 h-3.5 text-gold-400" />
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-sky-300 border border-sky-500/30 bg-sky-500/10 mb-5">
+              <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
               Segurança em primeiro lugar
             </div>
             <h2 className="font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">
@@ -1166,8 +1193,8 @@ export function LandingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {SECURITY_BADGES.map((s, i) => (
               <Reveal key={s.label} delay={i * 70} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 hover:bg-white/[0.05] transition-colors">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gold-500/15 mb-4">
-                  <s.icon className="w-5 h-5 text-gold-400" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-sky-500/15 mb-4">
+                  <s.icon className="w-5 h-5 text-sky-400" />
                 </div>
                 <h3 className="text-sm font-semibold text-white">{s.label}</h3>
                 <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">{s.description}</p>
@@ -1188,15 +1215,15 @@ export function LandingPage() {
             </p>
           </Reveal>
 
-          <Reveal delay={80} className="max-w-3xl mx-auto mb-8 rounded-2xl border border-gold-200 bg-gradient-to-r from-gold-50 to-white p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gold-100">
-              <Gift className="w-5 h-5 text-gold-600" />
+          <Reveal delay={80} className="max-w-3xl mx-auto mb-8 rounded-2xl border border-sky-200 bg-gradient-to-r from-sky-50 to-white p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-sky-100">
+              <Gift className="w-5 h-5 text-sky-600" />
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">
                 Oferta de lançamento: assine hoje e pague R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, em qualquer plano
               </p>
-              <p className="mt-1 text-xs text-gold-700 flex items-center gap-1.5 justify-center sm:justify-start">
+              <p className="mt-1 text-xs text-sky-700 flex items-center gap-1.5 justify-center sm:justify-start">
                 <BookOpen className="w-3.5 h-3.5 flex-shrink-0" />
                 Bônus: você recebe o e-book completo do LegalHub direto dentro do sistema
               </p>
@@ -1208,7 +1235,7 @@ export function LandingPage() {
               <label htmlFor="process-slider" className="text-sm font-semibold text-slate-700">
                 Quantos processos ativos o seu escritório tem?
               </label>
-              <span className="flex-shrink-0 text-sm font-bold text-gold-700">
+              <span className="flex-shrink-0 text-sm font-bold text-sky-700">
                 {processCount}{processCount >= 2000 ? '+' : ''}
               </span>
             </div>
@@ -1221,7 +1248,7 @@ export function LandingPage() {
               value={processCount}
               onChange={e => setProcessCount(Number(e.target.value))}
               className="w-full cursor-pointer"
-              style={{ accentColor: '#c08b3e' }}
+              style={{ accentColor: '#0ea5e9' }}
             />
             <p className="mt-3 text-xs text-slate-500 flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
@@ -1245,7 +1272,7 @@ export function LandingPage() {
               >
                 {plan.highlight && (
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold text-white bg-dark-900">
-                    <Crown className="w-3 h-3 text-gold-400" /> Mais popular
+                    <Crown className="w-3 h-3 text-sky-400" /> Mais popular
                   </span>
                 )}
                 {plan.id === recommendedPlanId && (
@@ -1271,7 +1298,7 @@ export function LandingPage() {
                         <span className="font-serif text-4xl font-semibold tracking-tight text-slate-900">{PROMO_MONTHLY_PRICE}</span>
                         <span className="text-sm text-slate-400">/mês</span>
                       </div>
-                      <p className="mt-1 text-[11px] text-gold-700 font-medium">
+                      <p className="mt-1 text-[11px] text-sky-700 font-medium">
                         nos 3 primeiros meses — depois R$ {plan.price}/mês
                       </p>
                     </>
@@ -1282,7 +1309,7 @@ export function LandingPage() {
                         <span className="font-serif text-4xl font-semibold tracking-tight text-slate-900">{plan.price}</span>
                         <span className="text-sm text-slate-400">/mês</span>
                       </div>
-                      <p className="mt-1 text-[11px] text-gold-700 font-medium">
+                      <p className="mt-1 text-[11px] text-sky-700 font-medium">
                         já é o valor promocional dos 3 primeiros meses
                       </p>
                     </>
@@ -1336,13 +1363,13 @@ export function LandingPage() {
             {FAQS.map((item, i) => {
               const open = faqOpen === i
               return (
-                <Reveal key={item.q} delay={i * 50} className={cn('rounded-2xl border bg-white overflow-hidden transition-colors', open ? 'border-gold-200' : 'border-slate-200')}>
+                <Reveal key={item.q} delay={i * 50} className={cn('rounded-2xl border bg-white overflow-hidden transition-colors', open ? 'border-sky-200' : 'border-slate-200')}>
                   <button
                     onClick={() => setFaqOpen(open ? null : i)}
                     className="w-full flex items-center justify-between gap-4 px-5 sm:px-6 py-4 text-left"
                   >
                     <span className="text-sm font-semibold text-slate-900">{item.q}</span>
-                    <ChevronDown className={cn('w-4 h-4 flex-shrink-0 transition-transform', open ? 'rotate-180 text-gold-600' : 'text-slate-400')} />
+                    <ChevronDown className={cn('w-4 h-4 flex-shrink-0 transition-transform', open ? 'rotate-180 text-sky-600' : 'text-slate-400')} />
                   </button>
                   <div
                     className="grid transition-all duration-300 ease-out"
@@ -1372,14 +1399,14 @@ export function LandingPage() {
           />
           <div
             className="pointer-events-none absolute -top-24 -right-24 w-72 h-72 rounded-full blur-3xl opacity-30 animate-[float_8s_ease-in-out_infinite]"
-            style={{ background: 'radial-gradient(circle, #d3a057, transparent 70%)' }}
+            style={{ background: 'radial-gradient(circle, #38bdf8, transparent 70%)' }}
           />
           <div
             className="pointer-events-none absolute -bottom-24 -left-24 w-72 h-72 rounded-full blur-3xl opacity-20 animate-[float_10s_ease-in-out_infinite_1s]"
             style={{ background: 'radial-gradient(circle, #283d5e, transparent 70%)' }}
           />
           <div className="relative inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-semibold text-white border border-white/25 bg-white/10 mb-6">
-            <Gift className="w-3.5 h-3.5 text-gold-400" />
+            <Gift className="w-3.5 h-3.5 text-sky-400" />
             R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses + e-book de bônus
           </div>
           <h2 className="relative font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">Pronto para organizar seu escritório?</h2>

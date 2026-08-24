@@ -9,22 +9,22 @@ export function LoadingScreen() {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(211,160,87,0.07) 0%, transparent 70%)',
+            'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(56,189,248,0.07) 0%, transparent 70%)',
         }}
       />
 
       {/* Anéis pulsantes */}
       <div className="relative flex items-center justify-center mb-10">
         <span
-          className="absolute rounded-full border border-gold-400/10"
+          className="absolute rounded-full border border-sky-400/10"
           style={{ width: 220, height: 220, animation: 'lhPulse 2.4s ease-out infinite' }}
         />
         <span
-          className="absolute rounded-full border border-gold-400/15"
+          className="absolute rounded-full border border-sky-400/15"
           style={{ width: 170, height: 170, animation: 'lhPulse 2.4s ease-out 0.4s infinite' }}
         />
         <span
-          className="absolute rounded-full border border-gold-400/20"
+          className="absolute rounded-full border border-sky-400/20"
           style={{ width: 130, height: 130, animation: 'lhPulse 2.4s ease-out 0.8s infinite' }}
         />
 
@@ -61,7 +61,7 @@ export function LoadingScreen() {
         LegalHub
       </p>
       <p
-        className="text-gold-400/60 text-[11px] tracking-widest uppercase mt-1.5"
+        className="text-sky-400/60 text-[11px] tracking-widest uppercase mt-1.5"
         style={{ letterSpacing: '0.2em', animation: 'lhFadeIn 0.8s ease-out 0.15s both' }}
       >
         Gestão Jurídica Inteligente
@@ -80,7 +80,7 @@ export function LoadingScreen() {
         <div
           className="h-full rounded-full"
           style={{
-            background: 'linear-gradient(90deg, rgba(211,160,87,0.3), rgba(211,160,87,0.9), rgba(211,160,87,0.3))',
+            background: 'linear-gradient(90deg, rgba(56,189,248,0.3), rgba(56,189,248,0.9), rgba(56,189,248,0.3))',
             animation: 'lhBar 1.6s ease-in-out infinite',
           }}
         />
@@ -93,8 +93,8 @@ export function LoadingScreen() {
           100% { transform: scale(1.15); opacity: 0; }
         }
         @keyframes lhLogoFloat {
-          0%, 100% { transform: translateY(0px);  box-shadow: 0 8px 32px rgba(211,160,87,0.10); }
-          50%       { transform: translateY(-6px); box-shadow: 0 16px 48px rgba(211,160,87,0.18); }
+          0%, 100% { transform: translateY(0px);  box-shadow: 0 8px 32px rgba(56,189,248,0.10); }
+          50%       { transform: translateY(-6px); box-shadow: 0 16px 48px rgba(56,189,248,0.18); }
         }
         @keyframes lhFadeIn {
           from { opacity: 0; transform: translateY(6px); }
