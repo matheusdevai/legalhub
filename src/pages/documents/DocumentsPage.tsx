@@ -5,7 +5,7 @@ import { Layout } from '@/components/layout/Layout'
 import { Modal, Input, Select, Textarea, Spinner, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { cn } from '@/lib/utils'
+import { cn, sanitizeFileName } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { openDocumentPrintWindow } from '@/lib/exportUtils'
@@ -227,7 +227,7 @@ export function DocumentsPage() {
     setUploading(true)
     setUploadError('')
     try {
-      const path = `${profile?.tenant_id}/${Date.now()}_${uploadFile.name.replace(/\s+/g, '_')}`
+      const path = `${profile?.tenant_id}/${Date.now()}_${sanitizeFileName(uploadFile.name)}`
       const { error: storageErr } = await supabase.storage.from('documents').upload(path, uploadFile)
       if (storageErr) throw storageErr
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMonthlyChangePercent } from './utils'
+import { computeMonthlyChangePercent, sanitizeFileName } from './utils'
 
 describe('computeMonthlyChangePercent', () => {
   it('calcula a variação percentual normal entre dois meses', () => {
@@ -21,5 +21,20 @@ describe('computeMonthlyChangePercent', () => {
 
   it('sem mês anterior e sem produção este mês, considera 0%', () => {
     expect(computeMonthlyChangePercent(0, 0)).toBe(0)
+  })
+})
+
+describe('sanitizeFileName', () => {
+  it('remove acentos preservando o resto do nome e a extensão', () => {
+    expect(sanitizeFileName('Procuração.pdf')).toBe('Procuracao.pdf')
+    expect(sanitizeFileName('Contestação Final.docx')).toBe('Contestacao_Final.docx')
+  })
+
+  it('troca espaços e caracteres especiais por underscore', () => {
+    expect(sanitizeFileName('petição (rascunho) #1.pdf')).toBe('peticao_rascunho_1.pdf')
+  })
+
+  it('mantém nomes já seguros intactos', () => {
+    expect(sanitizeFileName('relatorio-2026_v2.xlsx')).toBe('relatorio-2026_v2.xlsx')
   })
 })

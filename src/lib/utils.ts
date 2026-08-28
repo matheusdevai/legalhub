@@ -5,6 +5,13 @@ export function cn(...classes: (string | undefined | null | false)[]) {
   return classes.filter(Boolean).join(' ')
 }
 
+// Supabase Storage rejeita "key" com acento/caractere especial (ex: "Procuração.pdf" → "Invalid key")
+// — usar sempre que um nome de arquivo do usuário virar parte do path de upload.
+export function sanitizeFileName(name: string): string {
+  const withoutAccents = name.normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return withoutAccents.replace(/[^a-zA-Z0-9._-]+/g, '_')
+}
+
 export function formatDate(date: string | Date | null | undefined, fmt = 'dd/MM/yyyy') {
   if (!date) return '—'
   try {

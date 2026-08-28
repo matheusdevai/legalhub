@@ -18,7 +18,7 @@ import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpense
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount, ExpenseBudget } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS } from '@/lib/utils'
+import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib/expenseUtils'
@@ -585,7 +585,7 @@ export function FinancialsPage() {
     setUploadingReceipt(true)
     setReceiptError('')
     try {
-      const path = `${profile.tenant_id}/receipts/${Date.now()}_${file.name.replace(/\s+/g, '_')}`
+      const path = `${profile.tenant_id}/receipts/${Date.now()}_${sanitizeFileName(file.name)}`
       const { error: uploadErr } = await supabase.storage.from('documents').upload(path, file)
       if (uploadErr) throw uploadErr
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)

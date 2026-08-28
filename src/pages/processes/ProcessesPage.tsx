@@ -12,7 +12,7 @@ import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner, StatsCard } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, Tenant } from '@/types'
-import { formatDate, formatCurrency, PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS } from '@/lib/utils'
+import { formatDate, formatCurrency, PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
@@ -1843,7 +1843,7 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
     if (!file || !p.tenant_id) return
     setUploading(true)
     try {
-      const path = `${p.tenant_id}/${p.id}/${Date.now()}_${file.name}`
+      const path = `${p.tenant_id}/${p.id}/${Date.now()}_${sanitizeFileName(file.name)}`
       const { error: uploadErr } = await supabase.storage.from('documents').upload(path, file)
       if (uploadErr) throw uploadErr
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
