@@ -537,6 +537,38 @@ export function openExportWindow(opts: ExportOptions): void {
   }
 }
 
+// ─── Impressão de documento em texto livre (procuração, contrato, etc.) ───────
+// Mais simples que openExportWindow (que é orientado a tabelas/relatórios) — só
+// abre o conteúdo do documento formatado como página A4 e chama print().
+export function openDocumentPrintWindow(title: string, content: string): void {
+  const escaped = content
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>${title.replace(/</g, '&lt;')} — LegalHub</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Georgia,'Times New Roman',serif;background:#f1f5f9;margin:0;padding:40px 0}
+    .page{max-width:720px;margin:0 auto;background:#fff;padding:56px 64px;box-shadow:0 1px 4px rgba(0,0,0,.08);white-space:pre-wrap;line-height:1.7;font-size:14px;color:#1e293b}
+    .actions{max-width:720px;margin:0 auto 16px;display:flex;justify-content:flex-end}
+    .btn{padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#2563eb;color:#fff;font-family:-apple-system,sans-serif}
+    @media print{.actions{display:none}body{background:#fff;padding:0}.page{box-shadow:none;max-width:none}}
+  </style>
+</head>
+<body>
+  <div class="actions"><button class="btn" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
+  <div class="page">${escaped}</div>
+</body>
+</html>`
+  const win = window.open('', '_blank')
+  if (win) {
+    win.document.write(html)
+    win.document.close()
+  }
+}
+
 // ─── vCard ──────────────────────────────────────────────────────────────────
 export interface VCardContact {
   name: string

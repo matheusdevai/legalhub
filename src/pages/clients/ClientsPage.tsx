@@ -19,6 +19,7 @@ import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
 import { buildClientImportPreview } from '@/lib/clientImportUtils'
 import { fetchCitiesByState } from '@/lib/ibgeUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
+import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
 import { withErrorFeedback } from '@/lib/errorFeedback'
@@ -33,6 +34,11 @@ const STATUS_COLORS: Record<string, string> = {
 }
 const STATUS_LABELS: Record<string, string> = { active: 'Ativo', inactive: 'Inativo', prospect: 'Prospect' }
 const STATUS_DOT: Record<string, string> = { active: 'bg-green-500', inactive: 'bg-gray-400', prospect: 'bg-blue-500' }
+
+const AUTO_DOC_KIND_LABELS: Record<string, string> = {
+  procuracao: 'Procuração',
+  contrato_honorarios: 'Contrato de Honorários',
+}
 
 const BENEFICIO_PREVIDENCIARIO_OPTIONS = [
   'Aposentadoria por Idade',
@@ -236,6 +242,17 @@ export function ClientsPage() {
   }
   const [taskForm, setTaskForm] = useState<TaskFormType>(EMPTY_TASK_FORM)
 
+  // Geração automática de Procuração/Contrato de Honorários ao cadastrar cliente novo
+  interface AutoDocTemplate { id: string; title: string; content: string; auto_doc_kind: 'procuracao' | 'contrato_honorarios'; area_direito: string }
+  const [autoDocTemplates, setAutoDocTemplates] = useState<AutoDocTemplate[]>([])
+  const [tenantName, setTenantName] = useState('')
+  const [docGenModalOpen, setDocGenModalOpen] = useState(false)
+  const [docGenCandidates, setDocGenCandidates] = useState<AutoDocTemplate[]>([])
+  const [docGenSelected, setDocGenSelected] = useState<Set<string>>(new Set())
+  const [docGenSaving, setDocGenSaving] = useState(false)
+
+  function normalizeArea(s: string) { return s.trim().toLowerCase() }
+
   function closeTaskModal() {
     setTaskModalOpen(false)
     setSavedClientId(null)
@@ -263,6 +280,51 @@ export function ClientsPage() {
     if (taskForm.assigned_to) await notifyTaskAssignment(taskForm.assigned_to, taskForm.title)
     closeTaskModal()
   }
+
+  /** Depois do modal de geração de documentos (gerado ou pulado), segue pro passo de criar tarefa — mesmo fluxo de sempre. */
+  function proceedToTaskStep(clientId: string, name: string, areaDesc: string, modDesc: string) {
+    setSavedClientId(clientId)
+    setSavedClientName(name)
+    setTaskForm({
+      title: `Protocolar processo de ${name}`,
+      description: `Cadastrado em ${new Date().toLocaleDateString('pt-BR')}${areaDesc}${modDesc}. Verificar documentação e protocolar o processo.`,
+      priority: 'medium', type: 'custom', due_date: '',
+      assigned_to: form.assigned_lawyer_uid || '', assigned_name: form.assigned_lawyer || '',
+    })
+    setTaskModalOpen(true)
+  }
+
+  function closeDocGenModal() {
+    setDocGenModalOpen(false)
+    setDocGenCandidates([])
+    setDocGenSelected(new Set())
+    if (savedClientId) {
+      const areaDesc = form.area_direito ? ` | Área: ${form.area_direito}` : ''
+      const modDesc = form.modalidade ? ` | Modalidade: ${form.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}` : ''
+      proceedToTaskStep(savedClientId, savedClientName, areaDesc, modDesc)
+    }
+  }
+
+  async function generateAutoDocuments() {
+    if (!savedClientId || docGenSelected.size === 0) { closeDocGenModal(); return }
+    setDocGenSaving(true)
+    const toGenerate = docGenCandidates.filter(t => docGenSelected.has(t.id))
+    const rows = toGenerate.map(t => ({
+      tenant_id: profile?.tenant_id,
+      title: `${t.title} - ${savedClientName}`,
+      type: 'contract' as const,
+      category: form.area_direito || null,
+      content: mergeTemplateVariables(t.content, { client: form, tenant: { name: tenantName }, profile }),
+      is_template: false,
+      client_id: savedClientId,
+    }))
+    const { error } = await withErrorFeedback(supabase.from('documents').insert(rows), 'Erro ao gerar documentos')
+    setDocGenSaving(false)
+    if (error) return
+    toast(`${rows.length === 1 ? 'Documento gerado' : `${rows.length} documentos gerados`} em Documentos — pronto${rows.length === 1 ? '' : 's'} para assinatura`, 'success')
+    closeDocGenModal()
+  }
+
   const [cpfLoading, setCpfLoading] = useState(false)
   const [cpfError, setCpfError] = useState('')
   const [cpfNote, setCpfNote] = useState('')
@@ -472,12 +534,16 @@ export function ClientsPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: c }, { data: col }, { data: proc }, { data: usr }] = await Promise.all([
+    const [{ data: c }, { data: col }, { data: proc }, { data: usr }, { data: autoDocs }, { data: tenantRow }] = await Promise.all([
       supabase.from('clients').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('processes').select('id,client_id,client_name,number,title,status,modalidade,counterparty,data_protocolo,created_at').is('deleted_at', null),
       supabase.from('profiles').select('id,user_id,name,display_name,role').order('name'),
+      supabase.from('documents').select('id,title,content,auto_doc_kind,area_direito').is('deleted_at', null).not('auto_doc_kind', 'is', null),
+      profile?.tenant_id ? supabase.from('tenants').select('name').eq('id', profile.tenant_id).single() : Promise.resolve({ data: null }),
     ])
+    setAutoDocTemplates((autoDocs || []) as AutoDocTemplate[])
+    setTenantName(tenantRow?.name || '')
     setClients(c || [])
     setColaboradores(col || [])
     const allGroupIds = new Set(['sem-parceiro', ...(col || []).map((x: Colaborador) => x.id)])
@@ -823,22 +889,24 @@ export function ClientsPage() {
       setPage(0)
       load()
     } else if (clientId) {
-      const areaDesc = form.area_direito ? ` | Área: ${form.area_direito}` : ''
-      const modDesc = form.modalidade ? ` | Modalidade: ${form.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}` : ''
       setSavedClientId(clientId)
       setSavedClientName(form.name)
-      setTaskForm({
-        title: `Protocolar processo de ${form.name}`,
-        description: `Cadastrado em ${new Date().toLocaleDateString('pt-BR')}${areaDesc}${modDesc}. Verificar documentação e protocolar o processo.`,
-        priority: 'medium', type: 'custom',
-        due_date: '',
-        assigned_to: form.assigned_lawyer_uid || '',
-        assigned_name: form.assigned_lawyer || '',
-      })
       setModalOpen(false)
       setPage(0)
       load()
-      setTaskModalOpen(true)
+
+      const matches = form.area_direito.trim()
+        ? autoDocTemplates.filter(t => normalizeArea(t.area_direito) === normalizeArea(form.area_direito))
+        : []
+      if (matches.length > 0) {
+        setDocGenCandidates(matches)
+        setDocGenSelected(new Set(matches.map(t => t.id)))
+        setDocGenModalOpen(true)
+      } else {
+        const areaDesc = form.area_direito ? ` | Área: ${form.area_direito}` : ''
+        const modDesc = form.modalidade ? ` | Modalidade: ${form.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}` : ''
+        proceedToTaskStep(clientId, form.name, areaDesc, modDesc)
+      }
     } else {
       setModalOpen(false)
       setPage(0)
@@ -2678,6 +2746,67 @@ export function ClientsPage() {
           onDone={() => { setReconcileModalOpen(false); loadClientExpenses(viewClient.id) }}
         />
       )}
+
+      {/* ══ MODAL GERAÇÃO AUTOMÁTICA DE DOCUMENTOS — só aparece quando há modelo de Procuração/Contrato de Honorários cadastrado pra área do cliente ══ */}
+      <Modal open={docGenModalOpen} onClose={closeDocGenModal} title="" size="md">
+        <div className="-mx-6 px-6 pt-1 pb-4 border-b border-gray-100 dark:border-dark-700">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+              <FileText className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-gray-900 dark:text-white">Gerar documentos automaticamente?</h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Para: <span className="font-semibold text-primary-600 dark:text-primary-400">{savedClientName}</span> — Área: {form.area_direito}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2 mt-4">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Encontramos modelo{docGenCandidates.length !== 1 ? 's' : ''} cadastrado{docGenCandidates.length !== 1 ? 's' : ''} para essa área. Selecione os que quer gerar já preenchidos com os dados do cliente:
+          </p>
+          {docGenCandidates.map(t => (
+            <label key={t.id} className="flex items-start gap-3 p-3 border border-gray-200 dark:border-dark-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={docGenSelected.has(t.id)}
+                onChange={e => setDocGenSelected(prev => {
+                  const next = new Set(prev)
+                  if (e.target.checked) next.add(t.id); else next.delete(t.id)
+                  return next
+                })}
+              />
+              <div>
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{t.title}</p>
+                <p className="text-xs text-gray-400">{AUTO_DOC_KIND_LABELS[t.auto_doc_kind]}</p>
+              </div>
+            </label>
+          ))}
+          <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
+            Os documentos são gerados como rascunho em Documentos, prontos para conferência e assinatura — campos sem dado no cadastro do cliente ficam em branco.
+          </p>
+        </div>
+
+        <div className="mt-5 -mx-6 px-6 pt-4 border-t border-gray-100 dark:border-dark-700 space-y-2">
+          <button
+            onClick={generateAutoDocuments}
+            disabled={docGenSaving || docGenSelected.size === 0}
+            className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            <FileText className="w-4 h-4" />
+            {docGenSaving ? 'Gerando...' : `Gerar ${docGenSelected.size || ''} documento${docGenSelected.size === 1 ? '' : 's'}`}
+          </button>
+          <button
+            onClick={closeDocGenModal}
+            className="w-full py-2.5 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+          >
+            Pular esta etapa
+          </button>
+        </div>
+      </Modal>
 
       {/* ══ MODAL TAREFA — Etapa 2 ══ */}
       <Modal open={taskModalOpen} onClose={closeTaskModal} title="" size="md">

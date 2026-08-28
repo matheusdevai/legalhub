@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withErrorFeedback } from '@/lib/errorFeedback'
+import { openDocumentPrintWindow } from '@/lib/exportUtils'
 
 interface Document {
   id: string
@@ -26,6 +27,17 @@ interface Document {
   file_name?: string
   file_size?: number
   file_mime?: string
+  area_direito?: string | null
+  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | null
+}
+
+// Mesma lista base usada em ClientsPage (área do direito do cliente) — mantém as sugestões alinhadas
+// para que o matching automático de modelo↔cliente (por texto normalizado) tenha mais chance de bater.
+const AREA_DIREITO_OPTIONS = ['Previdenciário', 'Cível', 'Consumidor', 'Trabalhista', 'Tributário', 'Criminal', 'Família', 'Empresarial', 'Imobiliário', 'Administrativo', 'Outro']
+
+const AUTO_DOC_KIND_LABELS: Record<string, string> = {
+  procuracao: 'Procuração',
+  contrato_honorarios: 'Contrato de Honorários',
 }
 
 const FILTER_OPTIONS = [
@@ -43,6 +55,8 @@ interface LibraryTemplate {
   category: string | null
   content: string
   is_library_public: true
+  area_direito?: string | null
+  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | null
 }
 
 function formatFileSize(bytes?: number) {
@@ -113,7 +127,7 @@ export function DocumentsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ title: '', type: 'template', category: '', content: '', tags: '' })
+  const [form, setForm] = useState({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
   const [editId, setEditId] = useState<string | null>(null)
   const [editingLibrary, setEditingLibrary] = useState(false)
 
@@ -142,7 +156,10 @@ export function DocumentsPage() {
     setSaving(true)
     let error: { message: string } | null = null
     if (editingLibrary) {
-      const payload = { title: form.title, type: form.type, category: form.category || null, content: form.content }
+      const payload = {
+        title: form.title, type: form.type, category: form.category || null, content: form.content,
+        area_direito: form.area_direito || null, auto_doc_kind: form.auto_doc_kind || null,
+      }
       const res = editId
         ? await withErrorFeedback(supabase.from('document_library_templates').update(payload).eq('id', editId), 'Erro ao atualizar modelo')
         : await withErrorFeedback(supabase.from('document_library_templates').insert(payload), 'Erro ao criar modelo')
@@ -153,16 +170,17 @@ export function DocumentsPage() {
         category: form.category || null, content: form.content,
         is_template: form.type === 'template',
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        area_direito: form.area_direito || null, auto_doc_kind: form.auto_doc_kind || null,
       }
       const res = editId
         ? await withErrorFeedback(supabase.from('documents').update(payload).eq('id', editId), 'Erro ao atualizar documento')
-        : await withErrorFeedback(supabase.from('documents').insert(payload), 'Erro ao criar documento')
+        : await withErrorFeedback(supabase.from('documents').insert({ ...payload, tenant_id: profile?.tenant_id }), 'Erro ao criar documento')
       error = res.error
     }
     setSaving(false)
     if (error) return
     setModalOpen(false)
-    setForm({ title: '', type: 'template', category: '', content: '', tags: '' })
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
     setEditId(null); setEditingLibrary(false); load()
   }
 
@@ -183,21 +201,24 @@ export function DocumentsPage() {
   function openNew(prefill?: Partial<typeof form>) {
     setEditId(null)
     setEditingLibrary(false)
-    setForm({ title: '', type: 'template', category: '', content: '', tags: '', ...prefill })
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '', ...prefill })
     setModalOpen(true)
   }
 
   function openNewLibraryTemplate() {
     setEditId(null)
     setEditingLibrary(true)
-    setForm({ title: '', type: 'template', category: '', content: '', tags: '' })
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
     setModalOpen(true)
   }
 
   function openEditLibraryTemplate(tpl: LibraryTemplate) {
     setEditId(tpl.id)
     setEditingLibrary(true)
-    setForm({ title: tpl.title, type: tpl.type, category: tpl.category || '', content: tpl.content, tags: '' })
+    setForm({
+      title: tpl.title, type: tpl.type, category: tpl.category || '', content: tpl.content, tags: '',
+      area_direito: tpl.area_direito || '', auto_doc_kind: tpl.auto_doc_kind || '',
+    })
     setModalOpen(true)
   }
 
@@ -211,6 +232,7 @@ export function DocumentsPage() {
       if (storageErr) throw storageErr
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
       const { error: dbErr } = await supabase.from('documents').insert({
+        tenant_id: profile?.tenant_id,
         title: uploadForm.title.trim() || uploadFile.name,
         type: 'other',
         category: uploadForm.category || null,
@@ -240,6 +262,7 @@ export function DocumentsPage() {
     setForm({
       title: doc.title, type: doc.type, category: doc.category || '',
       content: doc.content || '', tags: (doc.tags || []).join(', '),
+      area_direito: doc.area_direito || '', auto_doc_kind: doc.auto_doc_kind || '',
     })
     setModalOpen(true)
   }
@@ -433,7 +456,7 @@ export function DocumentsPage() {
                         )}
                         {(doc as any).is_library_public && (
                           <button
-                            onClick={e => { e.stopPropagation(); openNew({ title: doc.title, type: (doc as any).type, category: (doc as any).category, content: (doc as any).content }) }}
+                            onClick={e => { e.stopPropagation(); openNew({ title: doc.title, type: (doc as any).type, category: (doc as any).category, content: (doc as any).content, area_direito: (doc as any).area_direito || '', auto_doc_kind: (doc as any).auto_doc_kind || '' }) }}
                             className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Usar modelo">
                             <Copy className="w-4 h-4" />
                           </button>
@@ -460,6 +483,13 @@ export function DocumentsPage() {
                     {(doc as any).category && (
                       <p className="text-[10px] text-gray-400 text-center mt-0.5">{(doc as any).category}</p>
                     )}
+                    {(doc as any).auto_doc_kind && (
+                      <p className="text-[10px] text-center mt-0.5">
+                        <span className="px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 font-semibold">
+                          Auto · {AUTO_DOC_KIND_LABELS[(doc as any).auto_doc_kind]}{(doc as any).area_direito ? ` · ${(doc as any).area_direito}` : ''}
+                        </span>
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -484,8 +514,28 @@ export function DocumentsPage() {
             </Select>
             <Input label="Categoria" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="Ex: Cível, Contratos..." />
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Área do Direito</label>
+              <input list="doc-area-options"
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                placeholder="Selecione ou digite" value={form.area_direito}
+                onChange={e => setForm({ ...form, area_direito: e.target.value })} />
+              <datalist id="doc-area-options">{AREA_DIREITO_OPTIONS.map(a => <option key={a} value={a} />)}</datalist>
+            </div>
+            <Select label="Gerar automaticamente como" value={form.auto_doc_kind} onChange={e => setForm({ ...form, auto_doc_kind: e.target.value })}>
+              <option value="">Nenhum (modelo comum)</option>
+              <option value="procuracao">Procuração</option>
+              <option value="contrato_honorarios">Contrato de Honorários</option>
+            </Select>
+          </div>
+          {form.auto_doc_kind && (
+            <p className="text-xs text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/10 border border-primary-200 dark:border-primary-800 rounded-xl px-3 py-2">
+              Ao cadastrar um novo cliente na área "{form.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este documento automaticamente já preenchido com os dados do cliente.
+            </p>
+          )}
           <Textarea label="Conteúdo" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={10}
-            placeholder="Insira o conteúdo. Use [NOME_CLIENTE], [NUMERO_PROCESSO], [DATA] como variáveis..." />
+            placeholder="Insira o conteúdo. Use [NOME_CLIENTE], [CPF_CNPJ], [ENDERECO], [CIDADE], [EMAIL], [TELEFONE], [AREA_DIREITO], [NOME_ESCRITORIO], [NOME_ADVOGADO], [OAB], [NUMERO_PROCESSO], [DATA] como variáveis..." />
           {!editingLibrary && (
             <Input label="Tags (separadas por vírgula)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="cível, contrato, honorários" />
           )}
@@ -547,13 +597,19 @@ export function DocumentsPage() {
               </a>
             )}
             {!previewDoc.is_library_public && !previewDoc.file_url && (
-              <button onClick={() => { openEdit(previewDoc); setPreviewDoc(null) }}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
-                <Edit3 className="w-4 h-4" /> Editar
-              </button>
+              <>
+                <button onClick={() => openDocumentPrintWindow(previewDoc.title, previewDoc.content || '')}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                  <FileText className="w-4 h-4" /> Imprimir / PDF
+                </button>
+                <button onClick={() => { openEdit(previewDoc); setPreviewDoc(null) }}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
+                  <Edit3 className="w-4 h-4" /> Editar
+                </button>
+              </>
             )}
             {previewDoc.is_library_public && (
-              <button onClick={() => { openNew({ title: previewDoc.title, type: previewDoc.type, category: previewDoc.category, content: previewDoc.content }); setPreviewDoc(null) }}
+              <button onClick={() => { openNew({ title: previewDoc.title, type: previewDoc.type, category: previewDoc.category, content: previewDoc.content, area_direito: previewDoc.area_direito || '', auto_doc_kind: previewDoc.auto_doc_kind || '' }); setPreviewDoc(null) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
                 <Copy className="w-4 h-4" /> Usar este modelo
               </button>
