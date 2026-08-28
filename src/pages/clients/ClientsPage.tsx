@@ -200,7 +200,7 @@ export function ClientsPage() {
   const [clientExpenses, setClientExpenses] = useState<Financial[]>([])
   const [expensesLoading, setExpensesLoading] = useState(false)
   const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false)
-  interface ClientDocument { id: string; title: string; content: string; type: string; created_at: string }
+  interface ClientDocument { id: string; title: string; content: string; type: string; created_at: string; file_url: string | null; file_name: string | null; file_mime: string | null }
   const [clientDocuments, setClientDocuments] = useState<ClientDocument[]>([])
   const [documentsLoading, setDocumentsLoading] = useState(false)
   const [previewClientDoc, setPreviewClientDoc] = useState<ClientDocument | null>(null)
@@ -247,7 +247,10 @@ export function ClientsPage() {
   const [taskForm, setTaskForm] = useState<TaskFormType>(EMPTY_TASK_FORM)
 
   // Geração automática de Procuração/Contrato de Honorários ao cadastrar cliente novo
-  interface AutoDocTemplate { id: string; title: string; content: string; auto_doc_kind: 'procuracao' | 'contrato_honorarios'; area_direito: string }
+  interface AutoDocTemplate {
+    id: string; title: string; content: string; auto_doc_kind: 'procuracao' | 'contrato_honorarios'; area_direito: string | null
+    file_url: string | null; file_name: string | null; file_mime: string | null; file_size: number | null
+  }
   const [autoDocTemplates, setAutoDocTemplates] = useState<AutoDocTemplate[]>([])
   const [tenantName, setTenantName] = useState('')
   const [docGenModalOpen, setDocGenModalOpen] = useState(false)
@@ -255,7 +258,9 @@ export function ClientsPage() {
   const [docGenSelected, setDocGenSelected] = useState<Set<string>>(new Set())
   const [docGenSaving, setDocGenSaving] = useState(false)
 
-  function normalizeArea(s: string) { return s.trim().toLowerCase() }
+  // Aceita null/undefined mesmo com o tipo dizendo string: area_direito é opcional no banco —
+  // um modelo marcado "gerar automaticamente" sem área preenchida salva null, não ''.
+  function normalizeArea(s: string | null | undefined) { return (s || '').trim().toLowerCase() }
 
   function closeTaskModal() {
     setTaskModalOpen(false)
@@ -312,35 +317,61 @@ export function ClientsPage() {
   async function generateAutoDocuments() {
     if (!savedClientId || docGenSelected.size === 0) { closeDocGenModal(); return }
     const toGenerate = docGenCandidates.filter(t => docGenSelected.has(t.id))
-    const prepared = toGenerate.map(t => ({
+    // Modelo de texto (content) vs modelo enviado como arquivo (file_url, ex: .docx/.pdf) —
+    // arquivo não dá pra mesclar variável nenhuma (não é texto editável por aqui), então só
+    // vinculamos uma cópia da referência do arquivo ao cliente; texto é mesclado e impresso.
+    const textTemplates = toGenerate.filter(t => !t.file_url)
+    const fileTemplates = toGenerate.filter(t => t.file_url)
+    const preparedText = textTemplates.map(t => ({
       title: `${t.title} - ${savedClientName}`,
       content: mergeTemplateVariables(t.content, { client: form, tenant: { name: tenantName }, profile }),
     }))
+
     // Abre a janela de impressão já aqui, de forma síncrona no clique — se esperarmos o insert
     // no banco (assíncrono) para abrir, o navegador trata como pop-up não solicitado e bloqueia.
-    // Só UMA janela mesmo com múltiplos documentos: o navegador bloqueia qualquer window.open()
-    // além do primeiro disparado pelo mesmo clique — por isso os docs vão juntos, em páginas
-    // separadas dentro da mesma janela (ver openMultiDocumentPrintWindow).
-    const printWindow = window.open('', '_blank')
+    // Só UMA janela mesmo com múltiplos documentos de texto: o navegador bloqueia qualquer
+    // window.open() além do primeiro disparado pelo mesmo clique — por isso vão juntos, em
+    // páginas separadas dentro da mesma janela (ver openMultiDocumentPrintWindow). Documentos
+    // de arquivo não entram nessa janela — não tem como "imprimir" um .docx assim, ficam só
+    // vinculados ao cliente pra abrir/baixar em Documentos ou na ficha do cliente.
+    const printWindow = preparedText.length > 0 ? window.open('', '_blank') : null
 
     setDocGenSaving(true)
-    const rows = prepared.map(p => ({
-      tenant_id: profile?.tenant_id,
-      title: p.title,
-      type: 'contract' as const,
-      category: form.area_direito || null,
-      content: p.content,
-      is_template: false,
-      client_id: savedClientId,
-    }))
+    const rows = [
+      ...preparedText.map(p => ({
+        tenant_id: profile?.tenant_id,
+        title: p.title,
+        type: 'contract' as const,
+        category: form.area_direito || null,
+        content: p.content,
+        is_template: false,
+        client_id: savedClientId,
+      })),
+      ...fileTemplates.map(t => ({
+        tenant_id: profile?.tenant_id,
+        title: `${t.title} - ${savedClientName}`,
+        type: 'contract' as const,
+        category: form.area_direito || null,
+        content: '',
+        is_template: false,
+        client_id: savedClientId,
+        file_url: t.file_url,
+        file_name: t.file_name,
+        file_mime: t.file_mime,
+        file_size: t.file_size,
+      })),
+    ]
     const { error } = await withErrorFeedback(supabase.from('documents').insert(rows), 'Erro ao gerar documentos')
     setDocGenSaving(false)
     if (error) {
       printWindow?.close()
       return
     }
-    openMultiDocumentPrintWindow(`Documentos - ${savedClientName}`, prepared, printWindow)
-    toast(`${rows.length === 1 ? 'Documento gerado' : `${rows.length} documentos gerados`} — pronto${rows.length === 1 ? '' : 's'} para impressão e assinatura`, 'success')
+    if (preparedText.length > 0) openMultiDocumentPrintWindow(`Documentos - ${savedClientName}`, preparedText, printWindow)
+    const parts: string[] = []
+    if (preparedText.length > 0) parts.push(`${preparedText.length} pronto${preparedText.length === 1 ? '' : 's'} para impressão`)
+    if (fileTemplates.length > 0) parts.push(`${fileTemplates.length} arquivo${fileTemplates.length === 1 ? '' : 's'} anexado${fileTemplates.length === 1 ? '' : 's'} ao cliente`)
+    toast(`${rows.length === 1 ? 'Documento gerado' : `${rows.length} documentos gerados`} — ${parts.join(', ')}`, 'success')
     if (viewClient?.id === savedClientId) loadClientDocuments(savedClientId)
     closeDocGenModal()
   }
@@ -559,7 +590,7 @@ export function ClientsPage() {
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('processes').select('id,client_id,client_name,number,title,status,modalidade,counterparty,data_protocolo,created_at').is('deleted_at', null),
       supabase.from('profiles').select('id,user_id,name,display_name,role').order('name'),
-      supabase.from('documents').select('id,title,content,auto_doc_kind,area_direito').is('deleted_at', null).not('auto_doc_kind', 'is', null),
+      supabase.from('documents').select('id,title,content,auto_doc_kind,area_direito,file_url,file_name,file_mime,file_size').is('deleted_at', null).not('auto_doc_kind', 'is', null),
       profile?.tenant_id ? supabase.from('tenants').select('name').eq('id', profile.tenant_id).single() : Promise.resolve({ data: null }),
     ])
     setAutoDocTemplates((autoDocs || []) as AutoDocTemplate[])
@@ -728,7 +759,7 @@ export function ClientsPage() {
     setDocumentsLoading(true)
     const { data } = await supabase
       .from('documents')
-      .select('id,title,content,type,created_at')
+      .select('id,title,content,type,created_at,file_url,file_name,file_mime')
       .eq('client_id', clientId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -2632,9 +2663,15 @@ export function ClientsPage() {
                           <button onClick={() => setPreviewClientDoc(d)} title="Visualizar" className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
                             <Eye className="w-3.5 h-3.5" />
                           </button>
-                          <button onClick={() => openDocumentPrintWindow(d.title, d.content || '')} title="Imprimir / PDF" className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
-                            <Printer className="w-3.5 h-3.5" />
-                          </button>
+                          {d.file_url ? (
+                            <a href={d.file_url} target="_blank" rel="noopener noreferrer" title="Baixar" className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
+                              <Download className="w-3.5 h-3.5" />
+                            </a>
+                          ) : (
+                            <button onClick={() => openDocumentPrintWindow(d.title, d.content || '')} title="Imprimir / PDF" className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -2753,20 +2790,42 @@ export function ClientsPage() {
       <Modal open={!!previewClientDoc} onClose={() => setPreviewClientDoc(null)} title={previewClientDoc?.title || ''} size="lg">
         {previewClientDoc && (
           <>
-            <div className="bg-white dark:bg-dark-900 rounded-xl border border-gray-100 dark:border-dark-700 p-8 min-h-[300px] max-h-[60vh] overflow-y-auto">
-              <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-sans leading-relaxed">
-                {previewClientDoc.content || 'Sem conteúdo.'}
-              </pre>
-            </div>
+            {previewClientDoc.file_url ? (
+              <div className="min-h-[300px]">
+                {previewClientDoc.file_mime === 'application/pdf' ? (
+                  <iframe src={previewClientDoc.file_url} className="w-full rounded-xl border border-gray-100 dark:border-dark-700" style={{ height: 480 }} title={previewClientDoc.title} />
+                ) : previewClientDoc.file_mime?.startsWith('image/') ? (
+                  <img src={previewClientDoc.file_url} alt={previewClientDoc.title} className="max-w-full max-h-[480px] mx-auto rounded-xl border border-gray-100 dark:border-dark-700 object-contain" />
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4">
+                    <FileText className="w-16 h-16 text-gray-300" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{previewClientDoc.file_name}</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-white dark:bg-dark-900 rounded-xl border border-gray-100 dark:border-dark-700 p-8 min-h-[300px] max-h-[60vh] overflow-y-auto">
+                <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-sans leading-relaxed">
+                  {previewClientDoc.content || 'Sem conteúdo.'}
+                </pre>
+              </div>
+            )}
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={() => setPreviewClientDoc(null)}
                 className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                 Fechar
               </button>
-              <button onClick={() => openDocumentPrintWindow(previewClientDoc.title, previewClientDoc.content || '')}
-                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
-                <Printer className="w-4 h-4" /> Imprimir / PDF
-              </button>
+              {previewClientDoc.file_url ? (
+                <a href={previewClientDoc.file_url} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
+                  <Download className="w-4 h-4" /> Baixar
+                </a>
+              ) : (
+                <button onClick={() => openDocumentPrintWindow(previewClientDoc.title, previewClientDoc.content || '')}
+                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
+                  <Printer className="w-4 h-4" /> Imprimir / PDF
+                </button>
+              )}
             </div>
           </>
         )}
@@ -2871,12 +2930,15 @@ export function ClientsPage() {
               />
               <div>
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{t.title}</p>
-                <p className="text-xs text-gray-400">{AUTO_DOC_KIND_LABELS[t.auto_doc_kind]}</p>
+                <p className="text-xs text-gray-400">
+                  {AUTO_DOC_KIND_LABELS[t.auto_doc_kind]}{t.file_url ? ' · arquivo enviado' : ''}
+                </p>
               </div>
             </label>
           ))}
           <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
-            Os documentos são gerados como rascunho em Documentos, prontos para conferência e assinatura — campos sem dado no cadastro do cliente ficam em branco.
+            Modelos de texto são gerados como rascunho pronto para impressão, com os campos do cliente já preenchidos (o que faltar no cadastro fica em branco).
+            {docGenCandidates.some(t => t.file_url) && ' Modelos enviados como arquivo (.docx/.pdf) só ficam vinculados ao cliente — não é possível preencher variáveis automaticamente num arquivo, então abra-o manualmente em Documentos ou na ficha do cliente.'}
           </p>
         </div>
 

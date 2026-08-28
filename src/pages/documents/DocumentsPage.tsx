@@ -133,7 +133,7 @@ export function DocumentsPage() {
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
-  const [uploadForm, setUploadForm] = useState({ title: '', category: '', tags: '' })
+  const [uploadForm, setUploadForm] = useState({ title: '', category: '', tags: '', area_direito: '', auto_doc_kind: '' })
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -237,17 +237,19 @@ export function DocumentsPage() {
         type: 'other',
         category: uploadForm.category || null,
         content: '',
-        is_template: false,
+        is_template: !!uploadForm.auto_doc_kind,
         file_url: publicUrl,
         file_name: uploadFile.name,
         file_size: uploadFile.size,
         file_mime: uploadFile.type,
         tags: uploadForm.tags ? uploadForm.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
+        area_direito: uploadForm.area_direito || null,
+        auto_doc_kind: uploadForm.auto_doc_kind || null,
       })
       if (dbErr) throw dbErr
       setUploadModalOpen(false)
       setUploadFile(null)
-      setUploadForm({ title: '', category: '', tags: '' })
+      setUploadForm({ title: '', category: '', tags: '', area_direito: '', auto_doc_kind: '' })
       load()
     } catch (err: any) {
       setUploadError(err.message || 'Erro ao fazer upload')
@@ -320,7 +322,7 @@ export function DocumentsPage() {
 
             {/* Upload de arquivo */}
             <button
-              onClick={() => { setUploadFile(null); setUploadForm({ title: '', category: '', tags: '' }); setUploadError(''); setUploadModalOpen(true) }}
+              onClick={() => { setUploadFile(null); setUploadForm({ title: '', category: '', tags: '', area_direito: '', auto_doc_kind: '' }); setUploadError(''); setUploadModalOpen(true) }}
               className="flex flex-col items-center justify-center w-36 h-44 border border-gray-200 dark:border-dark-600 rounded-xl bg-white dark:bg-dark-800 hover:border-emerald-400 dark:hover:border-emerald-500 hover:shadow-md transition-all group"
             >
               <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-dark-700 flex items-center justify-center mb-2 group-hover:bg-emerald-50 dark:group-hover:bg-emerald-900/20 transition-colors">
@@ -683,6 +685,27 @@ export function DocumentsPage() {
           <Input label="Título do documento" value={uploadForm.title} onChange={e => setUploadForm(v => ({ ...v, title: e.target.value }))} placeholder="Nome para exibir na biblioteca" />
           <Input label="Categoria (opcional)" value={uploadForm.category} onChange={e => setUploadForm(v => ({ ...v, category: e.target.value }))} placeholder="Ex: Cível, Contratos..." />
           <Input label="Tags (separadas por vírgula, opcional)" value={uploadForm.tags} onChange={e => setUploadForm(v => ({ ...v, tags: e.target.value }))} placeholder="contrato, honorários" />
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Área do Direito</label>
+              <input list="upload-area-options"
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                placeholder="Selecione ou digite" value={uploadForm.area_direito}
+                onChange={e => setUploadForm(v => ({ ...v, area_direito: e.target.value }))} />
+              <datalist id="upload-area-options">{AREA_DIREITO_OPTIONS.map(a => <option key={a} value={a} />)}</datalist>
+            </div>
+            <Select label="Gerar automaticamente como" value={uploadForm.auto_doc_kind} onChange={e => setUploadForm(v => ({ ...v, auto_doc_kind: e.target.value }))}>
+              <option value="">Nenhum (arquivo comum)</option>
+              <option value="procuracao">Procuração</option>
+              <option value="contrato_honorarios">Contrato de Honorários</option>
+            </Select>
+          </div>
+          {uploadForm.auto_doc_kind && (
+            <p className="text-xs text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/10 border border-primary-200 dark:border-primary-800 rounded-xl px-3 py-2">
+              Ao cadastrar um novo cliente na área "{uploadForm.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este arquivo automaticamente já vinculado ao cliente. Como é um arquivo (não texto), ele não é preenchido com os dados do cliente — só fica pronto, associado à ficha do cliente, para você abrir e completar manualmente.
+            </p>
+          )}
 
           {uploadError && (
             <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-100 rounded-xl px-3 py-2">{uploadError}</p>
