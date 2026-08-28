@@ -114,7 +114,7 @@ const DASHBOARD_DONUT = [
   { label: 'Em andamento', value: 640, color: '#0B5CFF' },
   { label: 'Aguardando', value: 290, color: '#1677FF' },
   { label: 'Arquivado', value: 50, color: '#5B6B85' },
-  { label: 'Suspensos', value: 30, color: '#A7B0C0' },
+  { label: 'Suspensos', value: 30, color: '#3A4A66' },
 ]
 const DASHBOARD_DEADLINES = [
   { title: 'Contestação', meta: 'Processo nº 1234-56.2024.8.26.0100', days: '20 dias' },
@@ -383,6 +383,10 @@ export function LandingPage() {
       <style>{`
         @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-24px) } }
         @keyframes shine { 0% { transform: translateX(-120%) skewX(-15deg) } 100% { transform: translateX(220%) skewX(-15deg) } }
+        html { scroll-padding-top: 88px; }
+        a:focus-visible, button:focus-visible, input:focus-visible {
+          outline: 2px solid #1677FF; outline-offset: 2px; border-radius: 6px;
+        }
       `}</style>
 
       {/* ══ NAVBAR ══ */}
@@ -541,6 +545,9 @@ export function LandingPage() {
                   className="rounded-t-xl overflow-hidden border-4 border-b-0"
                   style={{ borderColor: '#0f1522', background: '#06152D', boxShadow: '0 50px 120px -20px rgba(0,0,0,0.6), 0 0 80px -25px rgba(11,92,255,0.35)' }}
                 >
+                  <div className="flex items-center justify-center py-1" style={{ background: '#0f1522' }}>
+                    <div className="w-1 h-1 rounded-full bg-white/25" />
+                  </div>
                   <div className="aspect-[16/10.5]">
                     <DashboardScreen />
                   </div>
@@ -631,12 +638,12 @@ export function LandingPage() {
           </div>
 
           <Reveal delay={200} className="mt-10 text-center">
-            <a
-              href="#planos"
+            <button
+              onClick={() => goToLogin('signup')}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold text-[#1677FF] border border-[#1677FF]/30 hover:bg-[#1677FF]/10 transition-colors"
             >
               Ver todas as funcionalidades <ArrowRight className="w-3.5 h-3.5" />
-            </a>
+            </button>
           </Reveal>
         </div>
       </section>
