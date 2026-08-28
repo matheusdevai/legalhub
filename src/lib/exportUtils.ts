@@ -537,32 +537,62 @@ export function openExportWindow(opts: ExportOptions): void {
   }
 }
 
-// ─── Impressão de documento em texto livre (procuração, contrato, etc.) ───────
+// ─── Impressão de documento(s) em texto livre (procuração, contrato, etc.) ────
 // Mais simples que openExportWindow (que é orientado a tabelas/relatórios) — só
-// abre o conteúdo do documento formatado como página A4 e chama print().
-export function openDocumentPrintWindow(title: string, content: string): void {
-  const escaped = content
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  const html = `<!DOCTYPE html>
+// abre o conteúdo do(s) documento(s) formatado(s) como página A4 e chama print().
+function escapeHtmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function buildPrintHtml(windowTitle: string, docs: { title: string; content: string }[]): string {
+  const pages = docs.map(d => `
+  <div class="page">
+    ${docs.length > 1 ? `<p class="page-title">${escapeHtmlText(d.title)}</p>` : ''}
+    ${escapeHtmlText(d.content)}
+  </div>`).join('')
+  return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>${title.replace(/</g, '&lt;')} — LegalHub</title>
+  <title>${escapeHtmlText(windowTitle)} — LegalHub</title>
   <style>
     *{box-sizing:border-box}
     body{font-family:Georgia,'Times New Roman',serif;background:#f1f5f9;margin:0;padding:40px 0}
-    .page{max-width:720px;margin:0 auto;background:#fff;padding:56px 64px;box-shadow:0 1px 4px rgba(0,0,0,.08);white-space:pre-wrap;line-height:1.7;font-size:14px;color:#1e293b}
+    .page{max-width:720px;margin:0 auto 32px;background:#fff;padding:56px 64px;box-shadow:0 1px 4px rgba(0,0,0,.08);white-space:pre-wrap;line-height:1.7;font-size:14px;color:#1e293b}
+    .page-title{font-weight:700;font-size:16px;margin:0 0 20px;font-family:-apple-system,sans-serif;color:#0f2550}
     .actions{max-width:720px;margin:0 auto 16px;display:flex;justify-content:flex-end}
     .btn{padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#2563eb;color:#fff;font-family:-apple-system,sans-serif}
-    @media print{.actions{display:none}body{background:#fff;padding:0}.page{box-shadow:none;max-width:none}}
+    @media print{.actions{display:none}body{background:#fff;padding:0}.page{box-shadow:none;max-width:none;margin:0;page-break-after:always}.page:last-child{page-break-after:auto}}
   </style>
 </head>
 <body>
   <div class="actions"><button class="btn" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
-  <div class="page">${escaped}</div>
+  ${pages}
 </body>
 </html>`
-  const win = window.open('', '_blank')
+}
+
+// Aceita opcionalmente uma janela já aberta (`targetWindow`) — necessário quando quem
+// chama precisa abrir a janela de forma síncrona no clique (antes de um await, ex.
+// salvar no banco), pra o navegador não tratar como pop-up não solicitado e bloquear.
+// Passe `undefined` (padrão) pra abrir a janela aqui mesmo; passe `null` só quando o
+// `window.open` prévio já falhou (nesse caso não há o que fazer — a função é no-op).
+export function openDocumentPrintWindow(title: string, content: string, targetWindow?: Window | null): void {
+  const html = buildPrintHtml(title, [{ title, content }])
+  const win = targetWindow !== undefined ? targetWindow : window.open('', '_blank')
+  if (win) {
+    win.document.write(html)
+    win.document.close()
+  }
+}
+
+// Mesma ideia, mas para vários documentos numa janela só — o navegador bloqueia como
+// pop-up qualquer window.open() além do primeiro disparado pelo mesmo clique, então
+// nunca chame openDocumentPrintWindow várias vezes seguidas pra imprimir um lote.
+// Cada documento vira uma página com quebra de página entre elas na impressão.
+export function openMultiDocumentPrintWindow(windowTitle: string, docs: { title: string; content: string }[], targetWindow?: Window | null): void {
+  const html = buildPrintHtml(windowTitle, docs)
+  const win = targetWindow !== undefined ? targetWindow : window.open('', '_blank')
   if (win) {
     win.document.write(html)
     win.document.close()

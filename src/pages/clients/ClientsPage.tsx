@@ -7,7 +7,7 @@ import {
   FileText, X, CheckCircle2, Clock, CheckSquare, ChevronDown,
   AlertCircle, Info, MessageCircle, Sparkles, Tag, ShieldCheck,
   CalendarPlus, IdCard, KeyRound, Copy, Receipt, DollarSign,
-  Eye, EyeOff, Lock,
+  Eye, EyeOff, Lock, Printer,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
@@ -15,7 +15,7 @@ import { supabase } from '@/lib/supabase'
 import { Client, Colaborador, Process, Profile, Financial } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
-import { openExportWindow, downloadVCard } from '@/lib/exportUtils'
+import { openExportWindow, downloadVCard, openDocumentPrintWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
 import { buildClientImportPreview } from '@/lib/clientImportUtils'
 import { fetchCitiesByState } from '@/lib/ibgeUtils'
 import { notifyTaskAssignment } from '@/lib/taskActions'
@@ -200,6 +200,10 @@ export function ClientsPage() {
   const [clientExpenses, setClientExpenses] = useState<Financial[]>([])
   const [expensesLoading, setExpensesLoading] = useState(false)
   const [expenseDrawerOpen, setExpenseDrawerOpen] = useState(false)
+  interface ClientDocument { id: string; title: string; content: string; type: string; created_at: string }
+  const [clientDocuments, setClientDocuments] = useState<ClientDocument[]>([])
+  const [documentsLoading, setDocumentsLoading] = useState(false)
+  const [previewClientDoc, setPreviewClientDoc] = useState<ClientDocument | null>(null)
   const [reconcileModalOpen, setReconcileModalOpen] = useState(false)
   const [savingExpense, setSavingExpense] = useState(false)
   const [form, setForm] = useState(EMPTY_CLIENT)
@@ -307,21 +311,37 @@ export function ClientsPage() {
 
   async function generateAutoDocuments() {
     if (!savedClientId || docGenSelected.size === 0) { closeDocGenModal(); return }
-    setDocGenSaving(true)
     const toGenerate = docGenCandidates.filter(t => docGenSelected.has(t.id))
-    const rows = toGenerate.map(t => ({
-      tenant_id: profile?.tenant_id,
+    const prepared = toGenerate.map(t => ({
       title: `${t.title} - ${savedClientName}`,
+      content: mergeTemplateVariables(t.content, { client: form, tenant: { name: tenantName }, profile }),
+    }))
+    // Abre a janela de impressão já aqui, de forma síncrona no clique — se esperarmos o insert
+    // no banco (assíncrono) para abrir, o navegador trata como pop-up não solicitado e bloqueia.
+    // Só UMA janela mesmo com múltiplos documentos: o navegador bloqueia qualquer window.open()
+    // além do primeiro disparado pelo mesmo clique — por isso os docs vão juntos, em páginas
+    // separadas dentro da mesma janela (ver openMultiDocumentPrintWindow).
+    const printWindow = window.open('', '_blank')
+
+    setDocGenSaving(true)
+    const rows = prepared.map(p => ({
+      tenant_id: profile?.tenant_id,
+      title: p.title,
       type: 'contract' as const,
       category: form.area_direito || null,
-      content: mergeTemplateVariables(t.content, { client: form, tenant: { name: tenantName }, profile }),
+      content: p.content,
       is_template: false,
       client_id: savedClientId,
     }))
     const { error } = await withErrorFeedback(supabase.from('documents').insert(rows), 'Erro ao gerar documentos')
     setDocGenSaving(false)
-    if (error) return
-    toast(`${rows.length === 1 ? 'Documento gerado' : `${rows.length} documentos gerados`} em Documentos — pronto${rows.length === 1 ? '' : 's'} para assinatura`, 'success')
+    if (error) {
+      printWindow?.close()
+      return
+    }
+    openMultiDocumentPrintWindow(`Documentos - ${savedClientName}`, prepared, printWindow)
+    toast(`${rows.length === 1 ? 'Documento gerado' : `${rows.length} documentos gerados`} — pronto${rows.length === 1 ? '' : 's'} para impressão e assinatura`, 'success')
+    if (viewClient?.id === savedClientId) loadClientDocuments(savedClientId)
     closeDocGenModal()
   }
 
@@ -702,6 +722,23 @@ export function ClientsPage() {
   useEffect(() => {
     if (viewClient) loadClientExpenses(viewClient.id)
     else setClientExpenses([])
+  }, [viewClient?.id])
+
+  async function loadClientDocuments(clientId: string) {
+    setDocumentsLoading(true)
+    const { data } = await supabase
+      .from('documents')
+      .select('id,title,content,type,created_at')
+      .eq('client_id', clientId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+    setClientDocuments((data || []) as ClientDocument[])
+    setDocumentsLoading(false)
+  }
+
+  useEffect(() => {
+    if (viewClient) loadClientDocuments(viewClient.id)
+    else setClientDocuments([])
   }, [viewClient?.id])
 
   async function saveExpense(form: FinancialDrawerForm) {
@@ -2575,6 +2612,36 @@ export function ClientsPage() {
                 )}
 
                 <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary-600" />Documentos {clientDocuments.length > 0 && `(${clientDocuments.length})`}
+                  </p>
+                  {documentsLoading ? (
+                    <p className="text-xs text-gray-400 py-2">Carregando...</p>
+                  ) : clientDocuments.length === 0 ? (
+                    <p className="text-xs text-gray-400 bg-gray-50 dark:bg-dark-700 rounded-xl px-3 py-3">
+                      Nenhum documento gerado para este cliente ainda — procurações e contratos de honorários gerados automaticamente no cadastro aparecem aqui.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {clientDocuments.map(d => (
+                        <div key={d.id} className="flex items-center gap-3 bg-white dark:bg-dark-800 rounded-lg border border-gray-200 dark:border-dark-600 px-3 py-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{d.title}</p>
+                            <p className="text-[11px] text-gray-400">{formatDate(d.created_at)}</p>
+                          </div>
+                          <button onClick={() => setPreviewClientDoc(d)} title="Visualizar" className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => openDocumentPrintWindow(d.title, d.content || '')} title="Imprimir / PDF" className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
                   {(() => {
                     const pending = clientExpenses.filter(e => !e.reconciled)
                     const reconciled = clientExpenses.filter(e => e.reconciled)
@@ -2680,6 +2747,29 @@ export function ClientsPage() {
             </div>
           )
         })()}
+      </Modal>
+
+      {/* ══ MODAL: preview de documento gerado na ficha do cliente ══ */}
+      <Modal open={!!previewClientDoc} onClose={() => setPreviewClientDoc(null)} title={previewClientDoc?.title || ''} size="lg">
+        {previewClientDoc && (
+          <>
+            <div className="bg-white dark:bg-dark-900 rounded-xl border border-gray-100 dark:border-dark-700 p-8 min-h-[300px] max-h-[60vh] overflow-y-auto">
+              <pre className="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-sans leading-relaxed">
+                {previewClientDoc.content || 'Sem conteúdo.'}
+              </pre>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setPreviewClientDoc(null)}
+                className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                Fechar
+              </button>
+              <button onClick={() => openDocumentPrintWindow(previewClientDoc.title, previewClientDoc.content || '')}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
+                <Printer className="w-4 h-4" /> Imprimir / PDF
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
 
       {/* ══ MODAL: Portal do Cliente ══ */}
