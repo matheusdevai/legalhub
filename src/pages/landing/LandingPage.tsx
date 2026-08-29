@@ -5,7 +5,7 @@ import {
   ArrowRight, Menu, X, CheckCircle2, Building2, Cloud, Network,
   Quote, ChevronRight, ChevronLeft, FileText, ListChecks, BarChart3,
   FolderOpen, Search, Play, CalendarCheck, Scale, Gavel, Mail, Phone,
-  MapPin, Linkedin, Instagram, Facebook,
+  MapPin, Linkedin, Instagram, Facebook, HardDrive,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -92,6 +92,7 @@ const FEATURES = [
   { icon: DollarSign, title: 'Financeiro Completo', description: 'Controle receitas, despesas, honorários e recebimentos com relatórios financeiros detalhados.' },
   { icon: Users, title: 'Gestão de Clientes', description: 'Tenha um histórico completo de cada cliente e relacionamento centralizado.' },
   { icon: FileText, title: 'Documentos', description: 'Armazene, categorize e acesse todos os documentos com segurança na nuvem.' },
+  { icon: HardDrive, title: 'Escritório Digital', description: 'Um espaço próprio para organizar pastas por cliente ou por área, com controle de armazenamento do escritório.' },
   { icon: BarChart3, title: 'Relatórios Inteligentes', description: 'Dashboards e relatórios completos para análises e tomadas de decisão.' },
   { icon: ShieldCheck, title: 'Segurança Avançada', description: 'Seus dados protegidos com criptografia, backups diários e conformidade com a LGPD.' },
 ]
