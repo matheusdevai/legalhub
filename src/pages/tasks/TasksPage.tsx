@@ -357,7 +357,7 @@ export function TasksPage() {
   const [saving, setSaving] = useState(false)
 
   const [completionModal, setCompletionModal] = useState<{
-    taskId: string; taskTitle: string; taskType: string; step: 'check' | 'ask' | 'process' | 'docgen'
+    taskId: string; taskTitle: string; taskType: string; step: 'check' | 'ask' | 'process' | 'docgen' | 'portal'
     clientId: string | null; assignedTo: string | null; assignedName: string | null
     processId?: string; processNumber?: string | null
   } | null>(null)
@@ -381,10 +381,77 @@ export function TasksPage() {
   const normalizeArea = (s: string | null | undefined) => (s || '').trim().toLowerCase()
 
   function closeDocGenModal() {
-    setCompletionModal(null)
     setDocGenCandidates([])
     setDocGenSelected(new Set())
+    proceedToPortalStep()
+  }
+
+  // Convite automático ao Portal do Cliente ao concluir "Protocolar processo" —
+  // mesmo endpoint (create-user) e UX de confirmação usados no botão manual
+  // "Portal do Cliente" em ClientsPage, só que já sugerido aqui, com senha
+  // gerada automaticamente, em vez do advogado ter de lembrar de ir cadastrar
+  // depois. Só sugere se: cliente tem e-mail, ainda não tem login de portal, e
+  // a fase do processo não é 'NEGOCIAÇÃO' (ainda é só prospecção) nem
+  // 'ENCERRADO' (caso já finalizado).
+  const [taskPortalEmail, setTaskPortalEmail] = useState('')
+  const [taskPortalPassword, setTaskPortalPassword] = useState('')
+  const [taskPortalSaving, setTaskPortalSaving] = useState(false)
+  const [taskPortalError, setTaskPortalError] = useState('')
+  const [taskPortalCredentials, setTaskPortalCredentials] = useState<{ email: string; password: string } | null>(null)
+
+  function generateRandomPassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
+    let pass = ''
+    for (let i = 0; i < 10; i++) pass += chars[Math.floor(Math.random() * chars.length)]
+    return pass
+  }
+
+  async function proceedToPortalStep() {
+    if (!completionModal) return
+    const client = completionModal.clientId ? clients.find(c => c.id === completionModal.clientId) : null
+    const skipFases = ['NEGOCIAÇÃO', 'ENCERRADO']
+    if (client?.email && !skipFases.includes(completionForm.fase)) {
+      const { data: existing } = await supabase.from('profiles').select('id').eq('client_id', client.id).eq('role', 'client').maybeSingle()
+      if (!existing) {
+        setTaskPortalEmail(client.email)
+        setTaskPortalPassword(generateRandomPassword())
+        setTaskPortalError('')
+        setTaskPortalCredentials(null)
+        setCompletionModal(prev => prev ? { ...prev, step: 'portal' } : null)
+        return
+      }
+    }
+    setCompletionModal(null)
     load(true)
+  }
+
+  function closePortalStep() {
+    setCompletionModal(null)
+    load(true)
+  }
+
+  async function createTaskPortalAccess() {
+    const client = completionModal?.clientId ? clients.find(c => c.id === completionModal.clientId) : null
+    if (!client || !taskPortalEmail.trim() || taskPortalPassword.length < 6) return
+    setTaskPortalError('')
+    setTaskPortalSaving(true)
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData?.session?.access_token
+      if (!accessToken) { setTaskPortalError('Sessão expirada. Faça login novamente.'); return }
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${accessToken}` },
+        body: JSON.stringify({ email: taskPortalEmail.trim(), password: taskPortalPassword, name: client.name, role: 'client', client_id: client.id }),
+      })
+      const resData = await res.json().catch(() => ({ error: 'Resposta inválida do servidor' }))
+      if (!res.ok) { setTaskPortalError(resData.error || 'Erro ao criar acesso.'); return }
+      setTaskPortalCredentials({ email: taskPortalEmail.trim(), password: taskPortalPassword })
+    } catch (err: unknown) {
+      setTaskPortalError(err instanceof Error ? err.message : 'Erro de conexão.')
+    } finally {
+      setTaskPortalSaving(false)
+    }
   }
 
   async function generateAutoDocumentsForTask() {
@@ -860,8 +927,7 @@ export function TasksPage() {
       setCompletionModal({ ...completionModal, step: 'docgen', processId: created?.id, processNumber: created?.number ?? null })
       return
     }
-    setCompletionModal(null)
-    load(true)
+    await proceedToPortalStep()
   }
 
   const TYPE_LABEL: Record<string, string> = { custom: 'Tarefa', deadline: 'Prazo', hearing: 'Audiência', meeting: 'Reunião', document: 'Documento' }
@@ -2188,6 +2254,45 @@ export function TasksPage() {
             </div>
           </>
         )}
+      </Modal>
+
+      {/* ══ MODAL CONVITE AUTOMÁTICO AO PORTAL DO CLIENTE — só aparece se o cliente tem e-mail, ainda não tem login de portal, e a fase não é Negociação/Encerrado ══ */}
+      <Modal open={!!(completionModal && completionModal.step === 'portal')} onClose={closePortalStep} title="" size="sm">
+        {completionModal && completionModal.step === 'portal' && (() => {
+          const client = completionModal.clientId ? clients.find(c => c.id === completionModal.clientId) : null
+          return taskPortalCredentials ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="text-sm text-emerald-700 dark:text-emerald-400">Acesso ao portal criado com sucesso!</p>
+              </div>
+              <div className="bg-gray-50 dark:bg-dark-700 rounded-xl p-4 space-y-1">
+                <p className="text-sm text-gray-700 dark:text-gray-300"><strong>E-mail:</strong> {taskPortalCredentials.email}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-300"><strong>Senha:</strong> {taskPortalCredentials.password}</p>
+              </div>
+              <p className="text-xs text-gray-400">Compartilhe essas credenciais com {client?.name} por um canal seguro. Ele poderá acompanhar processos, financeiro e documentos em <strong>{window.location.origin}/login</strong>.</p>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => navigator.clipboard.writeText(`Email: ${taskPortalCredentials.email}\nSenha: ${taskPortalCredentials.password}`)}>Copiar</Button>
+                <Button size="sm" onClick={closePortalStep}>Concluir</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 dark:text-gray-300">
+                O processo foi protocolado. Criar acesso ao <strong>Portal do Cliente</strong> para <strong className="text-gray-800 dark:text-gray-200">{client?.name}</strong> acompanhar processos, financeiro e documentos?
+              </p>
+              <Input label="E-mail" type="email" value={taskPortalEmail} onChange={e => setTaskPortalEmail(e.target.value)} placeholder="cliente@email.com" />
+              <Input label="Senha (gerada automaticamente)" type="text" value={taskPortalPassword} onChange={e => setTaskPortalPassword(e.target.value)} />
+              {taskPortalError && <p className="text-sm text-red-500 dark:text-red-400">{taskPortalError}</p>}
+              <div className="flex items-center justify-between pt-1">
+                <button onClick={closePortalStep} className="text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">Pular</button>
+                <Button variant="primary" onClick={createTaskPortalAccess} loading={taskPortalSaving}>Criar acesso</Button>
+              </div>
+            </div>
+          )
+        })()}
       </Modal>
 
       <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title="Tarefas recorrentes ativas" size="md">
