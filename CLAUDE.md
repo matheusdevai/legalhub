@@ -302,6 +302,13 @@ npx vitest run -t "nome do teste"                 # rodar só um teste pelo nome
 - Para lógica hoje presa dentro de um componente grande (useMemo/handlers inline), preferir extrair para um módulo em `src/lib/` (ou colocation `nomeDoComponente.ts` ao lado da página) antes de testar, em vez de testar via render de componente — mais rápido e mais fácil de manter.
 - Para funções que chamam `supabase` diretamente (ex: `markTaskDone`), mockar com `vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn(() => ({...})) } }))`.
 
+## Cron jobs (pg_cron)
+| Job | Horário | O que faz |
+|---|---|---|
+| `lawfy-generate-notifications` | 7h | Notifica tarefa vencendo amanhã / financeiro vencendo em 3 dias |
+| `lawfy-generate-recurring-items` | 6h | Materializa próxima ocorrência de tarefas/financeiros recorrentes |
+| `lawfy-sync-processos-oab` | 5h | Sincroniza processos via CNJ (DataJud) + Escavador + JusBrasil, para **todo** profile com `oab_number`/`oab_seccional` preenchidos (qualquer tenant, role ≠ client). Chama a Edge Function `cron-sync-processes`, que reimplementa a lógica de `sync-cnj`/`sync-escavador`/`sync-jusbrasil` de forma standalone (sem exigir JWT de usuário — autentica por segredo fixo no header `x-cron-secret`, checado no início do handler). PJe fica de fora (exige CPF+senha por chamada, nunca armazenada). Isolamento por tenant garantido porque cada iteração do loop processa 1 profile por vez e toda leitura/escrita usa `profile.tenant_id` daquele profile — nunca mistura dados entre escritórios. Tribunais pesquisados no CNJ vêm de `profiles.oab_tribunais` (persistido pelo `OabSyncModal.tsx` a cada sync manual); se vazio, usa o TJ da seccional do usuário. Gera notificação (`type: 'system'`, link `/processos?auto_sync=1`) se importou/atualizou algo, deduplicada por dia. |
+
 ## Deploy
 Vercel (vercel.json presente). Build: `npm run build`. Output: `dist/`.
 - Projeto Vercel: `legalhub` (org/scope `matheusadvjp-9108s-projects`), domínio de produção `legalhubgestor.vercel.app`. ⚠️ NÃO confundir com `lawfy-saas` — existe um projeto vazio com esse nome na mesma conta (criado por engano num `vercel link --project lawfy-saas`), nunca usar.

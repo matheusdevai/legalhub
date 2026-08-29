@@ -67,7 +67,10 @@ export function OabSyncModal({ onDone }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [savingOab, setSavingOab] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
-  const [tribunais, setTribunais] = useState<string[]>(profile?.oab_seccional ? [UF_TO_TJ[profile.oab_seccional]] : [])
+  const [tribunais, setTribunais] = useState<string[]>(
+    profile?.oab_tribunais?.length ? profile.oab_tribunais :
+    profile?.oab_seccional ? [UF_TO_TJ[profile.oab_seccional]] : []
+  )
   const [showMaisTribunais, setShowMaisTribunais] = useState(false)
   const [showPje, setShowPje] = useState(false)
   const [pjeCpf, setPjeCpf] = useState('')
@@ -84,12 +87,14 @@ export function OabSyncModal({ onDone }: Props) {
     }
     setError(null)
 
-    // Persiste OAB no perfil se mudou
-    const changed = oabNumber.trim() !== profile?.oab_number || oabSeccional !== profile?.oab_seccional
+    // Persiste OAB e tribunais marcados no perfil se mudou — os tribunais também
+    // são lidos pelo cron noturno de sincronização automática (mesma seleção do usuário aqui).
+    const tribunaisChanged = JSON.stringify(tribunais) !== JSON.stringify(profile?.oab_tribunais || [])
+    const changed = oabNumber.trim() !== profile?.oab_number || oabSeccional !== profile?.oab_seccional || tribunaisChanged
     if (changed) {
       setSavingOab(true)
       await supabase.from('profiles')
-        .update({ oab_number: oabNumber.trim(), oab_seccional: oabSeccional })
+        .update({ oab_number: oabNumber.trim(), oab_seccional: oabSeccional, oab_tribunais: tribunais })
         .eq('user_id', profile!.user_id)
       await refreshProfile()
       setSavingOab(false)

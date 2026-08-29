@@ -11,6 +11,7 @@ export interface Profile {
   phone: string | null
   oab_number: string | null
   oab_seccional: string | null
+  oab_tribunais: string[] | null
   onboarding_completed: boolean | null
   subscription_status: string | null
   subscription_plan: string | null
