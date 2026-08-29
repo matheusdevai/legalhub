@@ -17,6 +17,7 @@ import { withErrorFeedback } from '@/lib/errorFeedback'
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   new_tasks: true, task_due: true, new_processes: false,
   new_publications: true, financial_due: true, new_clients: false,
+  process_deadline: true,
 }
 
 const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; icon: any; label: string; desc: string }[] = [
@@ -26,6 +27,7 @@ const NOTIFICATION_ITEMS: { key: keyof NotificationPrefs; icon: any; label: stri
   { key: 'new_publications', icon: Bell,       label: 'Novas publicações',        desc: 'Publicações no Diário de Justiça' },
   { key: 'financial_due',    icon: CreditCard, label: 'Vencimentos financeiros',   desc: 'Cobranças próximas do vencimento' },
   { key: 'new_clients',      icon: User,       label: 'Novos clientes',           desc: 'Quando um cliente é cadastrado' },
+  { key: 'process_deadline', icon: AlertCircle, label: 'Prazos processuais',       desc: 'Aviso 3 dias antes do prazo de um processo vencer' },
 ]
 
 type Tab = 'profile' | 'security' | 'notifications' | 'appearance' | 'plan' | 'audit' | 'alerts'

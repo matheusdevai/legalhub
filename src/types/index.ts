@@ -28,6 +28,7 @@ export interface NotificationPrefs {
   new_publications: boolean
   financial_due: boolean
   new_clients: boolean
+  process_deadline: boolean
 }
 
 export interface Tenant {
