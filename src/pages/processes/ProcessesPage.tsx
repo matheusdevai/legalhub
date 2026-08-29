@@ -1151,25 +1151,72 @@ export function ProcessesPage() {
                       {isExpanded && (
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-gray-50 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
+                                <th className="w-9 px-3 py-2.5">
+                                  <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                                    checked={pageItems.length > 0 && pageItems.every(p => selectedIds.has(p.id))}
+                                    onChange={() => setSelectedIds(prev => {
+                                      const allSelected = pageItems.every(p => prev.has(p.id))
+                                      const next = new Set(prev)
+                                      if (allSelected) pageItems.forEach(p => next.delete(p.id))
+                                      else pageItems.forEach(p => next.add(p.id))
+                                      return next
+                                    })} />
+                                </th>
+                                <th className="px-4 py-2.5 pl-12 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Partes</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tipo de Ação</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Modalidade</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Requerimento</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Cadastro</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Último Andamento</th>
+                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Andamento</th>
+                                <th className="w-20 px-4 py-2.5" />
+                              </tr>
+                            </thead>
                             <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
-                              {pageItems.map(p => (
+                              {pageItems.map(p => {
+                                const lastMov = Array.isArray(p.movimentos) && p.movimentos.length > 0
+                                  ? [...p.movimentos].sort((a, b) => (b.dataHora || b.data || '').localeCompare(a.dataHora || a.data || ''))[0]
+                                  : null
+                                return (
                                 <tr key={p.id}
                                   className="hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors cursor-pointer group"
                                   onClick={() => setViewProcess(p)}
                                 >
+                                  <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
+                                      checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e as any)} />
+                                  </td>
                                   <td className="px-4 py-3 pl-12">
-                                    <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug">{p.client_name || '—'}</p>
+                                    <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
+                                      {p.client_name || '—'}
+                                      {p.cnj_source && (
+                                        <span title={`Sincronizado automaticamente${p.cnj_synced_at ? ' — ' + formatDate(p.cnj_synced_at) : ''}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                          <Zap className="w-2.5 h-2.5" />CNJ
+                                        </span>
+                                      )}
+                                    </p>
                                     {p.counterparty && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">x {p.counterparty}</p>}
+                                    {p.assigned_lawyer && <p className="text-xs text-gray-400 dark:text-gray-500">x {p.assigned_lawyer}</p>}
                                   </td>
                                   <td className="px-4 py-3"><span className="text-xs text-gray-600 dark:text-gray-300">{p.area || p.type || '—'}</span></td>
+                                  <td className="px-4 py-3">
+                                    {p.modalidade ? (
+                                      <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold',
+                                        p.modalidade === 'judicial'
+                                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400')}>
+                                        {p.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}
+                                      </span>
+                                    ) : <span className="text-xs text-gray-400">—</span>}
+                                  </td>
                                   <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.number}</span></td>
                                   <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.numero_protocolo || '—'}</span></td>
-                                  <td className="px-4 py-3">
-                                    <span className={cn('text-[11px] font-semibold px-2 py-0.5 rounded-full', PROCESS_STATUS_COLORS[p.status || 'active'])}>
-                                      {PROCESS_STATUS_LABELS[p.status || 'active']}
-                                    </span>
-                                  </td>
                                   <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{formatDate(p.created_at)}</td>
+                                  <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[220px] truncate">{lastMov?.nome || 'N/A'}</td>
+                                  <td className="px-4 py-3 text-xs text-gray-400">{lastMov ? formatDate((lastMov.dataHora || lastMov.data || '').slice(0, 10)) : 'N/A'}</td>
                                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                       <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
@@ -1181,7 +1228,8 @@ export function ProcessesPage() {
                                     </div>
                                   </td>
                                 </tr>
-                              ))}
+                                )
+                              })}
                             </tbody>
                           </table>
                           {totalGroupPages > 1 && (

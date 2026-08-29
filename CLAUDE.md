@@ -268,7 +268,7 @@ const filtered = useMemo(() => clients.filter(c => {
 - Fases: `NEGOCIAÇÃO | CONHECIMENTO | RECURSAL | EXECUÇÃO | ENCERRADO`
 - Grupos de ação: Cível, Criminal, Trabalhista, Tributário, Administrativo, Família, Previdenciário, Empresarial, Imobiliário, Outro
 - Campos ADVBOX: grupo_acao, fase, etapa, numero_protocolo, processo_originario, pasta_caso, valor_causa, valor_honorarios, percentual_honorarios, contingenciamento
-- View modes: table | byColaborador
+- View modes: table | byColaborador — as duas usam exatamente as mesmas colunas de tabela (Partes, Tipo de Ação, Modalidade, Número do Processo, Número do Requerimento, Data Cadastro, Último Andamento, Data Andamento + checkbox de seleção em massa). Ao alterar colunas de uma, replicar na outra (`ProcessesPage.tsx` — tabela principal ~L1004-1094, tabela por grupo/parceiro ~L1151-1230).
 
 ## Financeiro — estrutura
 - `type: receivable` = entrada (honorários, reembolso)
@@ -304,6 +304,7 @@ npx vitest run -t "nome do teste"                 # rodar só um teste pelo nome
 
 ## Deploy
 Vercel (vercel.json presente). Build: `npm run build`. Output: `dist/`.
-- Projeto Vercel: `lawfy-saas` (org `matheusadvjp-9108s-projects`), domínio de produção `legalhubgestor.vercel.app`.
-- Deploy manual (sem depender do estado do git): `npx vercel --prod` a partir da raiz do projeto (usa `.vercel/project.json` já linkado).
+- Projeto Vercel: `legalhub` (org/scope `matheusadvjp-9108s-projects`), domínio de produção `legalhubgestor.vercel.app`. ⚠️ NÃO confundir com `lawfy-saas` — existe um projeto vazio com esse nome na mesma conta (criado por engano num `vercel link --project lawfy-saas`), nunca usar.
+- Deploy manual (sem depender do estado do git): `npx vercel --prod --scope matheusadvjp-9108s-projects` a partir da raiz do projeto (usa `.vercel/project.json` já linkado — se não existir, `vercel link --yes --project legalhub --scope matheusadvjp-9108s-projects`).
 - Edge Functions (`supabase/functions/*`) são deployadas separadamente via Supabase (MCP `deploy_edge_function` ou `supabase functions deploy <nome>`) — `npm run build`/`vercel --prod` NÃO as publica.
+- Clone novo/máquina sem Node: instalar Node.js (inclui npm) via `.pkg` oficial do nodejs.org (arm64 no Apple Silicon) ou Homebrew — sem isso só existe o `node` isolado embutido no app Overclock (sem npm). `.env` local (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) não vem no repo — pegar via Supabase MCP (`get_project_url`/`get_publishable_keys` do projeto `bdpkkacfsavmpumwftsf`).
