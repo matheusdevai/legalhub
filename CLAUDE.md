@@ -242,6 +242,7 @@ const filtered = useMemo(() => clients.filter(c => {
 
 ## Comportamentos automáticos importantes
 - **Novo cliente** → cria task automática `"Protocolar processo de {nome}"` com description contendo client_id
+- **Concluir a task "Protocolar processo" (TasksPage → confirmCompletion)** → depois de criar o processo, se houver `documents` com `auto_doc_kind='peticao_inicial'` cadastrado pra área do processo, sugere gerar a Petição Inicial automaticamente (mesmo mecanismo de Procuração/Contrato de Honorários do ClientsPage — `documents.auto_doc_kind`, casado por `area_direito` normalizada) — texto mesclado já com `[NUMERO_PROCESSO]` do processo recém-criado, vinculado via `documents.process_id`
 - **Colaborador pago com valor** → cria/atualiza registro financial (type: payable, category: comissao)
 - **Onboarding** → exibido quando `profile.onboarding_completed = false && !oab_number` (ignorável via localStorage `lawfy_onboarding_skipped`)
 - **MaintenanceBanner** → banner âmbar descartável no Layout (sessionStorage `maintenance_dismissed`)

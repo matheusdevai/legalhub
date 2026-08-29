@@ -15,7 +15,8 @@ import { Task, Process, Client, Profile, Colaborador } from '@/types'
 import { formatDate, PRIORITY_LABELS, TASK_STATUS_LABELS } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
-import { openExportWindow } from '@/lib/exportUtils'
+import { openExportWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
+import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
 import { markTaskDone, notifyTaskAssignment, displayTaskDescription } from '@/lib/taskActions'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
@@ -356,12 +357,89 @@ export function TasksPage() {
   const [saving, setSaving] = useState(false)
 
   const [completionModal, setCompletionModal] = useState<{
-    taskId: string; taskTitle: string; taskType: string; step: 'check' | 'ask' | 'process'
+    taskId: string; taskTitle: string; taskType: string; step: 'check' | 'ask' | 'process' | 'docgen'
     clientId: string | null; assignedTo: string | null; assignedName: string | null
+    processId?: string; processNumber?: string | null
   } | null>(null)
   const [completionForm, setCompletionForm] = useState<ProcessForm>({ ...PROCESS_EMPTY_FORM })
   const [pendenciaNote, setPendenciaNote] = useState('')
   const [showPendenciaInput, setShowPendenciaInput] = useState(false)
+
+  // Geração automática de Petição Inicial ao concluir a tarefa "Protocolar processo"
+  // e criar o processo — mesmo mecanismo (documents.auto_doc_kind) usado em
+  // ClientsPage para Procuração/Contrato de Honorários, aqui casado por área do
+  // processo em vez de área do cliente.
+  interface AutoDocTemplate {
+    id: string; title: string; content: string; auto_doc_kind: 'peticao_inicial'; area_direito: string | null
+    file_url: string | null; file_name: string | null; file_mime: string | null; file_size: number | null
+  }
+  const [autoDocTemplates, setAutoDocTemplates] = useState<AutoDocTemplate[]>([])
+  const [tenantName, setTenantName] = useState('')
+  const [docGenCandidates, setDocGenCandidates] = useState<AutoDocTemplate[]>([])
+  const [docGenSelected, setDocGenSelected] = useState<Set<string>>(new Set())
+  const [docGenSaving, setDocGenSaving] = useState(false)
+  const normalizeArea = (s: string | null | undefined) => (s || '').trim().toLowerCase()
+
+  function closeDocGenModal() {
+    setCompletionModal(null)
+    setDocGenCandidates([])
+    setDocGenSelected(new Set())
+    load(true)
+  }
+
+  async function generateAutoDocumentsForTask() {
+    if (!completionModal?.clientId || docGenSelected.size === 0) { closeDocGenModal(); return }
+    const client = clients.find(c => c.id === completionModal.clientId)
+    if (!client) { closeDocGenModal(); return }
+    const toGenerate = docGenCandidates.filter(t => docGenSelected.has(t.id))
+    const textTemplates = toGenerate.filter(t => !t.file_url)
+    const fileTemplates = toGenerate.filter(t => t.file_url)
+    const preparedText = textTemplates.map(t => ({
+      title: `${t.title} - ${client.name}`,
+      content: mergeTemplateVariables(t.content, { client, tenant: { name: tenantName }, profile, processNumber: completionModal.processNumber }),
+    }))
+
+    // Mesmo motivo do ClientsPage: abrir a janela síncrona no clique, antes do insert
+    // assíncrono, pra não ser bloqueada como pop-up não solicitado pelo navegador.
+    const printWindow = preparedText.length > 0 ? window.open('', '_blank') : null
+
+    setDocGenSaving(true)
+    const rows = [
+      ...preparedText.map(p => ({
+        tenant_id: profile?.tenant_id,
+        title: p.title,
+        type: 'petition' as const,
+        category: completionForm.area || completionForm.grupo_acao || null,
+        content: p.content,
+        is_template: false,
+        client_id: client.id,
+        process_id: completionModal.processId || null,
+      })),
+      ...fileTemplates.map(t => ({
+        tenant_id: profile?.tenant_id,
+        title: `${t.title} - ${client.name}`,
+        type: 'petition' as const,
+        category: completionForm.area || completionForm.grupo_acao || null,
+        content: '',
+        is_template: false,
+        client_id: client.id,
+        process_id: completionModal.processId || null,
+        file_url: t.file_url,
+        file_name: t.file_name,
+        file_mime: t.file_mime,
+        file_size: t.file_size,
+      })),
+    ]
+    const { error } = await withErrorFeedback(supabase.from('documents').insert(rows), 'Erro ao gerar documentos')
+    setDocGenSaving(false)
+    if (error) { printWindow?.close(); return }
+    if (preparedText.length > 0) openMultiDocumentPrintWindow(`Documentos - ${client.name}`, preparedText, printWindow)
+    const parts: string[] = []
+    if (preparedText.length > 0) parts.push(`${preparedText.length} pronto${preparedText.length === 1 ? '' : 's'} para impressão`)
+    if (fileTemplates.length > 0) parts.push(`${fileTemplates.length} arquivo${fileTemplates.length === 1 ? '' : 's'} anexado${fileTemplates.length === 1 ? '' : 's'} ao processo`)
+    toast(`${rows.length === 1 ? 'Documento gerado' : `${rows.length} documentos gerados`} — ${parts.join(', ')}`, 'success')
+    closeDocGenModal()
+  }
 
   const [pageSize, setPageSize] = useState(50)
   const [page, setPage] = useState(1)
@@ -372,12 +450,16 @@ export function TasksPage() {
 
   async function load(silent = false) {
     if (!silent) setLoading(true)
-    const [{ data: t }, { data: p }, { data: c }, { data: usr }, { data: col }] = await Promise.all([
+    const [{ data: t }, { data: p }, { data: c }, { data: usr }, { data: col }, { data: autoDocs }, { data: tenantRow }] = await Promise.all([
       supabase.from('tasks').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('processes').select('id,number,title,modalidade,client_id').is('deleted_at', null).order('title'),
-      supabase.from('clients').select('id,name,colaborador_id').is('deleted_at', null).order('name'),
+      // Campos extras (cpf_cnpj, endereço, etc.) além de id/name/colaborador_id: usados
+      // pra preencher a Petição Inicial gerada automaticamente ao concluir "Protocolar processo".
+      supabase.from('clients').select('id,name,colaborador_id,cpf_cnpj,email,phone,celular,address,cidade,state,bairro,cep,area_direito,nationality,marital_status,profession,rg').is('deleted_at', null).order('name'),
       supabase.from('profiles').select('id,user_id,name,display_name,role').order('name'),
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
+      supabase.from('documents').select('id,title,content,auto_doc_kind,area_direito,file_url,file_name,file_mime,file_size').is('deleted_at', null).eq('auto_doc_kind', 'peticao_inicial'),
+      profile?.tenant_id ? supabase.from('tenants').select('name').eq('id', profile.tenant_id).single() : Promise.resolve({ data: null as { name: string } | null }),
     ])
     const allTasks = (t || []) as Task[]
     let taskList = allTasks.filter(task => !task.recurring)
@@ -390,6 +472,8 @@ export function TasksPage() {
     setClients((c || []) as Client[])
     setSystemUsers((usr || []) as Profile[])
     setColaboradores((col || []) as Colaborador[])
+    setAutoDocTemplates((autoDocs || []) as AutoDocTemplate[])
+    setTenantName(tenantRow?.name || '')
     setLoading(false)
   }
 
@@ -759,8 +843,23 @@ export function TasksPage() {
       modalidade: completionForm.modalidade || null,
     }
     if (!payload.client_id) delete payload.client_id
-    const { error } = await supabase.from('processes').insert(payload)
+    const { data: created, error } = await supabase.from('processes').insert(payload).select('id, number').single()
     if (error) { toast(`Erro ao criar processo: ${error.message}`, 'error'); return }
+
+    // Sugere gerar Petição Inicial automaticamente se houver modelo cadastrado pra
+    // essa área — mesmo mecanismo de Procuração/Contrato de Honorários em
+    // ClientsPage, aqui disparado ao concluir "Protocolar processo" em vez de no
+    // cadastro do cliente (nesse ponto já existe processo pra preencher [NUMERO_PROCESSO]).
+    const area = payload.area || completionForm.grupo_acao || ''
+    const matches = payload.client_id && area.trim()
+      ? autoDocTemplates.filter(dt => normalizeArea(dt.area_direito) === normalizeArea(area))
+      : []
+    if (matches.length > 0) {
+      setDocGenCandidates(matches)
+      setDocGenSelected(new Set(matches.map(dt => dt.id)))
+      setCompletionModal({ ...completionModal, step: 'docgen', processId: created?.id, processNumber: created?.number ?? null })
+      return
+    }
     setCompletionModal(null)
     load(true)
   }
@@ -2024,6 +2123,72 @@ export function TasksPage() {
           </div>
         </div>
       )}
+
+      {/* ══ MODAL GERAÇÃO AUTOMÁTICA DE PETIÇÃO INICIAL — só aparece quando há modelo cadastrado pra área do processo recém-criado ══ */}
+      <Modal open={!!(completionModal && completionModal.step === 'docgen')} onClose={closeDocGenModal} title="" size="md">
+        {completionModal && completionModal.step === 'docgen' && (
+          <>
+            <div className="-mx-6 px-6 pt-1 pb-4 border-b border-gray-100 dark:border-dark-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary-100 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                  <FileText className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900 dark:text-white">Gerar Petição Inicial automaticamente?</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Processo criado{completionModal.processNumber ? ` — nº ${completionModal.processNumber}` : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 mt-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Encontramos modelo{docGenCandidates.length !== 1 ? 's' : ''} de Petição Inicial cadastrado{docGenCandidates.length !== 1 ? 's' : ''} para essa área. Selecione os que quer gerar já preenchidos com os dados do cliente e do processo:
+              </p>
+              {docGenCandidates.map(dt => (
+                <label key={dt.id} className="flex items-start gap-3 p-3 border border-gray-200 dark:border-dark-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={docGenSelected.has(dt.id)}
+                    onChange={e => setDocGenSelected(prev => {
+                      const next = new Set(prev)
+                      if (e.target.checked) next.add(dt.id); else next.delete(dt.id)
+                      return next
+                    })}
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">{dt.title}</p>
+                    <p className="text-xs text-gray-400">Petição Inicial{dt.file_url ? ' · arquivo enviado' : ''}</p>
+                  </div>
+                </label>
+              ))}
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl px-3 py-2">
+                Modelos de texto são gerados como rascunho pronto para impressão, com os campos do cliente e o número do processo já preenchidos (o que faltar fica em branco).
+                {docGenCandidates.some(dt => dt.file_url) && ' Modelos enviados como arquivo (.docx/.pdf) só ficam vinculados ao processo — abra-os manualmente em Documentos.'}
+              </p>
+            </div>
+
+            <div className="mt-5 -mx-6 px-6 pt-4 border-t border-gray-100 dark:border-dark-700 space-y-2">
+              <button
+                onClick={generateAutoDocumentsForTask}
+                disabled={docGenSaving || docGenSelected.size === 0}
+                className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+              >
+                <FileText className="w-4 h-4" />
+                {docGenSaving ? 'Gerando...' : `Gerar ${docGenSelected.size || ''} documento${docGenSelected.size === 1 ? '' : 's'}`}
+              </button>
+              <button
+                onClick={closeDocGenModal}
+                className="w-full py-2.5 rounded-xl text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+              >
+                Pular esta etapa
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
 
       <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title="Tarefas recorrentes ativas" size="md">
         <div className="space-y-2">

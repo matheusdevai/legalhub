@@ -52,6 +52,18 @@ describe('mergeTemplateVariables', () => {
     expect(result).toBe('Empresa PJ Ltda -  -  - ')
   })
 
+  it('preenche [NUMERO_PROCESSO] quando processNumber é informado', () => {
+    const result = mergeTemplateVariables('Processo: [NUMERO_PROCESSO].', {
+      client: {
+        name: 'X', cpf_cnpj: null, email: null, phone: null, celular: null,
+        address: null, cidade: null, state: null, bairro: null, cep: null, area_direito: null,
+        nationality: null, marital_status: null, profession: null, rg: null,
+      },
+      processNumber: '0001234-56.2026.8.15.0001',
+    })
+    expect(result).toBe('Processo: 0001234-56.2026.8.15.0001.')
+  })
+
   it('usa celular quando phone não está preenchido', () => {
     const result = mergeTemplateVariables('[TELEFONE]', {
       client: {

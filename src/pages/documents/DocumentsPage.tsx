@@ -28,7 +28,7 @@ interface Document {
   file_size?: number
   file_mime?: string
   area_direito?: string | null
-  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | null
+  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | 'peticao_inicial' | null
 }
 
 // Mesma lista base usada em ClientsPage (área do direito do cliente) — mantém as sugestões alinhadas
@@ -38,6 +38,7 @@ const AREA_DIREITO_OPTIONS = ['Previdenciário', 'Cível', 'Consumidor', 'Trabal
 const AUTO_DOC_KIND_LABELS: Record<string, string> = {
   procuracao: 'Procuração',
   contrato_honorarios: 'Contrato de Honorários',
+  peticao_inicial: 'Petição Inicial',
 }
 
 const FILTER_OPTIONS = [
@@ -56,7 +57,7 @@ interface LibraryTemplate {
   content: string
   is_library_public: true
   area_direito?: string | null
-  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | null
+  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | 'peticao_inicial' | null
 }
 
 function formatFileSize(bytes?: number) {
@@ -529,11 +530,14 @@ export function DocumentsPage() {
               <option value="">Nenhum (modelo comum)</option>
               <option value="procuracao">Procuração</option>
               <option value="contrato_honorarios">Contrato de Honorários</option>
+              <option value="peticao_inicial">Petição Inicial</option>
             </Select>
           </div>
           {form.auto_doc_kind && (
             <p className="text-xs text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/10 border border-primary-200 dark:border-primary-800 rounded-xl px-3 py-2">
-              Ao cadastrar um novo cliente na área "{form.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este documento automaticamente já preenchido com os dados do cliente.
+              {form.auto_doc_kind === 'peticao_inicial'
+                ? <>Ao concluir a tarefa "Protocolar processo" de um cliente na área "{form.area_direito || '— defina a área do direito acima —'}" e criar o processo, o sistema vai sugerir gerar esta petição automaticamente já preenchida com os dados do cliente e o número do processo.</>
+                : <>Ao cadastrar um novo cliente na área "{form.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este documento automaticamente já preenchido com os dados do cliente.</>}
             </p>
           )}
           <Textarea label="Conteúdo" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={10}
@@ -699,11 +703,14 @@ export function DocumentsPage() {
               <option value="">Nenhum (arquivo comum)</option>
               <option value="procuracao">Procuração</option>
               <option value="contrato_honorarios">Contrato de Honorários</option>
+              <option value="peticao_inicial">Petição Inicial</option>
             </Select>
           </div>
           {uploadForm.auto_doc_kind && (
             <p className="text-xs text-primary-700 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/10 border border-primary-200 dark:border-primary-800 rounded-xl px-3 py-2">
-              Ao cadastrar um novo cliente na área "{uploadForm.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este arquivo automaticamente já vinculado ao cliente. Como é um arquivo (não texto), ele não é preenchido com os dados do cliente — só fica pronto, associado à ficha do cliente, para você abrir e completar manualmente.
+              {uploadForm.auto_doc_kind === 'peticao_inicial'
+                ? <>Ao concluir a tarefa "Protocolar processo" de um cliente na área "{uploadForm.area_direito || '— defina a área do direito acima —'}" e criar o processo, o sistema vai sugerir vincular este arquivo automaticamente.</>
+                : <>Ao cadastrar um novo cliente na área "{uploadForm.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este arquivo automaticamente já vinculado ao cliente.</>} Como é um arquivo (não texto), ele não é preenchido com os dados do cliente — só fica pronto, associado à ficha do cliente, para você abrir e completar manualmente.
             </p>
           )}
 

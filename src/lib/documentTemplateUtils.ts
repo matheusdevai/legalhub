@@ -5,6 +5,7 @@ export interface TemplateMergeContext {
   client: Pick<Client, 'name' | 'cpf_cnpj' | 'email' | 'phone' | 'celular' | 'address' | 'cidade' | 'state' | 'bairro' | 'cep' | 'area_direito' | 'nationality' | 'marital_status' | 'profession' | 'rg'>
   tenant?: Pick<Tenant, 'name'> | null
   profile?: Pick<Profile, 'name' | 'oab_number'> | null
+  processNumber?: string | null
 }
 
 function fullAddress(client: TemplateMergeContext['client']): string {
@@ -20,7 +21,7 @@ export const TEMPLATE_PLACEHOLDERS = [
 ] as const
 
 export function mergeTemplateVariables(content: string, ctx: TemplateMergeContext): string {
-  const { client, tenant, profile } = ctx
+  const { client, tenant, profile, processNumber } = ctx
   const phone = client.phone || client.celular
   const replacements: Record<string, string> = {
     '[NOME_CLIENTE]': client.name || '',
@@ -36,6 +37,11 @@ export function mergeTemplateVariables(content: string, ctx: TemplateMergeContex
     '[NOME_ADVOGADO]': profile?.name || '',
     '[OAB]': profile?.oab_number || '',
   }
+  // Diferente dos demais: sem processo vinculado ainda (ex. Procuração gerada no
+  // cadastro do cliente, antes de existir processo), o placeholder fica visível de
+  // propósito no texto impresso, como aviso pra preencher manualmente depois — não
+  // vira string vazia como os outros.
+  if (processNumber) replacements['[NUMERO_PROCESSO]'] = processNumber
 
   let merged = content
   for (const [placeholder, value] of Object.entries(replacements)) {
