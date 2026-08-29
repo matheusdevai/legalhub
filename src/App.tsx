@@ -25,6 +25,7 @@ const SupportPage      = lazy(() => import('@/pages/support/SupportPage').then(m
 const ReportsPage      = lazy(() => import('@/pages/reports/ReportsPage').then(m => ({ default: m.ReportsPage })))
 const UsersPage        = lazy(() => import('@/pages/users/UsersPage').then(m => ({ default: m.UsersPage })))
 const DocumentsPage    = lazy(() => import('@/pages/documents/DocumentsPage').then(m => ({ default: m.DocumentsPage })))
+const EscritorioDigitalPage = lazy(() => import('@/pages/escritorioDigital/EscritorioDigitalPage').then(m => ({ default: m.EscritorioDigitalPage })))
 const PublicacoesPage  = lazy(() => import('@/pages/publicacoes/PublicacoesPage').then(m => ({ default: m.PublicacoesPage })))
 const ClientPortalPage = lazy(() => import('@/pages/portal/ClientPortalPage').then(m => ({ default: m.ClientPortalPage })))
 
@@ -87,6 +88,7 @@ function AppRoutes() {
       <Route path="/relatorios" element={<PrivateRoute><ReportsPage /></PrivateRoute>} />
       <Route path="/usuarios" element={<PrivateRoute><UsersPage /></PrivateRoute>} />
       <Route path="/documentos" element={<PrivateRoute><DocumentsPage /></PrivateRoute>} />
+      <Route path="/escritorio-digital" element={<PrivateRoute><EscritorioDigitalPage /></PrivateRoute>} />
       <Route path="/publicacoes" element={<PrivateRoute><PublicacoesPage /></PrivateRoute>} />
       <Route path="/admin" element={<PrivateRoute><AdminRoute><AdminPage /></AdminRoute></PrivateRoute>} />
       <Route path="/portal" element={<ClientPortalRoute><ClientPortalPage /></ClientPortalRoute>} />

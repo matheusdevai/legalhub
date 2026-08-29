@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, Briefcase, CheckSquare, DollarSign,
   Calendar, UserCheck,
   Shield, BarChart2, X, UserCog,
-  FileText, Newspaper, ChevronLeft, ChevronRight, Target,
+  FileText, Newspaper, ChevronLeft, ChevronRight, Target, FolderOpen,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ const navGroups = [
       { to: '/processos',   icon: Briefcase,  label: 'Processos' },
       { to: '/publicacoes', icon: Newspaper,  label: 'Intimações' },
       { to: '/documentos',  icon: FileText,   label: 'Documentos' },
+      { to: '/escritorio-digital', icon: FolderOpen, label: 'Escritório Digital' },
     ],
   },
   {
