@@ -94,7 +94,7 @@ SystemAnnouncement — id, title, message, type, created_by
 ```
 
 ## Tabelas Supabase
-`profiles`, `tenants`, `clients`, `processes`, `tasks`, `financials`, `user_expenses`, `expense_budgets`, `calendar_events`, `leads`, `colaboradores`, `notifications`, `process_updates`, `support_tickets`, `system_announcements`, `audit_log`, `document_library_templates`, `edge_function_rate_limits`
+`profiles`, `tenants`, `clients`, `processes`, `tasks`, `financials`, `financial_accounts`, `user_expenses`, `expense_budgets`, `calendar_events`, `leads`, `lead_interactions`, `meta_accounts`, `whatsapp_accounts`, `colaboradores`, `notifications`, `process_updates`, `support_tickets`, `support_messages`, `system_announcements`, `audit_log`, `security_events`, `documents`, `document_library_templates`, `folders`, `edge_function_rate_limits`
 
 Soft-delete padrão: `deleted_at = new Date().toISOString()` — nunca deletar registros.
 
@@ -108,6 +108,15 @@ diferente** com tabelas em português: `escritorios`, `perfis`, `clientes`,
 `profiles`). Há também tabelas `agent_*` e `pje_*` de outra(s) integração(ões).
 **Nunca** confundir os dois — ao mexer em RLS/migrations, confirme antes via
 `list_tables`/`pg_policies` qual função de tenant a tabela em questão usa.
+
+Nota histórica: 4 Edge Functions do LicitaHub que estavam neste repo por engano
+(`criar-acesso-cliente`, `enviar-notificacao`, `analisar-edital`, `pncp-monitor`)
+foram removidas no PR #2, junto com o fallback de `security-monitor` que pegava
+`RESEND_API_KEY` emprestado da tabela `lh_secrets` quando a env var não estava
+configurada. Isso resolveu a contaminação a nível de código (Edge Functions);
+as tabelas `lh_*`/`agent_*`/`pje_*` descritas acima continuam existindo no
+mesmo projeto Supabase compartilhado (contaminação a nível de banco, fora do
+escopo dessa limpeza).
 
 ### RLS — pontos já auditados nesta sessão
 - `documents` (bucket de storage, público) não tinha NENHUMA policy em
@@ -252,7 +261,7 @@ const filtered = useMemo(() => clients.filter(c => {
 - **Tarefa recorrente** → `markTaskDone()`/`nextRecurrenceDueDate()` em `src/lib/taskActions.ts` suportam `weekly|monthly|yearly` e respeitam `recurrence_end_date` (não gera a próxima ocorrência se ela ultrapassar a data-limite)
 - **Sincronização OAB (CNJ/PJe)** → ao trocar a seccional (UF), `swapSeccionalTribunal()` em `OabSyncModal.tsx` troca o TJ da UF anterior pelo novo (nunca deixa o tribunal antigo "grudado" na lista)
 - **Minhas Despesas (Financeiro)** → planilha mensal (`groupExpensesByMonth`), upload de comprovante (`receipt_url`, bucket `documents`), seleção em massa para "marcar como reembolsado", metas de orçamento por categoria (`expense_budgets`) com barra de progresso do mês corrente, exportação (CSV/planilha/PDF) via `openExportWindow`
-- **create-user (Edge Function)** → rate limit de 10 chamadas/hora por admin chamador, contra a tabela `edge_function_rate_limits` (padrão a replicar em outras Edge Functions sensíveis, ex. `delete-user`, `criar-acesso-cliente`)
+- **create-user (Edge Function)** → rate limit de 10 chamadas/hora por admin chamador, contra a tabela `edge_function_rate_limits` (padrão a replicar em outras Edge Functions sensíveis, ex. `delete-user`)
 
 ## Dashboard — tabs
 | Tab | Conteúdo |
@@ -316,6 +325,7 @@ npx vitest run -t "nome do teste"                 # rodar só um teste pelo nome
 ## Deploy
 Vercel (vercel.json presente). Build: `npm run build`. Output: `dist/`.
 - Projeto Vercel: `legalhub` (org/scope `matheusadvjp-9108s-projects`), domínio de produção `legalhubgestor.vercel.app`. ⚠️ NÃO confundir com `lawfy-saas` — existe um projeto vazio com esse nome na mesma conta (criado por engano num `vercel link --project lawfy-saas`), nunca usar.
+- `supabase/config.toml` → `auth.additional_redirect_urls` ainda aponta só para `https://lawfy-saas.vercel.app` (o projeto Vercel morto acima) e não inclui o domínio de produção real `legalhubgestor.vercel.app`. Ainda não corrigido — confirmar/atualizar antes de depender de redirect de auth em produção.
 - Deploy manual (sem depender do estado do git): `npx vercel --prod --scope matheusadvjp-9108s-projects` a partir da raiz do projeto (usa `.vercel/project.json` já linkado — se não existir, `vercel link --yes --project legalhub --scope matheusadvjp-9108s-projects`).
 - Edge Functions (`supabase/functions/*`) são deployadas separadamente via Supabase (MCP `deploy_edge_function` ou `supabase functions deploy <nome>`) — `npm run build`/`vercel --prod` NÃO as publica.
 - Clone novo/máquina sem Node: instalar Node.js (inclui npm) via `.pkg` oficial do nodejs.org (arm64 no Apple Silicon) ou Homebrew — sem isso só existe o `node` isolado embutido no app Overclock (sem npm). `.env` local (`VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`) não vem no repo — pegar via Supabase MCP (`get_project_url`/`get_publishable_keys` do projeto `bdpkkacfsavmpumwftsf`).
