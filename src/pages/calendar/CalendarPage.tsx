@@ -10,12 +10,12 @@ import {
   format, startOfMonth, endOfMonth, eachDayOfInterval,
   getDay, isSameMonth, isToday, isSameDay, parseISO,
   addDays, startOfWeek, endOfWeek, addWeeks, subWeeks,
-  isWithinInterval, addMonths, subMonths,
+  addMonths, subMonths,
 } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { CalendarEvent, Process } from '@/types'
 import { formatDate } from '@/lib/utils'
@@ -39,9 +39,6 @@ const TYPE_COLORS: Record<string, string> = {
 }
 const TYPE_DOT: Record<string, string> = {
   hearing: 'bg-red-500', deadline: 'bg-orange-500', meeting: 'bg-blue-500', task: 'bg-green-500',
-}
-const TYPE_BG: Record<string, string> = {
-  hearing: 'bg-red-400', deadline: 'bg-orange-400', meeting: 'bg-blue-400', task: 'bg-green-400',
 }
 const TYPE_LABELS: Record<string, string> = {
   hearing: 'Audiência', deadline: 'Prazo', meeting: 'Reunião', task: 'Tarefa',

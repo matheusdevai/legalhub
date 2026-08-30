@@ -4,13 +4,13 @@ import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, TrendingUp, Trash2, Phone, Mail, Facebook,
   MessageCircle, BarChart2, Users, Target, DollarSign, Zap,
-  ChevronRight, X, Star, Calendar, ArrowUpRight, Edit2,
+  ChevronRight, X, Star, Calendar, Edit2,
   CheckCircle, PhoneCall, AtSign, Video, FileText,
   Wifi, WifiOff, ExternalLink, Copy, Eye, EyeOff,
-  RefreshCw, AlertCircle, Activity
+  Activity
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Lead } from '@/types'
 import { formatDate, formatPhone, formatCurrency, LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from '@/lib/utils'

@@ -8,7 +8,7 @@ export const EBOOK_PROMO_END = '2026-11-23T00:00:00.000Z'
 export const EBOOK_URL = '/ebook/legalhub-ebook.html'
 
 /** Um novo cadastro (profile.created_at) dentro da janela da promoção ganha o e-book. */
-export function isEbookEligible(profileCreatedAt: string | null | undefined, now: Date = new Date()): boolean {
+export function isEbookEligible(profileCreatedAt: string | null | undefined): boolean {
   if (!profileCreatedAt) return false
   const created = new Date(profileCreatedAt)
   if (Number.isNaN(created.getTime())) return false

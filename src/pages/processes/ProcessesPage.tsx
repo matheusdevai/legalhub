@@ -2,17 +2,17 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, Briefcase, Trash2, Download, ChevronDown, ChevronRight,
-  ArrowRight, Scale, Edit3, Gavel, FileText, Calendar,
-  User, Building2, Hash, AlertCircle, Printer, CheckCircle2, TrendingUp, X,
+  Plus, Search, Briefcase, Trash2, Download, ChevronDown,
+  Edit3, FileText,
+  User, Hash, CheckCircle2, TrendingUp, X,
   FolderOpen, Globe, DollarSign, RotateCcw, Upload, CheckSquare,
   MessageCircle, Sparkles, Zap, SlidersHorizontal, ArrowUpDown,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner, StatsCard } from '@/components/ui'
+import { Button, Card, Modal, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, Tenant } from '@/types'
-import { formatDate, formatCurrency, PROCESS_STATUS_COLORS, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
+import { formatDate, formatCurrency, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
@@ -99,19 +99,7 @@ type ViewMode = 'table' | 'byColaborador'
 
 const PAGE_SIZE = 15
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 mt-2 mb-1">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-primary-600 dark:text-primary-400 whitespace-nowrap">
-        {children}
-      </span>
-      <div className="flex-1 h-px bg-gradient-to-r from-primary-200 dark:from-primary-800 to-transparent" />
-    </div>
-  )
-}
-
 export function ProcessesPage() {
-  const navigate = useNavigate()
   const { profile } = useAuth()
   const [processes, setProcesses] = useState<Process[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -138,7 +126,7 @@ export function ProcessesPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [areaOptions, setAreaOptions] = useState<string[]>([])
-  const [cpfSearch, setCpfSearch] = useState('')
+  const [_cpfSearch, setCpfSearch] = useState('')
   const [groupPages, setGroupPages] = useState<Record<string, number>>({})
   const [tablePage, setTablePage] = useState(0)
   const [exportOpen, setExportOpen] = useState(false)
@@ -547,7 +535,6 @@ export function ProcessesPage() {
     },
   ].filter(g => g.processes.length > 0)
 
-  const today = new Date().toISOString().slice(0, 10)
   const [tableCollapsed, setTableCollapsed] = useState(false)
   const [statusDropdownOpen, setStatusDropdownOpen] = useState(false)
 
@@ -1602,21 +1589,6 @@ export function ProcessesPage() {
   )
 }
 
-function DetailField({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value?: string | null }) {
-  return (
-    <div>
-      <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold mb-1 flex items-center gap-1">
-        <Icon className="w-3 h-3" /> {label}
-      </p>
-      <p className="text-sm text-gray-900 dark:text-white">{value || '—'}</p>
-    </div>
-  )
-}
-
-const SEGMENTOS = ['JUSTIÇA FEDERAL', 'JUSTIÇA ESTADUAL', 'JUSTIÇA DO TRABALHO', 'JUSTIÇA ELEITORAL', 'JUSTIÇA MILITAR', 'TRIBUNAIS SUPERIORES']
-const SISTEMAS_ELETRONICOS = ['PJe', 'e-SAJ', 'PROJUDI', 'EPROC', 'ESAJ', 'TUCUJURIS', 'Outro']
-const RESULTADOS = ['Procedente', 'Improcedente', 'Parcialmente procedente', 'Extinto sem resolução', 'Acordo', 'Desistência']
-
 type DocItem = {
   id: string; title: string; type: string
   file_url: string | null; file_name: string | null; file_size: number | null
@@ -1653,78 +1625,6 @@ type PanelForm = {
   contingenciamento: string; data_fechamento: string; transito_julgado: string
   arquivamento: string; resultado: string; fase: string; etapa: string
   notificar_sms: boolean; notificar_email: boolean
-}
-
-function PanelInput({ label, value, onChange, placeholder, mono, type: t = 'text', clearable }: {
-  label: string; value: string; onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-  placeholder?: string; mono?: boolean; type?: string; clearable?: boolean
-}) {
-  return (
-    <div className="mb-4">
-      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">{label}</label>
-      <div className="relative">
-        <input
-          type={t}
-          value={value}
-          onChange={onChange}
-          placeholder={placeholder}
-          className={cn(
-            'w-full px-3.5 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400',
-            mono && 'font-mono',
-            clearable && value && 'pr-8'
-          )}
-        />
-        {clearable && value && (
-          <button onClick={() => onChange({ target: { value: '' } } as any)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function PanelSelect({ label, value, onChange, options, placeholder }: {
-  label: string; value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void
-  options: string[]; placeholder?: string
-}) {
-  return (
-    <div className="mb-4">
-      <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">{label}</label>
-      <div className="relative">
-        <select
-          value={value}
-          onChange={onChange}
-          className="w-full px-3.5 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
-        >
-          {placeholder && <option value="">{placeholder}</option>}
-          {options.map(o => <option key={o} value={o}>{o}</option>)}
-        </select>
-        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-      </div>
-    </div>
-  )
-}
-
-function DatePair({ label1, value1, onChange1, label2, value2, onChange2 }: {
-  label1: string; value1: string; onChange1: (e: React.ChangeEvent<HTMLInputElement>) => void
-  label2: string; value2: string; onChange2: (e: React.ChangeEvent<HTMLInputElement>) => void
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-3 mb-4">
-      {[{ label: label1, value: value1, onChange: onChange1 }, { label: label2, value: value2, onChange: onChange2 }].map(d => (
-        <div key={d.label}>
-          <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">{d.label}</label>
-          <div className="relative">
-            <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-            <input type="date" value={d.value} onChange={d.onChange}
-              className="w-full pl-8 pr-2 py-2.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDelete }: {

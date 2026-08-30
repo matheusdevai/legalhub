@@ -15,7 +15,7 @@ import { ptBR } from 'date-fns/locale'
 import {
   Menu, Bell, Sun, Moon, Plus, ChevronDown,
   CheckSquare, Users, Briefcase, DollarSign,
-  User, CreditCard, HelpCircle, LogOut, X, Wrench,
+  User, CreditCard, HelpCircle, LogOut, X,
   Calendar, AlertCircle, CheckCheck, CreditCard as PaymentIcon,
   Info, Search, BookOpen,
 } from 'lucide-react'

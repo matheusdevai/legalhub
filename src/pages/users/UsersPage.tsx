@@ -6,7 +6,7 @@ import {
   CreditCard, ChevronRight, Zap, Star, Infinity,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, EmptyState, Spinner } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { Profile } from '@/types'

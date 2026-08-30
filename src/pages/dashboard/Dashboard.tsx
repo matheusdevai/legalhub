@@ -2,7 +2,7 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  CheckSquare, TrendingUp, Target, RefreshCw,
+  CheckSquare, Target, RefreshCw,
   Plus, Star, AlertCircle, ChevronLeft, ChevronRight,
   BarChart2, List, LayoutGrid, Activity, Settings,
   Circle, CheckCircle2, ChevronDown, Search, Filter,
@@ -13,7 +13,7 @@ const TaskscoreBarChart = lazy(() => import('./DashboardCharts').then(m => ({ de
 const ChartFallback = () => <div className="h-full min-h-[160px] animate-pulse bg-slate-100 dark:bg-dark-700 rounded-xl" />
 import { Layout } from '@/components/layout/Layout'
 import { AiCopilotoTab } from '@/components/ai/AiCopilotoTab'
-import { Spinner, Modal, Button, Input, Select, EmptyState } from '@/components/ui'
+import { Modal, Button, Input, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent } from '@/lib/utils'
@@ -450,14 +450,9 @@ export function Dashboard() {
     load()
   }, [])
 
-  const firstName = (profile?.name || profile?.display_name || 'Usuário').split(' ')[0]
   const fullName = profile?.name || profile?.display_name || 'Usuário'
-  const initials = fullName.split(' ').map((n: string) => n[0]).slice(0,2).join('').toUpperCase()
 
   const pctChange = computeMonthlyChangePercent(stats.completedMonth, stats.completedPrevMonth)
-
-  // Taskscore: last 7 days completed tasks (simplified to show month stats as bar)
-  const maxBar = Math.max(stats.completedMonth, 1)
 
   const [taskscoreMode, setTaskscoreMode] = useState<'mensal' | 'diario'>('mensal')
   const [desempenhoCalMonth, setDesempenhoCalMonth] = useState(new Date())
@@ -1296,10 +1291,6 @@ export function Dashboard() {
           const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
           const calDays: (number | null)[] = Array(firstDay).fill(null)
           for (let i = 1; i <= daysInMonth; i++) calDays.push(i)
-
-          const scoreBarWidth = stats.completedMonth > 0
-            ? Math.max((stats.completedMonth / Math.max(maxBar, 10)) * 100, 5)
-            : 0
 
           return (
             <div className="flex flex-col lg:flex-row gap-4">
