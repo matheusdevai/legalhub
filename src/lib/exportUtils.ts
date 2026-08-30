@@ -80,9 +80,11 @@ function renderCell(cell: ExportCell): string {
     cell.mono ? 'mono' : '',
     cell.bold ? 'bold' : '',
   ].filter(Boolean).join(' ')
+  const text = escapeHtml(cell.text)
+  const sub = cell.sub ? escapeHtml(cell.sub) : ''
   const inner = cell.badge
-    ? `<span class="badge b-${cell.badge}">${cell.text}</span>`
-    : `${cell.bold ? `<strong>${cell.text}</strong>` : cell.text}${cell.sub ? `<span class="sub">${cell.sub}</span>` : ''}`
+    ? `<span class="badge b-${cell.badge}">${text}</span>`
+    : `${cell.bold ? `<strong>${text}</strong>` : text}${sub ? `<span class="sub">${sub}</span>` : ''}`
   return `<td${classes ? ` class="${classes}"` : ''}>${inner}</td>`
 }
 

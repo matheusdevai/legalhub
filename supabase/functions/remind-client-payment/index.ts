@@ -8,9 +8,18 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 // Autenticação por segredo fixo: quem chama é Postgres/pg_cron, não um usuário
 // logado, e sem esse segredo qualquer um poderia usar este endpoint como
 // relay pra mandar e-mail "em nome" do LegalHub pra qualquer destinatário.
-const CRON_SECRET = "f2bedff373b29430a54cdcfeca0c9e6a5e9c0bb5d91a340b"
+const CRON_SECRET = Deno.env.get('CRON_SECRET')
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  if (aBytes.length !== bBytes.length) return false
+  let diff = 0
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
+  return diff === 0
+}
 
 function emailHtml(opts: { clientName: string; tenantName: string; description: string; amountStr: string; dueDateStr: string }) {
   return `
@@ -37,7 +46,7 @@ function emailHtml(opts: { clientName: string; tenantName: string; description: 
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-  if (req.headers.get('x-cron-secret') !== CRON_SECRET) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+  if (!CRON_SECRET || !timingSafeEqual(req.headers.get('x-cron-secret') || '', CRON_SECRET)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
 
   try {
     const { to, client_name, tenant_name, description, amount, due_date } = await req.json()

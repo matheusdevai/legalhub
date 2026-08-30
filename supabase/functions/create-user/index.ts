@@ -74,7 +74,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const body = await req.json()
-    const { email, password, name, role, tenant_id, client_id } = body
+    const { email, password, name, role, client_id } = body
 
     if (!email || !password || !name) {
       return new Response(JSON.stringify({ error: 'email, password e name são obrigatórios' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -93,7 +93,7 @@ Deno.serve(async (req: Request) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, role, tenant_id: tenant_id || callerProfile.tenant_id },
+      user_metadata: { name, role, tenant_id: callerProfile.tenant_id },
     })
 
     if (authError || !authData.user) {
@@ -107,7 +107,7 @@ Deno.serve(async (req: Request) => {
       display_name: name,
       email,
       role,
-      tenant_id: tenant_id || callerProfile.tenant_id,
+      tenant_id: callerProfile.tenant_id,
       client_id: role === 'client' ? client_id : null,
     }, { onConflict: 'id' })
 
