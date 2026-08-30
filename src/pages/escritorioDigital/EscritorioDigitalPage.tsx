@@ -1,6 +1,6 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
-import { Folder, FolderPlus, Upload, ChevronRight, Trash2, Download, File, FileText, Image, X, HardDrive, Home } from 'lucide-react'
+import { Folder, FolderPlus, Upload, ChevronRight, Trash2, Download, File, FileText, Image, X, HardDrive, Home, LayoutGrid, List } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Modal, Input, Select, Spinner, EmptyState, Button } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
@@ -30,6 +30,9 @@ interface FileRow {
 }
 
 interface ClientOption { id: string; name: string }
+
+const OFFICE_VIEW_MODE_KEY = 'legalhub_office_view_mode'
+type ViewMode = 'icons' | 'list'
 
 function formatFileSize(bytes?: number) {
   if (bytes == null) return ''
@@ -69,6 +72,15 @@ export function EscritorioDigitalPage() {
   const [dragOver, setDragOver] = useState(false)
 
   const [previewFile, setPreviewFile] = useState<FileRow | null>(null)
+
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const stored = window.localStorage.getItem(OFFICE_VIEW_MODE_KEY)
+    return stored === 'list' ? 'list' : 'icons'
+  })
+
+  useEffect(() => {
+    window.localStorage.setItem(OFFICE_VIEW_MODE_KEY, viewMode)
+  }, [viewMode])
 
   const currentFolder = path[path.length - 1] || null
 
@@ -221,6 +233,30 @@ export function EscritorioDigitalPage() {
               <Upload className="w-4 h-4" /> Enviar arquivo
             </Button>
           )}
+          <div className="ml-auto flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden">
+            <button
+              onClick={() => setViewMode('icons')}
+              className={cn('p-1.5 transition-colors',
+                viewMode === 'icons'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700'
+              )}
+              title="Visualizar em ícones"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={cn('p-1.5 border-l border-gray-200 dark:border-dark-600 transition-colors',
+                viewMode === 'list'
+                  ? 'bg-primary-600 text-white border-l-primary-700'
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700'
+              )}
+              title="Visualizar em lista"
+            >
+              <List className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Conteúdo */}
@@ -232,6 +268,43 @@ export function EscritorioDigitalPage() {
             title={currentFolder ? 'Pasta vazia' : 'Nenhuma pasta ainda'}
             description={currentFolder ? 'Envie um arquivo ou crie uma subpasta.' : 'Crie a primeira pasta do escritório ou de um cliente.'}
           />
+        ) : viewMode === 'list' ? (
+          <div className="border border-gray-200 dark:border-dark-600 rounded-xl divide-y divide-gray-100 dark:divide-dark-700/50 overflow-hidden">
+            {subfolders.map(folder => (
+              <div key={folder.id} className="group flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-dark-700/40 transition-colors">
+                <button onClick={() => openFolder(folder)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  <Folder className="w-5 h-5 text-primary-400 flex-shrink-0" fill="currentColor" fillOpacity={0.15} />
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{folder.name}</span>
+                </button>
+                <button
+                  onClick={() => deleteFolder(folder)}
+                  className="p-1.5 rounded-lg text-red-500 opacity-0 group-hover:opacity-100 hover:bg-red-50 dark:hover:bg-red-900/20 transition-opacity flex-shrink-0" title="Excluir pasta">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+            {files.map(file => (
+              <div key={file.id} className="group flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-dark-700/40 transition-colors cursor-pointer" onClick={() => setPreviewFile(file)}>
+                <FileIcon mime={file.file_mime} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{file.title}</p>
+                  <p className="text-xs text-gray-400">{formatFileSize(file.file_size)}</p>
+                </div>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  {file.file_url && (
+                    <a href={file.file_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+                      className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors" title="Baixar">
+                      <Download className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  <button onClick={e => { e.stopPropagation(); deleteFile(file) }}
+                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Excluir">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
             {subfolders.map(folder => (
