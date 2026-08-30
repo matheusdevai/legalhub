@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { PLAN_STORAGE_QUOTA_BYTES } from '@/lib/storageUtils'
 
 /** Logomarca oficial (a mesma do Login e do Sidebar) — ícone recortado num chip
  *  escuro, já que /logomarca.png é branca e foi feita para fundo escuro. */
@@ -157,6 +158,7 @@ const PLANS = [
     tagline: 'Para quem está começando a organizar o escritório',
     price: 176,
     processLimit: 'Até 600 processos ativos',
+    storageLimit: `${PLAN_STORAGE_QUOTA_BYTES.starter / 1024 ** 3} GB de armazenamento`,
     features: [
       'Dashboard completo (visão geral, lista, quadro e desempenho)',
       'Clientes com busca automática de CPF/CNPJ',
@@ -173,6 +175,7 @@ const PLANS = [
     tagline: 'Para escritórios em crescimento, com equipe e clientes ativos',
     price: 352,
     processLimit: 'Até 1.200 processos ativos',
+    storageLimit: `${PLAN_STORAGE_QUOTA_BYTES.professional / 1024 ** 3} GB de armazenamento`,
     highlight: true,
     features: [
       'Tudo do plano Starter',
@@ -189,6 +192,7 @@ const PLANS = [
     tagline: 'Para escritórios com alto volume e times maiores',
     price: 700,
     processLimit: 'Processos ilimitados',
+    storageLimit: `${PLAN_STORAGE_QUOTA_BYTES.enterprise / 1024 ** 3} GB de armazenamento`,
     features: [
       'Tudo do plano Professional',
       'Copiloto de Inteligência Artificial',
@@ -848,9 +852,15 @@ export function LandingPage() {
                   )}
                 </div>
 
-                <div className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5 w-fit">
-                  <Briefcase className="w-3.5 h-3.5" />
-                  {plan.processLimit}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5 w-fit">
+                    <Briefcase className="w-3.5 h-3.5" />
+                    {plan.processLimit}
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5 w-fit">
+                    <HardDrive className="w-3.5 h-3.5" />
+                    {plan.storageLimit}
+                  </div>
                 </div>
 
                 <ul className="mt-6 space-y-3 flex-1">
