@@ -10,7 +10,7 @@ import {
   Eye, EyeOff, Lock, Printer,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Client, Colaborador, Process, Profile, Financial } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
@@ -129,10 +129,6 @@ function DetailField({ icon: Icon, label, value }: { icon: React.ElementType; la
     </div>
   )
 }
-
-const TYPE_BADGE = (type: string) => type === 'pf'
-  ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-  : 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400'
 
 function VerticalBarChart({ title, data }: { title: string; data: { label: string; value: number }[] }) {
   const max = Math.max(...data.map(d => d.value), 1)
@@ -864,7 +860,7 @@ export function ClientsPage() {
     if (!form.name.trim()) return
     setSaving(true)
     const {
-      assigned_lawyer_uid, celular: _cel,
+      assigned_lawyer_uid: _alu, celular: _cel,
       processo_pago: _pp, processo_pago_valor: _ppv,
       processo_pago_data: _ppd, processo_categoria: _pc,
       tags: tagsStr, lgpd_consent, lgpd_consent_date,

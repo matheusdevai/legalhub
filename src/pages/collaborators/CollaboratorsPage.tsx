@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, Trash2, Mail, Phone, Briefcase, ChevronDown, ChevronUp,
+  Plus, Search, Trash2, Mail, Briefcase, ChevronDown, ChevronUp,
   SlidersHorizontal, ArrowUpDown, Download, RefreshCw, Edit3, Users,
-  MessageCircle, Sparkles, DollarSign, Clock, CheckCircle2, X, UserCheck,
+  MessageCircle, Sparkles, Clock, CheckCircle2, X, UserCheck,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Modal, Input, Select, Textarea, Spinner, Badge, EmptyState } from '@/components/ui'
@@ -123,7 +123,7 @@ export function CollaboratorsPage() {
   const navigate = useNavigate()
   const [collaborators, setCollaborators] = useState<Colaborador[]>([])
   const [allClients, setAllClients] = useState<ParceiroClientFull[]>([])
-  const [clientCounts, setClientCounts] = useState<Record<string, number>>({})
+  const [_clientCounts, setClientCounts] = useState<Record<string, number>>({})
   const [indicacoesCounts, setIndicacoesCounts] = useState<Record<string, number>>({})
   const [processCounts, setProcessCounts] = useState<Record<string, number>>({})
   const [activeProcessCounts, setActiveProcessCounts] = useState<Record<string, number>>({})

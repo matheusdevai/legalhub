@@ -1,15 +1,15 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import {
-  BarChart2, Download, Trophy, TrendingUp, Briefcase, Users, Scale,
+  BarChart2, Download, Trophy, TrendingUp, Users, Scale,
   Award, CheckCircle2, XCircle, RotateCcw, Activity, FileCheck, UserCheck,
   Filter, Search, ArrowUpDown, Zap, Clock, AlertCircle, X,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Card, Badge, Spinner, EmptyState, StatsCard } from '@/components/ui'
+import { Card, Badge, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador, Process, Profile, Client, Task } from '@/types'
-import { cn, formatDate, PROCESS_STATUS_COLORS } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 const AgilityDonutChart = lazy(() => import('./ReportsCharts').then(m => ({ default: m.AgilityDonutChart })))
 const OutcomesDonutChart = lazy(() => import('./ReportsCharts').then(m => ({ default: m.OutcomesDonutChart })))
 const ProcessesByMonthBarChart = lazy(() => import('./ReportsCharts').then(m => ({ default: m.ProcessesByMonthBarChart })))
@@ -22,7 +22,6 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const MONTHS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
-const MONTHS_FULL = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
 type ActiveTab = 'agilidade' | 'produtividade' | 'resultados' | 'ranking'
 type ProductivityPeriod = 'day' | 'week' | 'month'
@@ -189,7 +188,6 @@ export function ReportsPage() {
   }).sort((a, b) => b.total - a.total)
 
   // Results
-  const totalYear = stats.reduce((s, c) => s + c.total, 0)
   const totalWon = stats.reduce((s, c) => s + c.won, 0)
   const totalLost = stats.reduce((s, c) => s + c.lost, 0)
   const totalReturned = stats.reduce((s, c) => s + c.returned, 0)

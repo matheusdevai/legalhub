@@ -2,23 +2,23 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, DollarSign, TrendingUp, TrendingDown, Trash2,
+  Plus, Search, DollarSign, TrendingUp, Trash2,
   Wallet, Plane, Coffee, Car, Bed, Receipt, Scale,
   Edit3, CheckCircle2, Clock, Users, UserCheck,
-  ChevronLeft, ChevronRight, RefreshCw, Filter, ArrowUpDown, Download,
-  ChevronDown, Minus, ArrowDownRight, ArrowUpRight,
+  ChevronLeft, ChevronRight, RefreshCw, ArrowUpDown, Download,
+  ChevronDown, Minus,
   MessageCircle, Sparkles, Landmark, X, SlidersHorizontal,
   Paperclip, CheckSquare, Square,
   LineChart as LineChartIcon,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM, computeInstallmentAmounts } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount, ExpenseBudget } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatCurrency, formatPhone, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
+import { formatDate, formatCurrency, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib/expenseUtils'

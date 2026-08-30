@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import {
-  User, Lock, Bell, Building2, CreditCard, Palette, Globe,
+  User, Lock, Bell, CreditCard, Palette,
   CheckCircle2, AlertCircle, Eye, EyeOff, Shield, Smartphone, Mail,
   History, Plus, Pencil, Trash2, ShieldAlert, LogIn, KeyRound, UserCog,
   Download, ShieldX,

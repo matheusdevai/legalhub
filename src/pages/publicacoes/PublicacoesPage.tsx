@@ -5,11 +5,10 @@ import {
   ChevronsLeft, ChevronsRight, RefreshCw, AlertCircle, Download, Search, X, Clock,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Spinner, EmptyState, Modal, Input, Select, Button } from '@/components/ui'
+import { Spinner, Modal, Input, Select, Button } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
-import { useAuth } from '@/contexts/AuthContext'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
 import { computePrazo } from '@/lib/prazoUtils'
 import { toast } from '@/components/ui/Toast'
@@ -66,7 +65,6 @@ function isIntimacao(movimento: CnjMovimento): boolean {
 }
 
 export function PublicacoesPage() {
-  const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<Intimacao[]>([])
   const [syncing, setSyncing] = useState(false)

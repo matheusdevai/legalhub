@@ -3,13 +3,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Check, Trash2, Play,
-  CheckCircle2, CheckSquare, User, ChevronDown, X as XIcon, Briefcase,
+  CheckCircle2, CheckSquare, ChevronDown, X as XIcon, Briefcase,
   ArrowLeft, ArrowRight, Target, LayoutGrid, List, RefreshCw, SlidersHorizontal, Download,
   AlarmClock, Gavel, FileText, Users, CircleDot,
   Flame, Zap, CalendarClock, Inbox, PartyPopper,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Modal, Input, Select, Textarea, Spinner, EmptyState } from '@/components/ui'
+import { Button, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Task, Process, Client, Profile, Colaborador } from '@/types'
 import { formatDate, PRIORITY_LABELS, TASK_STATUS_LABELS } from '@/lib/utils'
@@ -308,15 +308,6 @@ function TaskRow({ task, today, done, deletingTaskId, justCompleted, onOpen, onC
           </button>
         )}
       </div>
-    </div>
-  )
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 mt-2 mb-1">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-primary-600 dark:text-primary-400 whitespace-nowrap">{children}</span>
-      <div className="flex-1 h-px bg-gradient-to-r from-primary-200 dark:from-primary-800 to-transparent" />
     </div>
   )
 }
@@ -706,9 +697,9 @@ export function TasksPage() {
     const derivedClientId = form.process_id
       ? (processes.find(p => p.id === form.process_id)?.client_id || form.client_id || null)
       : (form.client_id || null)
-    const { due_time, show_agenda, inform_end,
-      tag_importante, tag_urgente, tag_futura, tag_recorrente, tag_privada, tag_retroativa,
-      recurrence_interval, recurrence_end_date, client_id,
+    const { due_time: _due_time, show_agenda: _show_agenda, inform_end: _inform_end,
+      tag_importante: _tag_importante, tag_urgente: _tag_urgente, tag_futura: _tag_futura, tag_recorrente, tag_privada: _tag_privada, tag_retroativa: _tag_retroativa,
+      recurrence_interval, recurrence_end_date, client_id: _client_id,
       ...rest } = form
     const payload = {
       ...rest, priority: derivedPriority,

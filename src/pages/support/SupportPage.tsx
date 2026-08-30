@@ -2,11 +2,11 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
 import {
   HelpCircle, Plus, Send, MessageSquare, Clock, CheckCircle2,
-  ChevronRight, BookOpen, Video, Zap, ExternalLink, Search,
+  ChevronRight, BookOpen, Search,
   AlertCircle, X, ArrowLeft,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Textarea, Spinner, EmptyState } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { SupportTicket } from '@/types'
@@ -37,7 +37,6 @@ export function SupportPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [subject, setSubject] = useState('')
   const [message, setMessage] = useState('')
-  const [category, setCategory] = useState('question')
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null)
