@@ -6,9 +6,18 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // semana, um e-mail por tenant, para admin/financial/super_admin.
 // Isolamento: cada iteração do loop de tenants só agrega dados daquele
 // tenant_id, nunca mistura entre escritórios.
-const CRON_SECRET = "c14b480a811db8b0e24711ceb5068d6eab4addfb5af9921b"
+const CRON_SECRET = Deno.env.get('CRON_SECRET')
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  if (aBytes.length !== bBytes.length) return false
+  let diff = 0
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
+  return diff === 0
+}
 
 function formatCurrencyBR(value: number): string {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -55,7 +64,7 @@ function emailHtml(tenantName: string, periodoStr: string, s: Stats) {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-  if (req.headers.get('x-cron-secret') !== CRON_SECRET) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+  if (!CRON_SECRET || !timingSafeEqual(req.headers.get('x-cron-secret') || '', CRON_SECRET)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 

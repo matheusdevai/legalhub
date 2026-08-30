@@ -13,7 +13,16 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // Autenticação: segredo fixo no header (não é chamada de usuário, é pg_cron →
 // Edge Function server-to-server), mesmo padrão já usado neste projeto para o
 // job "licitahub-verificar-vencimentos".
-const CRON_SECRET = "05acc1d6de8f537fdddf8f4abe53c39cb51630b0b3bd2a42"
+const CRON_SECRET = Deno.env.get('CRON_SECRET')
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  if (aBytes.length !== bBytes.length) return false
+  let diff = 0
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
+  return diff === 0
+}
 
 const CNJ_BASE = "https://api-publica.datajud.cnj.jus.br"
 const CNJ_API_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
@@ -299,7 +308,7 @@ async function syncJusbrasilForProfile(supabase: any, profile: Profile, token: s
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-  if (req.headers.get('x-cron-secret') !== CRON_SECRET) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+  if (!CRON_SECRET || !timingSafeEqual(req.headers.get('x-cron-secret') || '', CRON_SECRET)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
 
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
   const jusToken = Deno.env.get('JUSBRASIL_TOKEN') ?? ''

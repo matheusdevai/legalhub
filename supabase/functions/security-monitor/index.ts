@@ -28,6 +28,15 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+function timingSafeEqual(a: string, b: string): boolean {
+  const aBytes = new TextEncoder().encode(a)
+  const bBytes = new TextEncoder().encode(b)
+  if (aBytes.length !== bBytes.length) return false
+  let diff = 0
+  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
+  return diff === 0
+}
+
 const EVENT_TITLES: Record<string, string> = {
   login_anomaly: 'Entrada incomum detectada',
   email_changed: 'E-mail de acesso foi alterado',
@@ -330,7 +339,7 @@ async function handleLoginFailed(req: Request, body: Record<string, unknown>) {
 async function handleEvent(req: Request, body: Record<string, unknown>) {
   const signature = req.headers.get('x-signature') || ''
   const { data: expectedSecret } = await supabaseAdmin.rpc('lawfy_get_security_monitor_secret')
-  if (!expectedSecret || signature !== expectedSecret) {
+  if (!expectedSecret || !timingSafeEqual(signature, expectedSecret)) {
     return new Response(JSON.stringify({ error: 'Assinatura inválida' }), { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } })
   }
 
