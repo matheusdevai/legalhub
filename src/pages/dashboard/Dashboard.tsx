@@ -232,7 +232,7 @@ export function Dashboard() {
       if (state.prefillQuestion) setCopilotoPrefill(state.prefillQuestion)
       window.history.replaceState({}, '')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [location.state])
   const [loading, setLoading] = usePageLoadingState()
   const [tasks, setTasks] = useState<Task[]>([])
