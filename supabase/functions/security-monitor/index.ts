@@ -89,21 +89,8 @@ function emailHtml(titulo: string, rows: [string, string][], corpo?: string) {
     </div>`
 }
 
-// RESEND_API_KEY não está configurada como env var das Edge Functions neste
-// projeto — só existe hoje em lh_secrets (tabela do outro sistema hospedado
-// aqui). Reaproveita o mesmo fallback que enviar-notificacao já usa, para não
-// depender de configuração manual. O ideal a médio prazo é configurar
-// RESEND_API_KEY como secret de projeto (corrige isso e o send-support-email
-// de uma vez), mas isso exige acesso ao dashboard/CLI que não temos aqui.
-async function getSecret(key: string): Promise<string | null> {
-  const env = Deno.env.get(key)
-  if (env) return env
-  const { data } = await supabaseAdmin.from('lh_secrets').select('value').eq('key', key).maybeSingle()
-  return data?.value ?? null
-}
-
 async function sendAlert(subject: string, html: string) {
-  const RESEND_API_KEY = await getSecret('RESEND_API_KEY')
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
   if (!RESEND_API_KEY) {
     console.warn('RESEND_API_KEY não configurada — alerta não enviado por e-mail')
     return
