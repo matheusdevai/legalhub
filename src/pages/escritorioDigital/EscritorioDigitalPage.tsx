@@ -8,6 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { cn, sanitizeFileName } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withErrorFeedback } from '@/lib/errorFeedback'
+import { getTenantStorageQuotaBytes } from '@/lib/storageUtils'
 
 interface FolderRow {
   id: string
@@ -86,7 +87,7 @@ export function EscritorioDigitalPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: folderData }, { data: fileData }, { data: clientData }, { data: tenantData }] = await Promise.all([
+    const [{ data: folderData }, { data: fileData }, { data: clientData }, { data: tenantData }, { data: usageData }] = await Promise.all([
       currentFolder
         ? supabase.from('folders').select('*').eq('parent_id', currentFolder.id).is('deleted_at', null).order('name')
         : supabase.from('folders').select('*').is('parent_id', null).is('deleted_at', null).order('name'),
@@ -94,12 +95,16 @@ export function EscritorioDigitalPage() {
         ? supabase.from('documents').select('id,title,folder_id,file_url,file_name,file_size,file_mime,created_at').eq('folder_id', currentFolder.id).is('deleted_at', null).order('title')
         : Promise.resolve({ data: [] as FileRow[] }),
       supabase.from('clients').select('id,name').is('deleted_at', null).order('name'),
-      supabase.from('tenants').select('storage_used_bytes,storage_quota_bytes').eq('id', profile?.tenant_id).single(),
+      supabase.from('tenants').select('plan,storage_used_bytes,storage_quota_bytes').eq('id', profile?.tenant_id).single(),
+      supabase.from('documents').select('file_size').eq('tenant_id', profile?.tenant_id).is('deleted_at', null),
     ])
     setSubfolders((folderData || []) as FolderRow[])
     setFiles((fileData || []) as FileRow[])
     setClients((clientData || []) as ClientOption[])
-    if (tenantData) setStorage({ used: tenantData.storage_used_bytes || 0, quota: tenantData.storage_quota_bytes || 0 })
+    if (tenantData) {
+      const used = (usageData || []).reduce((sum, d: { file_size?: number }) => sum + (d.file_size || 0), 0)
+      setStorage({ used, quota: getTenantStorageQuotaBytes(tenantData) })
+    }
     setLoading(false)
   }
 
@@ -155,6 +160,11 @@ export function EscritorioDigitalPage() {
 
   async function uploadIntoFolder() {
     if (!uploadFile || !currentFolder) return
+    if (storage && storage.used + uploadFile.size > storage.quota) {
+      const free = Math.max(0, storage.quota - storage.used)
+      setUploadError(`Armazenamento cheio: você tem apenas ${formatFileSize(free)} livres de ${formatFileSize(storage.quota)}`)
+      return
+    }
     setUploading(true)
     setUploadError('')
     try {
