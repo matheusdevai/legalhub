@@ -18,6 +18,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
 import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
 import { markTaskDone, notifyTaskAssignment, displayTaskDescription } from '@/lib/taskActions'
+import { normalizeGrupoAcao } from '@/lib/areaUtils'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -806,7 +807,7 @@ export function TasksPage() {
     // select fechado) — se não baterem com nenhuma opção fixa, mantém o texto digitado
     // no cadastro em vez de deixar o campo em branco no processo.
     const rawArea = (client as any)?.area_direito?.trim() || ''
-    const grupoAcao = rawArea ? (matchOption(rawArea, GRUPOS_ACAO) || rawArea) : ''
+    const grupoAcao = rawArea ? normalizeGrupoAcao(rawArea, GRUPOS_ACAO) : ''
     const rawTipo = (client as any)?.beneficio_previdenciario?.trim() || ''
     const tipoMatch = grupoAcao ? matchOption(rawTipo, TIPOS_ACAO[grupoAcao] || []) : ''
     const tipoAcao = grupoAcao
