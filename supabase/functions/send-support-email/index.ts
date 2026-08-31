@@ -1,7 +1,12 @@
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from 'jsr:@supabase/supabase-js@2'
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const TO_EMAIL = 'contatoraizdigitaltech@gmail.com'
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
 
 serve(async (req) => {
   const cors = {
@@ -15,6 +20,22 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Token ausente' }), { headers: cors, status: 401 })
+    }
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userErr } = await supabaseAdmin.auth.getUser(token)
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: 'Não autorizado' }), { headers: cors, status: 401 })
+    }
+
     const { from_name, from_email, subject, message, tenant_name } = await req.json()
 
     if (RESEND_API_KEY) {
@@ -28,7 +49,7 @@ serve(async (req) => {
           from: 'suporte@legalhub.com.br',
           to: [TO_EMAIL],
           reply_to: from_email || undefined,
-          subject: `[LegalHub Suporte] ${subject}`,
+          subject: `[LegalHub Suporte] ${escapeHtml(subject || '')}`,
           html: `
             <div style="font-family:sans-serif;max-width:600px;margin:0 auto">
               <div style="background:linear-gradient(135deg,#1e3a8a,#2563eb);padding:24px 32px;border-radius:12px 12px 0 0">
@@ -36,13 +57,13 @@ serve(async (req) => {
               </div>
               <div style="background:#f8fafc;padding:24px 32px;border:1px solid #e2e8f0;border-top:none">
                 <table style="width:100%;border-collapse:collapse">
-                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px;width:120px">Solicitante</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${from_name || '—'}</td></tr>
-                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px">E-mail</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${from_email || '—'}</td></tr>
-                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px">Escritório</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${tenant_name || '—'}</td></tr>
-                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px">Assunto</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${subject}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px;width:120px">Solicitante</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${from_name ? escapeHtml(from_name) : '—'}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px">E-mail</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${from_email ? escapeHtml(from_email) : '—'}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px">Escritório</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${tenant_name ? escapeHtml(tenant_name) : '—'}</td></tr>
+                  <tr><td style="padding:6px 0;color:#64748b;font-size:13px">Assunto</td><td style="padding:6px 0;font-weight:600;color:#0f172a">${escapeHtml(subject || '')}</td></tr>
                 </table>
                 <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">
-                <p style="color:#374151;font-size:14px;white-space:pre-wrap;line-height:1.6">${message}</p>
+                <p style="color:#374151;font-size:14px;white-space:pre-wrap;line-height:1.6">${escapeHtml(message || '')}</p>
               </div>
               <div style="background:#fff;padding:16px 32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;text-align:center">
                 <p style="color:#94a3b8;font-size:12px;margin:0">LegalHub — Sistema de Gestão Jurídica · Chamado gerado automaticamente</p>
