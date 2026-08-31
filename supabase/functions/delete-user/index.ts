@@ -7,6 +7,26 @@ const CORS = {
   'Access-Control-Allow-Methods': 'DELETE, OPTIONS',
 }
 
+// Rate limit simples por admin chamador: no máximo RATE_LIMIT chamadas numa
+// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits
+// (só acessível via service role). Evita que uma credencial de admin
+// comprometida seja usada para excluir um volume grande de contas.
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: CORS })
@@ -42,6 +62,11 @@ Deno.serve(async (req: Request) => {
 
     if (!callerProfile || !['admin', 'superadmin', 'super_admin'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Apenas administradores podem excluir usuários' }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+
+    const withinLimit = await checkRateLimit(supabaseAdmin, `delete-user:${callerUser.id}`)
+    if (!withinLimit) {
+      return new Response(JSON.stringify({ error: 'Muitas exclusões de usuário em pouco tempo. Aguarde e tente novamente.' }), { status: 429, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     const { userId } = await req.json()

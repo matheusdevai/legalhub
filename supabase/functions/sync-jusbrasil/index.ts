@@ -11,6 +11,27 @@ const DIGESTO_BASE = "https://op.digesto.com.br/api"
 const CNJ_BASE = "https://api-publica.datajud.cnj.jus.br"
 const CNJ_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
 
+// Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
+// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits (só
+// acessível via service role). O JUSBRASIL_TOKEN é pago e compartilhado por
+// todo o projeto, então chamadas repetidas de uma conta comprometida podem
+// estourar a cota/gerar custo indevido para todos os tenants.
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 function oabTribunal(cnj: string): string {
   const digits = cnj.replace(/\D/g, '')
   if (digits.length < 20) return ''
@@ -72,6 +93,11 @@ Deno.serve(async (req: Request) => {
 
     const { data: profile } = await supabase.from('profiles').select('tenant_id, oab_number, oab_seccional, name').eq('user_id', user.id).single()
     if (!profile?.tenant_id) return ok({ error: 'Perfil nao encontrado', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 })
+
+    const withinLimit = await checkRateLimit(supabase, `sync-jusbrasil:${user.id}`)
+    if (!withinLimit) {
+      return ok({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 })
+    }
 
     const body = await req.json().catch(() => ({}))
     const oabNum   = (body.oab_number    || profile.oab_number    || '').trim().replace(/\D/g, '')

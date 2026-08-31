@@ -10,6 +10,29 @@ const CORS = {
 const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash'
 const MAX_TOOL_ROUNDS = 5
 
+// Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
+// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits (só
+// acessível via service role). Limite mais alto que create-user/delete-user
+// porque este é um chat interativo (várias mensagens por sessão são normais),
+// mas ainda protege contra abuso de uma conta comprometida gerando custo
+// indevido na API do Gemini (cada chamada pode disparar até MAX_TOOL_ROUNDS
+// requisições ao modelo).
+const RATE_LIMIT = 30
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 type ChatMessage = { role: 'user' | 'assistant'; content: string }
 
 function todayISO() {
@@ -267,6 +290,11 @@ Deno.serve(async (req: Request) => {
       .from('profiles').select('name, display_name, role, tenant_id').eq('user_id', user.id).single()
     if (!profile?.tenant_id) {
       return new Response(JSON.stringify({ error: 'Perfil sem escritório associado' }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+
+    const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant:${user.id}`)
+    if (!withinLimit) {
+      return new Response(JSON.stringify({ error: 'Muitas mensagens em pouco tempo. Aguarde e tente novamente.' }), { status: 429, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     const { data: tenant } = await supabaseAdmin.from('tenants').select('name').eq('id', profile.tenant_id).single()

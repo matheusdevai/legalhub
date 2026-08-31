@@ -4,6 +4,27 @@ import { createClient } from 'jsr:@supabase/supabase-js@2'
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 const TO_EMAIL = 'contatoraizdigitaltech@gmail.com'
 
+// Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
+// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits (só
+// acessível via service role). Limite mais baixo que create-user/delete-user
+// porque esta função é chamada por QUALQUER usuário autenticado (não só
+// admins) e dispara envio de e-mail externo via Resend a cada chamada.
+const RATE_LIMIT = 5
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
@@ -34,6 +55,14 @@ serve(async (req) => {
     const { data: { user }, error: userErr } = await supabaseAdmin.auth.getUser(token)
     if (userErr || !user) {
       return new Response(JSON.stringify({ error: 'Não autorizado' }), { headers: cors, status: 401 })
+    }
+
+    const withinLimit = await checkRateLimit(supabaseAdmin, `send-support-email:${user.id}`)
+    if (!withinLimit) {
+      // Mesmo padrão de "sempre 200" das demais respostas desta função — o
+      // ticket já foi salvo no banco separadamente, então isso só impede o
+      // e-mail extra, sem quebrar o fluxo do widget.
+      return new Response(JSON.stringify({ success: false, error: 'Muitos chamados de suporte em pouco tempo. Aguarde e tente novamente.' }), { headers: cors, status: 200 })
     }
 
     const { from_name, from_email, subject, message, tenant_name } = await req.json()

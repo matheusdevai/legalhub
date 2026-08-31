@@ -7,6 +7,27 @@ const CORS = {
   "Content-Type": "application/json",
 }
 
+// Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
+// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits (só
+// acessível via service role). Essa função repassa CPF+senha do usuário ao
+// PJe a cada chamada — limitar a cadência reduz o risco de bloqueio da conta
+// no tribunal e de abuso de uma credencial comprometida como oráculo de senha.
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 const MNI_HOSTS: Record<string, string> = {
   tjac:'pje.tjac.jus.br', tjal:'pje.tjal.jus.br', tjam:'pje.tjam.jus.br',
   tjap:'pje.tjap.jus.br', tjba:'pje.tjba.jus.br', tjce:'pje.tjce.jus.br',
@@ -147,6 +168,11 @@ Deno.serve(async (req: Request) => {
     const { data: profile } = await supabase.from('profiles').select('tenant_id, name').eq('user_id', user.id).single()
     if (!profile?.tenant_id) {
       return new Response(JSON.stringify({ error: 'Perfil nao encontrado', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 }), { headers: CORS })
+    }
+
+    const withinLimit = await checkRateLimit(supabase, `sync-pje:${user.id}`)
+    if (!withinLimit) {
+      return new Response(JSON.stringify({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 }), { headers: CORS })
     }
 
     const body = await req.json()

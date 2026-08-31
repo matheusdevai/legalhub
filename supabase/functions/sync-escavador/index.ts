@@ -9,6 +9,27 @@ const CORS = {
 
 const ESCAVADOR_BASE = "https://api.escavador.com/api/v2"
 
+// Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
+// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits (só
+// acessível via service role). A ESCAVADOR_API_KEY é paga e compartilhada por
+// todo o projeto, então chamadas repetidas de uma conta comprometida podem
+// estourar a cota/gerar custo indevido para todos os tenants.
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS })
 
@@ -41,6 +62,11 @@ Deno.serve(async (req: Request) => {
       .single()
 
     if (!profile?.tenant_id) return ok({ error: "Perfil nao encontrado", total: 0, imported: 0, updated: 0, errors: [], source: "escavador" })
+
+    const withinLimit = await checkRateLimit(supabase, `sync-escavador:${user.id}`)
+    if (!withinLimit) {
+      return ok({ error: "Muitas sincronizações em pouco tempo. Aguarde e tente novamente.", total: 0, imported: 0, updated: 0, errors: [], source: "escavador" })
+    }
 
     const body = await req.json().catch(() => ({}))
     const oabNum   = (body.oab_number    || profile.oab_number    || "").trim().replace(/\D/g, "")
