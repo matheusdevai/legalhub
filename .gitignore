@@ -9,3 +9,4 @@ dist
 .claude
 .env*
 .overclock-app
+supabase/.temp
