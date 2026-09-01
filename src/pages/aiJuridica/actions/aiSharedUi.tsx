@@ -3,10 +3,7 @@ import { Button, Textarea } from '@/components/ui'
 import { toast } from '@/components/ui/Toast'
 import { formatDate } from '@/lib/utils'
 
-// UI compartilhada só entre os 3 componentes de ação do builder A
-// (analise_processo_administrativo/judicial, analise_documento) — arquivo
-// novo, não editado pelo outro builder da fase 2, então não colide com
-// AiPeticaoInicial/AiCumprimentoDespacho/AiImpugnacaoRecurso.
+// UI compartilhada pelos 7 componentes de ação (loading/erro/resultado).
 
 export function AiErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -55,6 +52,7 @@ export function AiResultOutput({
         onChange={e => onChange(e.target.value)}
         rows={16}
         placeholder="O resultado gerado pela IA aparecerá aqui."
+        className="font-mono text-xs leading-relaxed"
       />
       <p className="text-xs text-slate-400 dark:text-slate-500 italic">
         Conteúdo gerado por IA — revise antes de usar profissionalmente.
