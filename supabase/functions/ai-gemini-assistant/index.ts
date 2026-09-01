@@ -30,7 +30,7 @@ const CORS = {
 // Dashboard). GEMINI_API_KEY é lida em tempo de chamada (nunca no boot) —
 // a função sobe e faz deploy normalmente mesmo sem a chave configurada,
 // e só falha (com erro claro) quando alguém de fato tenta gerar algo.
-const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.0-flash'
+const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
 
 // Rate limit por usuário chamador, mesmo padrão de create-user/ai-assistant
 // contra edge_function_rate_limits (só acessível via service role). Limite
