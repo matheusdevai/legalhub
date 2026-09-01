@@ -4,6 +4,7 @@ import {
   Calendar, UserCheck,
   Shield, BarChart2, X, UserCog,
   FileText, Newspaper, ChevronLeft, ChevronRight, Target, FolderOpen,
+  Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -25,6 +26,7 @@ const navGroups = [
       { to: '/processos',   icon: Briefcase,  label: 'Processos' },
       { to: '/publicacoes', icon: Newspaper,  label: 'Intimações' },
       { to: '/documentos',  icon: FileText,   label: 'Documentos' },
+      { to: '/ia-juridica', icon: Sparkles,   label: 'IA Jurídica' },
       { to: '/escritorio-digital', icon: FolderOpen, label: 'Escritório Digital' },
     ],
   },
