@@ -1,21 +1,61 @@
 import { useState } from 'react'
-import { Sparkles, AlertCircle } from 'lucide-react'
-import { Button, Textarea } from '@/components/ui'
+import { Sparkles, AlertCircle, Copy, Check, RotateCcw, ScrollText } from 'lucide-react'
+import { Button, Textarea, Input } from '@/components/ui'
 import { runAiGeneration } from '@/lib/aiJuridica'
+import { useAuth } from '@/contexts/AuthContext'
+import { formatDate } from '@/lib/utils'
 import type { Process } from '@/types'
 
-// Fase 2 (builder B): substituir o input_context abaixo pelos campos reais
-// (fatos, pedidos, valor da causa, etc.) e enriquecer a exibição do
-// resultado. Editar SÓ este arquivo — os outros 5 componentes de ação vivem
-// em arquivos separados nesta mesma pasta.
 interface Props {
   processo: Process | null
 }
 
+interface FormState {
+  autorNome: string
+  autorQualificacao: string
+  reuNome: string
+  reuQualificacao: string
+  juizoComarca: string
+  tipoAcao: string
+  fatos: string
+  fundamentosAdicionais: string
+  pedidosEspecificos: string
+  valorCausa: string
+}
+
+const EMPTY_FORM: FormState = {
+  autorNome: '',
+  autorQualificacao: '',
+  reuNome: '',
+  reuQualificacao: '',
+  juizoComarca: '',
+  tipoAcao: '',
+  fatos: '',
+  fundamentosAdicionais: '',
+  pedidosEspecificos: '',
+  valorCausa: '',
+}
+
 export function AiPeticaoInicial({ processo }: Props) {
+  const { profile } = useAuth()
+  const [form, setForm] = useState<FormState>(() => ({
+    ...EMPTY_FORM,
+    autorNome: processo?.client_name ?? '',
+    reuNome: processo?.counterparty ?? '',
+    juizoComarca: processo?.court ?? '',
+    tipoAcao: processo?.type ?? processo?.area ?? '',
+  }))
   const [output, setOutput] = useState('')
+  const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
+
+  function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm(f => ({ ...f, [key]: value }))
+  }
+
+  const podeGerar = form.fatos.trim().length > 0
 
   async function gerar() {
     setLoading(true)
@@ -24,41 +64,135 @@ export function AiPeticaoInicial({ processo }: Props) {
       const result = await runAiGeneration({
         tipo: 'peticao_inicial',
         processo_id: processo?.id ?? null,
-        // TODO(fase 2): trocar pelo contexto real (fatos, pedidos, valor da causa, etc.)
         input_context: {
+          autor_nome: form.autorNome,
+          autor_qualificacao: form.autorQualificacao,
+          reu_nome: form.reuNome,
+          reu_qualificacao: form.reuQualificacao,
+          juizo_comarca: form.juizoComarca,
+          tipo_acao: form.tipoAcao,
+          fatos: form.fatos,
+          fundamentos_adicionais: form.fundamentosAdicionais,
+          pedidos_especificos: form.pedidosEspecificos,
+          valor_causa: form.valorCausa,
           processo_numero: processo?.number ?? null,
           cliente: processo?.client_name ?? null,
           area: processo?.area ?? null,
+          advogado_nome: profile?.display_name || profile?.name || null,
+          advogado_oab: profile?.oab_number ? `${profile.oab_number}${profile.oab_seccional ? `/${profile.oab_seccional}` : ''}` : null,
         },
       })
       setOutput(result.output_text)
+      setGeneratedAt(new Date())
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Erro ao gerar petição.')
+      setError(err instanceof Error ? err.message : 'Erro ao gerar petição inicial.')
     } finally {
       setLoading(false)
     }
   }
 
+  async function copiar() {
+    await navigator.clipboard.writeText(output)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
-    <div className="space-y-3">
-      <p className="text-sm text-slate-500 dark:text-slate-400">
-        Geração de petição inicial via IA.
-      </p>
-      <Button variant="primary" onClick={gerar} loading={loading}>
-        <Sparkles className="w-4 h-4" /> Gerar petição inicial
-      </Button>
+    <div className="space-y-5">
+      <div className="flex items-start gap-2">
+        <ScrollText className="w-4 h-4 text-primary-600 mt-0.5 flex-shrink-0" />
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Preencha os dados do caso para gerar uma minuta de petição inicial, com endereçamento,
+          qualificação das partes, fatos, fundamentação, pedidos e valor da causa.
+        </p>
+      </div>
+
+      <fieldset disabled={loading} className="grid grid-cols-1 sm:grid-cols-2 gap-3 disabled:opacity-60">
+        <Input label="Autor (nome)" value={form.autorNome} onChange={e => setField('autorNome', e.target.value)} placeholder="Nome completo do autor" />
+        <Input label="Réu (nome)" value={form.reuNome} onChange={e => setField('reuNome', e.target.value)} placeholder="Nome completo do réu" />
+        <Textarea
+          label="Qualificação completa do autor"
+          value={form.autorQualificacao}
+          onChange={e => setField('autorQualificacao', e.target.value)}
+          rows={2}
+          placeholder="Nacionalidade, estado civil, profissão, RG, CPF, endereço..."
+        />
+        <Textarea
+          label="Qualificação completa do réu"
+          value={form.reuQualificacao}
+          onChange={e => setField('reuQualificacao', e.target.value)}
+          rows={2}
+          placeholder="Nacionalidade/tipo, CPF ou CNPJ, endereço..."
+        />
+        <Input label="Juízo / comarca competente" value={form.juizoComarca} onChange={e => setField('juizoComarca', e.target.value)} placeholder="Ex.: Comarca de São Paulo/SP" />
+        <Input label="Tipo de ação" value={form.tipoAcao} onChange={e => setField('tipoAcao', e.target.value)} placeholder="Ex.: Ação de Cobrança" />
+        <Input label="Valor da causa" value={form.valorCausa} onChange={e => setField('valorCausa', e.target.value)} placeholder="Ex.: R$ 10.000,00" />
+        <div className="sm:col-span-2">
+          <Textarea
+            label="Dos fatos"
+            value={form.fatos}
+            onChange={e => setField('fatos', e.target.value)}
+            rows={4}
+            placeholder="Descreva os fatos relevantes do caso, em ordem cronológica."
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <Textarea
+            label="Fundamentos jurídicos a destacar (opcional)"
+            value={form.fundamentosAdicionais}
+            onChange={e => setField('fundamentosAdicionais', e.target.value)}
+            rows={2}
+            placeholder="Institutos ou dispositivos que você quer que a IA priorize."
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <Textarea
+            label="Pedidos específicos adicionais (opcional)"
+            value={form.pedidosEspecificos}
+            onChange={e => setField('pedidosEspecificos', e.target.value)}
+            rows={2}
+            placeholder="Pedidos além dos padrão (citação, provas, procedência)."
+          />
+        </div>
+      </fieldset>
+
+      <div className="flex items-center gap-3">
+        <Button variant="primary" onClick={gerar} loading={loading} disabled={!podeGerar}>
+          <Sparkles className="w-4 h-4" /> Gerar petição inicial
+        </Button>
+        {!podeGerar && !loading && (
+          <span className="text-xs text-slate-400">Preencha ao menos "Dos fatos" para gerar.</span>
+        )}
+      </div>
+
       {error && (
-        <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
+        <div className="flex items-start justify-between gap-3 p-3 rounded-xl bg-red-50 dark:bg-red-900/15 border border-red-100 dark:border-red-800/20">
+          <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {error}
+          </div>
+          <button onClick={gerar} className="flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline flex-shrink-0">
+            <RotateCcw className="w-3 h-3" /> Tentar novamente
+          </button>
         </div>
       )}
-      <Textarea
-        label="Resultado (editável)"
-        value={output}
-        onChange={e => setOutput(e.target.value)}
-        rows={14}
-        placeholder="O resultado gerado pela IA aparecerá aqui."
-      />
+
+      {output && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Minuta gerada (editável)</label>
+            <div className="flex items-center gap-3">
+              {generatedAt && <span className="text-xs text-slate-400">Gerado às {formatDate(generatedAt, 'HH:mm')}</span>}
+              <button onClick={copiar} className="flex items-center gap-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline">
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />} {copied ? 'Copiado!' : 'Copiar'}
+              </button>
+            </div>
+          </div>
+          <Textarea value={output} onChange={e => setOutput(e.target.value)} rows={18} className="font-mono text-xs leading-relaxed" />
+          <p className="text-xs text-slate-400 dark:text-slate-500 italic">
+            Minuta gerada por IA — revise e adapte antes de protocolar.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

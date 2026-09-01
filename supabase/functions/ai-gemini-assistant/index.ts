@@ -2,6 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { buildAnaliseProcessoAdministrativoPrompt, buildAnaliseProcessoJudicialPrompt } from './prompts/analiseProcesso.ts'
 import { buildAnaliseDocumentoPrompt } from './prompts/analiseDocumento.ts'
+import { buildPeticaoInicialPrompt } from './prompts/peticaoInicial.ts'
+import { buildCumprimentoDespachoPrompt } from './prompts/cumprimentoDespacho.ts'
+import { buildImpugnacaoRecursoPrompt } from './prompts/impugnacaoRecurso.ts'
 
 // ============================================================================
 // ai-gemini-assistant — Edge Function compartilhada da "IA Jurídica" (fase 1/4)
@@ -78,16 +81,13 @@ function buildPrompt(tipo: Tipo, context: Record<string, unknown>): string {
       return buildAnaliseDocumentoPrompt(context)
 
     case 'peticao_inicial':
-      // TODO(fase 2): prompt de geração de petição inicial
-      return `[PLACEHOLDER - peticao_inicial] Redija uma petição inicial com o seguinte contexto: ${JSON.stringify(context)}`
+      return buildPeticaoInicialPrompt(context)
 
     case 'cumprimento_despacho':
-      // TODO(fase 2): prompt de cumprimento de despacho
-      return `[PLACEHOLDER - cumprimento_despacho] Redija uma petição de cumprimento de despacho com o seguinte contexto: ${JSON.stringify(context)}`
+      return buildCumprimentoDespachoPrompt(context)
 
     case 'impugnacao_recurso':
-      // TODO(fase 2): prompt de impugnação/recurso
-      return `[PLACEHOLDER - impugnacao_recurso] Redija uma impugnação/recurso com o seguinte contexto: ${JSON.stringify(context)}`
+      return buildImpugnacaoRecursoPrompt(context)
 
     default: {
       const _exhaustive: never = tipo
