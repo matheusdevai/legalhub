@@ -5,6 +5,7 @@ import { buildAnaliseDocumentoPrompt } from './prompts/analiseDocumento.ts'
 import { buildPeticaoInicialPrompt } from './prompts/peticaoInicial.ts'
 import { buildCumprimentoDespachoPrompt } from './prompts/cumprimentoDespacho.ts'
 import { buildImpugnacaoRecursoPrompt } from './prompts/impugnacaoRecurso.ts'
+import { buildParecerJuridicoPrompt } from './prompts/parecerJuridico.ts'
 
 // ============================================================================
 // ai-gemini-assistant — Edge Function compartilhada da "IA Jurídica" (fase 1/4)
@@ -45,6 +46,7 @@ const TIPOS_VALIDOS = [
   'peticao_inicial',
   'cumprimento_despacho',
   'impugnacao_recurso',
+  'parecer_juridico',
 ] as const
 
 type Tipo = typeof TIPOS_VALIDOS[number]
@@ -88,6 +90,9 @@ function buildPrompt(tipo: Tipo, context: Record<string, unknown>): string {
 
     case 'impugnacao_recurso':
       return buildImpugnacaoRecursoPrompt(context)
+
+    case 'parecer_juridico':
+      return buildParecerJuridicoPrompt(context)
 
     default: {
       const _exhaustive: never = tipo

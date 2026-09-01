@@ -13,6 +13,7 @@ export const AI_TIPOS = [
   'peticao_inicial',
   'cumprimento_despacho',
   'impugnacao_recurso',
+  'parecer_juridico',
 ] as const
 
 export type AiTipo = typeof AI_TIPOS[number]

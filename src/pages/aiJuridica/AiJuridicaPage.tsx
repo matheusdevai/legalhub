@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Sparkles, AlertCircle, FileSearch, Gavel, FileText,
-  ScrollText, ClipboardCheck, ShieldAlert,
+  ScrollText, ClipboardCheck, ShieldAlert, Scale,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, Select, Spinner, EmptyState } from '@/components/ui'
@@ -16,6 +16,7 @@ import { AiAnaliseDocumento } from './actions/AiAnaliseDocumento'
 import { AiPeticaoInicial } from './actions/AiPeticaoInicial'
 import { AiCumprimentoDespacho } from './actions/AiCumprimentoDespacho'
 import { AiImpugnacaoRecurso } from './actions/AiImpugnacaoRecurso'
+import { AiParecerJuridico } from './actions/AiParecerJuridico'
 
 // Shell da IA Jurídica (fundação, fase 1/4). Cada aba abaixo é um componente
 // próprio em ./actions/*.tsx — fase 2 (dois builders, 3 ações cada) edita só
@@ -28,6 +29,7 @@ const TABS: { id: AiTipo; label: string; icon: React.ElementType }[] = [
   { id: 'peticao_inicial', label: 'Petição Inicial', icon: ScrollText },
   { id: 'cumprimento_despacho', label: 'Cumprimento de Despacho', icon: ClipboardCheck },
   { id: 'impugnacao_recurso', label: 'Impugnação/Recurso', icon: ShieldAlert },
+  { id: 'parecer_juridico', label: 'Parecer Jurídico', icon: Scale },
 ]
 
 export function AiJuridicaPage() {
@@ -146,6 +148,7 @@ export function AiJuridicaPage() {
           {activeTab === 'peticao_inicial' && <AiPeticaoInicial processo={selectedProcesso} />}
           {activeTab === 'cumprimento_despacho' && <AiCumprimentoDespacho processo={selectedProcesso} />}
           {activeTab === 'impugnacao_recurso' && <AiImpugnacaoRecurso processo={selectedProcesso} />}
+          {activeTab === 'parecer_juridico' && <AiParecerJuridico processo={selectedProcesso} />}
         </Card>
       </div>
     </Layout>
