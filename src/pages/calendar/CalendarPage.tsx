@@ -56,6 +56,33 @@ const EMPTY_FORM = {
   sync_google: true,
 }
 
+type EventPayload = Omit<typeof EMPTY_FORM, 'process_id' | 'end_date' | 'end_time'> & {
+  process_id: string | null
+  end_date: string | null
+  end_time: string | null
+  google_event_id: string | null
+  user_id: string | null
+}
+
+/** Resposta do callback do Google Identity Services (token client) */
+type GoogleTokenResponse = { error?: string; access_token: string; expires_in?: number }
+type GoogleIdentityServices = {
+  accounts?: {
+    oauth2?: {
+      initTokenClient: (config: {
+        client_id: string
+        scope: string
+        prompt: string
+        callback: (resp: GoogleTokenResponse) => void
+      }) => { requestAccessToken: (opts?: { prompt?: string }) => void }
+    }
+  }
+}
+
+declare global {
+  interface Window { google?: GoogleIdentityServices }
+}
+
 // ─── Google helpers ───────────────────────────────────────────────────────────
 function gTokenKey(uid: string)     { return `gcal_token_${uid}` }
 function gEmailKey(uid: string)     { return `gcal_email_${uid}` }
@@ -167,12 +194,12 @@ export function CalendarPage() {
   useEffect(() => {
     if (!CLIENT_ID || !uid) return
     function doSilentRefresh() {
-      if (!wasConnected(uid) || !!getStoredToken(uid)) return
-      const g = (window as any).google
+      if (!CLIENT_ID || !wasConnected(uid) || !!getStoredToken(uid)) return
+      const g = window.google
       if (!g?.accounts?.oauth2) return
       g.accounts.oauth2.initTokenClient({
         client_id: CLIENT_ID, scope: GCAL_SCOPE + ' https://www.googleapis.com/auth/userinfo.email', prompt: '',
-        callback: (resp: any) => {
+        callback: (resp: GoogleTokenResponse) => {
           if (!resp.error && resp.access_token) {
             storeToken(uid, resp.access_token, resp.expires_in || 3600)
             setGToken(resp.access_token)
@@ -343,11 +370,11 @@ export function CalendarPage() {
   function openEdit(ev: CalendarEvent) {
     setEditId(ev.id)
     setForm({
-      title: ev.title, type: (ev.type as any) || 'meeting', date: ev.date,
+      title: ev.title, type: ev.type || 'meeting', date: ev.date,
       time: ev.time || '', end_date: ev.end_date || '', end_time: ev.end_time || '',
       process_id: ev.process_id || '', process_number: ev.process_number || '',
       client_name: ev.client_name || '', location: ev.location || '',
-      description: ev.description || '', status: (ev.status as any) || 'scheduled',
+      description: ev.description || '', status: ev.status || 'scheduled',
       sync_google: ev.sync_google ?? !!gToken,
     })
     setModalOpen(true)
@@ -369,10 +396,10 @@ export function CalendarPage() {
           const res = await gcalRequest('/calendars/primary/events', 'POST', token, body)
           googleEventId = res?.id || null
         }
-      } catch (e: any) { console.warn('Google push failed:', e.message) }
+      } catch (e: unknown) { console.warn('Google push failed:', e instanceof Error ? e.message : e) }
     }
 
-    const payload: any = {
+    const payload: EventPayload = {
       ...form, process_number: selectedProcess?.number || form.process_number,
       process_id: form.process_id || null, end_date: form.end_date || null, end_time: form.end_time || null,
       google_event_id: form.sync_google && googleEventId ? googleEventId : (editId ? (events.find(e => e.id === editId)?.google_event_id || null) : null),
@@ -417,12 +444,12 @@ export function CalendarPage() {
   function connectGoogle() {
     if (!CLIENT_ID) { setSetupModal(true); return }
     setGConnecting(true)
-    const g = (window as any).google
+    const g = window.google
     if (!g?.accounts?.oauth2) { setGMsg({ type: 'err', text: 'Biblioteca Google não carregada.' }); setGConnecting(false); return }
     clearToken(uid); setGToken(null); setGEmail(null)
     g.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID, scope: GCAL_SCOPE + ' https://www.googleapis.com/auth/userinfo.email', prompt: 'consent',
-      callback: async (resp: any) => {
+      callback: async (resp: GoogleTokenResponse) => {
         setGConnecting(false)
         if (resp.error) { setGMsg({ type: 'err', text: `Erro: ${resp.error}` }); return }
         storeToken(uid, resp.access_token, resp.expires_in || 3600)
@@ -432,7 +459,7 @@ export function CalendarPage() {
           const info = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', { headers: { Authorization: `Bearer ${resp.access_token}` } }).then(r => r.json())
           localStorage.setItem(gEmailKey(uid), info.email || ''); localStorage.setItem(gConnectedKey(uid), '1')
           setGEmail(info.email || ''); setGMsg({ type: 'ok', text: `✅ Google Calendar conectado: ${info.email}` })
-        } catch (e: any) { clearToken(uid); setGToken(null); setGEmail(null); setGMsg({ type: 'err', text: `Erro ao verificar: ${e.message}` }) }
+        } catch (e: unknown) { clearToken(uid); setGToken(null); setGEmail(null); setGMsg({ type: 'err', text: `Erro ao verificar: ${e instanceof Error ? e.message : 'tente novamente'}` }) }
       },
     }).requestAccessToken()
   }
@@ -464,11 +491,12 @@ export function CalendarPage() {
         if (!error) imported++
       }
       setGMsg({ type: 'ok', text: `${imported} evento(s) importado(s) do Google Calendar.` }); load()
-    } catch (e: any) {
-      if (e.message?.includes('insufficient') || e.message?.includes('scope')) {
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : ''
+      if (message.includes('insufficient') || message.includes('scope')) {
         clearToken(uid); setGToken(null); setGEmail(null)
         setGMsg({ type: 'err', text: '⚠️ Reconecte o Google Calendar para autorizar o escopo de Calendar.' })
-      } else { setGMsg({ type: 'err', text: `Erro ao importar: ${e.message}` }) }
+      } else { setGMsg({ type: 'err', text: `Erro ao importar: ${message}` }) }
     }
     setGSyncing(false)
   }
@@ -1087,7 +1115,7 @@ export function CalendarPage() {
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as any }))}>
+            <Select label="Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as typeof EMPTY_FORM.status }))}>
               <option value="scheduled">Agendado</option>
               <option value="completed">Realizado</option>
               <option value="cancelled">Cancelado</option>
