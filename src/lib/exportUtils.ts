@@ -235,8 +235,28 @@ const ALL_BORDERS = { top: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER, 
 
 interface SheetCellOpts { bold?: boolean; fontSize?: number; bg?: string; fg?: string; align?: string; border?: boolean }
 
-function sheetCell(text: string | number, opts: SheetCellOpts = {}): any {
-  const fmt: any = {
+interface SheetRgbColor { red: number; green: number; blue: number }
+
+interface SheetCellFormat {
+  wrapStrategy: 'WRAP'
+  verticalAlignment: 'MIDDLE'
+  textFormat: { bold: boolean; fontSize: number; foregroundColor?: SheetRgbColor }
+  borders?: typeof ALL_BORDERS
+  backgroundColor?: SheetRgbColor
+  horizontalAlignment?: string
+}
+
+interface SheetCellData {
+  userEnteredValue: { stringValue: string }
+  userEnteredFormat: SheetCellFormat
+}
+
+interface SheetRowData { values: SheetCellData[] }
+
+interface SheetMerge { startRowIndex: number; endRowIndex: number; startColumnIndex: number; endColumnIndex: number }
+
+function sheetCell(text: string | number, opts: SheetCellOpts = {}): SheetCellData {
+  const fmt: SheetCellFormat = {
     wrapStrategy: 'WRAP',
     verticalAlignment: 'MIDDLE',
     textFormat: { bold: !!opts.bold, fontSize: opts.fontSize || 10 },
@@ -278,8 +298,8 @@ function buildSheetBody(opts: ExportOptions, fileName: string, date: string) {
   const { title, subtitle, stats, columns, rows, groups, sections } = opts
   const maxCols = sections ? Math.max(...sections.map(s => s.columns.length + 1)) : columns.length + 1
 
-  const rowData: any[] = []
-  const merges: any[] = []
+  const rowData: SheetRowData[] = []
+  const merges: SheetMerge[] = []
   let frozenRowCount = 0
   let firstTable = true
 
@@ -331,7 +351,7 @@ function buildSheetBody(opts: ExportOptions, fileName: string, date: string) {
 
 function loadGis(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const ready = () => !!(window as any).google?.accounts?.oauth2
+    const ready = () => !!window.google?.accounts?.oauth2
     if (ready()) { resolve(); return }
     if (!document.getElementById('gis-script')) {
       const s = document.createElement('script')
@@ -344,12 +364,13 @@ function loadGis(): Promise<void> {
 }
 
 function getGoogleToken(): Promise<string> {
+  if (!CLIENT_ID) return Promise.reject(new Error('VITE_GOOGLE_CLIENT_ID não configurado'))
   return loadGis().then(() => new Promise<string>((resolve, reject) => {
-    const g = (window as any).google
+    const g = window.google!
     const client = g.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
       scope: DRIVE_SCOPE,
-      callback: (resp: any) => {
+      callback: (resp: GoogleTokenResponse) => {
         if (resp.error) { reject(new Error(resp.error)); return }
         resolve(resp.access_token)
       },
@@ -395,8 +416,14 @@ async function createFormattedSheet(token: string, opts: ExportOptions, fileName
   return sheet
 }
 
+interface ExportWindow extends Window {
+  exportToSheets?: () => Promise<void>
+  exportToDocs?: () => Promise<void>
+}
+
 function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, date: string) {
   loadGis().catch(() => {}) // pré-carrega para o clique não esperar o script
+  const exportWin = win as ExportWindow
 
   function setStatus(text: string, isError = false) {
     const el = win.document.getElementById('gStatus')
@@ -405,7 +432,7 @@ function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, 
     ;(el as HTMLElement).style.color = isError ? '#dc2626' : '#64748b'
   }
 
-  ;(win as any).exportToSheets = async () => {
+  exportWin.exportToSheets = async () => {
     const btn = win.document.getElementById('btnSheets') as HTMLButtonElement | null
     if (btn) btn.disabled = true
     setStatus('Conectando ao Google...')
@@ -415,14 +442,14 @@ function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, 
       const sheet = await createFormattedSheet(token, opts, fileName, date)
       setStatus('✓ Planilha criada no Google Drive')
       window.open(sheet.spreadsheetUrl, '_blank')
-    } catch (err: any) {
-      setStatus(`Erro: ${err.message}`, true)
+    } catch (err: unknown) {
+      setStatus(`Erro: ${err instanceof Error ? err.message : 'desconhecido'}`, true)
     } finally {
       if (btn) btn.disabled = false
     }
   }
 
-  ;(win as any).exportToDocs = async () => {
+  exportWin.exportToDocs = async () => {
     const btn = win.document.getElementById('btnDocs') as HTMLButtonElement | null
     if (btn) btn.disabled = true
     setStatus('Conectando ao Google...')
@@ -432,8 +459,8 @@ function attachGoogleExport(win: Window, opts: ExportOptions, fileName: string, 
       const file = await driveUpload(token, fileName, 'application/vnd.google-apps.document', 'text/html', buildDocsHtml(opts, date))
       setStatus('✓ Documento criado no Google Drive')
       window.open(file.webViewLink, '_blank')
-    } catch (err: any) {
-      setStatus(`Erro: ${err.message}`, true)
+    } catch (err: unknown) {
+      setStatus(`Erro: ${err instanceof Error ? err.message : 'desconhecido'}`, true)
     } finally {
       if (btn) btn.disabled = false
     }
