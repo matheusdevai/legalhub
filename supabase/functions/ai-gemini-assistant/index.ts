@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { buildAnaliseProcessoAdministrativoPrompt, buildAnaliseProcessoJudicialPrompt } from './prompts/analiseProcesso.ts'
+import { buildAnaliseDocumentoPrompt } from './prompts/analiseDocumento.ts'
 
 // ============================================================================
 // ai-gemini-assistant — Edge Function compartilhada da "IA Jurídica" (fase 1/4)
@@ -67,16 +69,13 @@ async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, ke
 function buildPrompt(tipo: Tipo, context: Record<string, unknown>): string {
   switch (tipo) {
     case 'analise_processo_administrativo':
-      // TODO(fase 2): prompt de análise de processo administrativo
-      return `[PLACEHOLDER - analise_processo_administrativo] Analise o processo administrativo com o seguinte contexto: ${JSON.stringify(context)}`
+      return buildAnaliseProcessoAdministrativoPrompt(context)
 
     case 'analise_processo_judicial':
-      // TODO(fase 2): prompt de análise de processo judicial
-      return `[PLACEHOLDER - analise_processo_judicial] Analise o processo judicial com o seguinte contexto: ${JSON.stringify(context)}`
+      return buildAnaliseProcessoJudicialPrompt(context)
 
     case 'analise_documento':
-      // TODO(fase 2): prompt de análise de documento
-      return `[PLACEHOLDER - analise_documento] Analise o documento com o seguinte contexto: ${JSON.stringify(context)}`
+      return buildAnaliseDocumentoPrompt(context)
 
     case 'peticao_inicial':
       // TODO(fase 2): prompt de geração de petição inicial
