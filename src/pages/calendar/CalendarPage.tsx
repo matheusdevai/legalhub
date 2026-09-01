@@ -64,25 +64,6 @@ type EventPayload = Omit<typeof EMPTY_FORM, 'process_id' | 'end_date' | 'end_tim
   user_id: string | null
 }
 
-/** Resposta do callback do Google Identity Services (token client) */
-type GoogleTokenResponse = { error?: string; access_token: string; expires_in?: number }
-type GoogleIdentityServices = {
-  accounts?: {
-    oauth2?: {
-      initTokenClient: (config: {
-        client_id: string
-        scope: string
-        prompt: string
-        callback: (resp: GoogleTokenResponse) => void
-      }) => { requestAccessToken: (opts?: { prompt?: string }) => void }
-    }
-  }
-}
-
-declare global {
-  interface Window { google?: GoogleIdentityServices }
-}
-
 // ─── Google helpers ───────────────────────────────────────────────────────────
 function gTokenKey(uid: string)     { return `gcal_token_${uid}` }
 function gEmailKey(uid: string)     { return `gcal_email_${uid}` }

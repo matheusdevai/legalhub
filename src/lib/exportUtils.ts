@@ -349,26 +349,6 @@ function buildSheetBody(opts: ExportOptions, fileName: string, date: string) {
   }
 }
 
-interface GoogleTokenResponse { error?: string; access_token: string }
-
-interface GoogleTokenClient { requestAccessToken(): void }
-
-interface GoogleIdentityServices {
-  accounts: {
-    oauth2: {
-      initTokenClient(config: {
-        client_id?: string
-        scope: string
-        callback: (resp: GoogleTokenResponse) => void
-      }): GoogleTokenClient
-    }
-  }
-}
-
-declare global {
-  interface Window { google?: GoogleIdentityServices }
-}
-
 function loadGis(): Promise<void> {
   return new Promise((resolve, reject) => {
     const ready = () => !!window.google?.accounts?.oauth2
@@ -384,6 +364,7 @@ function loadGis(): Promise<void> {
 }
 
 function getGoogleToken(): Promise<string> {
+  if (!CLIENT_ID) return Promise.reject(new Error('VITE_GOOGLE_CLIENT_ID não configurado'))
   return loadGis().then(() => new Promise<string>((resolve, reject) => {
     const g = window.google!
     const client = g.accounts.oauth2.initTokenClient({
