@@ -79,6 +79,21 @@ Deno.serve(async (req: Request) => {
     if (!email || !password || !name) {
       return new Response(JSON.stringify({ error: 'email, password e name são obrigatórios' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
+
+    // Allowlist de roles que o chamador pode atribuir: um 'admin' comum de
+    // escritório só pode criar contas de operação (nunca outro admin nem
+    // super_admin, o que daria a esse novo usuário os mesmos poderes do
+    // escritório inteiro, ou acesso à plataforma toda). Só um chamador que já
+    // é super_admin pode atribuir 'admin'/'super_admin'.
+    const TENANT_ADMIN_ASSIGNABLE_ROLES = ['lawyer', 'intern', 'financial', 'client']
+    const isCallerSuperAdmin = ['superadmin', 'super_admin'].includes(callerProfile.role)
+    const allowedRoles = isCallerSuperAdmin
+      ? [...TENANT_ADMIN_ASSIGNABLE_ROLES, 'admin', 'super_admin']
+      : TENANT_ADMIN_ASSIGNABLE_ROLES
+    if (!allowedRoles.includes(role)) {
+      return new Response(JSON.stringify({ error: 'Você não tem permissão para atribuir essa função' }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+
     if (role === 'client' && !client_id) {
       return new Response(JSON.stringify({ error: 'client_id é obrigatório para acesso do tipo client' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }

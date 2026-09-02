@@ -538,7 +538,7 @@ export function ClientsPage() {
     setUploadingAvatar(true)
     try {
       const ext = file.name.split('.').pop()
-      const path = `clients/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const path = `clients/${profile?.tenant_id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
       const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
       if (error) return null
       const { data } = supabase.storage.from('avatars').getPublicUrl(path)
