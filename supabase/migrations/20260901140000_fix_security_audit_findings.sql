@@ -156,19 +156,29 @@ CREATE POLICY "avatars_tenant_delete"
 -- F-5 [CRITICAL] support_tickets/support_messages had GRANT ALL to `anon`
 -- plus USING(true)/WITH CHECK(true) policies with no `TO authenticated`
 -- restriction — anyone with no login could read or alter every office's
--- support tickets via the REST API directly. The chat widget
--- (SupportChatWidget.tsx) and SupportPage.tsx are only ever rendered inside
--- Layout, which every route that uses it wraps in <PrivateRoute> (see
--- src/App.tsx) — there is no active anonymous-visitor ticket flow today, so
--- we require authentication outright rather than carving out an anon path.
--- AdminPage.tsx (super_admin only, per AdminRoute) is LegalHub's own
--- cross-tenant support inbox — it deliberately reads tickets from every
--- tenant, so visibility is scoped by role (owner or super_admin), not by
--- tenant_id.
+-- support tickets via the REST API directly. SupportChatWidget.tsx and
+-- SupportPage.tsx only render behind <PrivateRoute> (see src/App.tsx), but
+-- src/pages/auth/Login.tsx (the public /login route) has its own "Fale
+-- conosco" widget (sendChat) that does a genuine anonymous INSERT into
+-- support_tickets (tenant_id: null, user_id: null, no session) with a
+-- mailto: fallback only on error — so an anon INSERT path is real and must
+-- keep working. AdminPage.tsx (super_admin only, per AdminRoute) is
+-- LegalHub's own cross-tenant support inbox — it deliberately reads tickets
+-- from every tenant, so visibility is scoped by role (owner or super_admin),
+-- not by tenant_id.
 REVOKE ALL ON TABLE "public"."support_tickets" FROM "anon";
 REVOKE ALL ON TABLE "public"."support_messages" FROM "anon";
 
+-- Anon keeps INSERT only (never select/update/delete), and only for the
+-- "loose" ticket shape the public site widget actually sends: no tenant_id,
+-- no user_id (an anonymous visitor is never a member of a tenant or an
+-- authenticated user, so both must stay NULL — this also blocks an anon
+-- caller from ever attaching their ticket to a real tenant/user_id to try to
+-- ride the owner-or-super_admin SELECT policy below).
+GRANT INSERT ON TABLE "public"."support_tickets" TO "anon";
+
 DROP POLICY IF EXISTS "tickets_insert" ON "public"."support_tickets";
+DROP POLICY IF EXISTS "tickets_insert_anon" ON "public"."support_tickets";
 DROP POLICY IF EXISTS "tickets_select" ON "public"."support_tickets";
 DROP POLICY IF EXISTS "tickets_update" ON "public"."support_tickets";
 DROP POLICY IF EXISTS "messages_insert" ON "public"."support_messages";
@@ -178,6 +188,10 @@ DROP POLICY IF EXISTS "messages_update" ON "public"."support_messages";
 CREATE POLICY "tickets_insert" ON "public"."support_tickets"
   FOR INSERT TO "authenticated"
   WITH CHECK ("user_id" = ( SELECT "auth"."uid"() AS "uid"));
+
+CREATE POLICY "tickets_insert_anon" ON "public"."support_tickets"
+  FOR INSERT TO "anon"
+  WITH CHECK ("tenant_id" IS NULL AND "user_id" IS NULL);
 
 CREATE POLICY "tickets_select" ON "public"."support_tickets"
   FOR SELECT TO "authenticated"
