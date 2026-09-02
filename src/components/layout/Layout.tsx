@@ -49,6 +49,37 @@ function MaintenanceBanner() {
   return null
 }
 
+/**
+ * Soft-gate de inadimplência: avisa sem bloquear nenhuma leitura/escrita.
+ * Um bloqueio de fato (hard-gate via RLS, usando a função tenant_is_active())
+ * fica para uma etapa futura, após um período de carência ainda a definir.
+ */
+function BillingPastDueBanner({ status, isAdmin }: { status: string | null; isAdmin: boolean }) {
+  const navigate = useNavigate()
+  if (status !== 'past_due' && status !== 'canceled') return null
+  const canceled = status === 'canceled'
+
+  return (
+    <div className="no-print flex items-center gap-3 px-4 sm:px-6 py-2.5 border-b border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/15">
+      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+      <p className="flex-1 text-xs sm:text-sm text-red-800 dark:text-red-300 min-w-0">
+        <span className="font-semibold">{canceled ? 'Assinatura cancelada.' : 'Pagamento da assinatura pendente.'}</span>{' '}
+        {isAdmin
+          ? 'Regularize a forma de pagamento para evitar a suspensão do acesso do escritório.'
+          : 'Avise o administrador do escritório para regularizar a assinatura.'}
+      </p>
+      {isAdmin && (
+        <button
+          onClick={() => navigate('/configuracoes?tab=plan')}
+          className="flex-shrink-0 text-xs font-semibold text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800 rounded-lg px-3 py-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+        >
+          Ir para Plano
+        </button>
+      )}
+    </div>
+  )
+}
+
 /** Banner de bônus para quem assinou dentro da janela da promoção de lançamento. */
 function EbookPromoBanner({ profile }: { profile: Profile | null }) {
   const [dismissed, setDismissed] = useState(() => sessionStorage.getItem('ebook_banner_dismissed') === '1')
@@ -99,7 +130,8 @@ const NOTIF_COLORS: Record<string, string> = {
 
 export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
-  const { session, profile, signOut } = useAuth()
+  const { session, profile, signOut, subscriptionStatus } = useAuth()
+  const isBillingAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
   const { theme, toggleTheme } = useTheme()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
@@ -228,7 +260,7 @@ export function Layout({ children }: LayoutProps) {
 
   const PROFILE_ITEMS = [
     { label: 'Meus dados',           icon: User,        action: () => { setProfileOpen(false); navigate('/configuracoes') } },
-    { label: 'Assinatura e pagamento', icon: CreditCard, action: () => { setProfileOpen(false); navigate('/configuracoes') } },
+    { label: 'Assinatura e pagamento', icon: CreditCard, action: () => { setProfileOpen(false); navigate('/configuracoes?tab=plan') } },
     { label: 'Central de ajuda',     icon: HelpCircle,  action: () => { setProfileOpen(false); navigate('/suporte') } },
     { label: 'Sair',                 icon: LogOut,      action: () => { setProfileOpen(false); signOut() }, danger: true },
   ]
@@ -520,6 +552,7 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Maintenance banner */}
         <MaintenanceBanner />
+        <BillingPastDueBanner status={subscriptionStatus} isAdmin={isBillingAdmin} />
         <EbookPromoBanner profile={profile} />
 
         {/* Content */}

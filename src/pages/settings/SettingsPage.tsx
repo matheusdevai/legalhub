@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   User, Lock, Bell, CreditCard, Palette,
   CheckCircle2, AlertCircle, Eye, EyeOff, Shield, Smartphone, Mail,
   History, Plus, Pencil, Trash2, ShieldAlert, LogIn, KeyRound, UserCog,
-  Download, ShieldX,
+  Download, ShieldX, Users as UsersIcon, Briefcase, HardDrive, Sparkles, ExternalLink,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Input, Select, EmptyState } from '@/components/ui'
@@ -11,8 +12,35 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
-import { NotificationPrefs } from '@/types'
+import { NotificationPrefs, Plan, Subscription } from '@/types'
 import { withErrorFeedback } from '@/lib/errorFeedback'
+import { toast } from '@/components/ui/Toast'
+
+const SUBSCRIPTION_STATUS_META: Record<string, { label: string; badge: string }> = {
+  trialing:   { label: 'Período de teste',   badge: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400' },
+  active:     { label: 'Ativo',              badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' },
+  past_due:   { label: 'Pagamento pendente', badge: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400' },
+  canceled:   { label: 'Cancelado',          badge: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' },
+  incomplete: { label: 'Incompleto',         badge: 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-400' },
+}
+
+function formatGB(bytes: number | null): string {
+  if (!bytes) return '0 GB'
+  return `${(bytes / 1073741824).toFixed(1)} GB`
+}
+
+/** Lê o corpo JSON de erro de uma Edge Function chamada via supabase.functions.invoke. */
+async function extractFunctionErrorMessage(fnErr: unknown, data: { error?: string } | null): Promise<string> {
+  if (data?.error) return data.error
+  const withContext = fnErr as { context?: Response; message?: string } | null
+  if (withContext?.context && typeof withContext.context.json === 'function') {
+    try {
+      const body = await withContext.context.json()
+      if (body?.error) return body.error
+    } catch { /* corpo não era JSON */ }
+  }
+  return withContext?.message || 'Erro inesperado. Tente novamente.'
+}
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   new_tasks: true, task_due: true, new_processes: false,
@@ -130,7 +158,89 @@ function describeSecurityEvent(evt: SecurityEvent): string {
 export function SettingsPage() {
   const { profile, refreshProfile } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const [tab, setTab] = useState<Tab>('profile')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialTab = (searchParams.get('tab') as Tab | null) || 'profile'
+  const [tab, setTab] = useState<Tab>(initialTab)
+
+  // Billing (aba "Plano")
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [usage, setUsage] = useState<{ users: number; clients: number; processes: number; aiGenerations: number } | null>(null)
+  const [tenantStorage, setTenantStorage] = useState<{ used: number; quota: number } | null>(null)
+  const [billingLoading, setBillingLoading] = useState(false)
+  const [checkoutLoadingSlug, setCheckoutLoadingSlug] = useState<string | null>(null)
+  const [portalLoading, setPortalLoading] = useState(false)
+  const isBillingAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
+  const currentPlan = plans.find(p => p.id === subscription?.plan_id) || null
+
+  async function loadBillingData() {
+    if (!profile?.tenant_id) return
+    setBillingLoading(true)
+    const startOfMonth = new Date()
+    startOfMonth.setDate(1)
+    startOfMonth.setHours(0, 0, 0, 0)
+
+    const [plansRes, subRes, usersRes, clientsRes, processesRes, aiRes, tenantRes] = await Promise.all([
+      supabase.from('plans').select('*').eq('active', true).order('price_cents', { ascending: true }),
+      supabase.from('subscriptions').select('*').eq('tenant_id', profile.tenant_id).maybeSingle(),
+      supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).neq('role', 'client'),
+      supabase.from('clients').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).is('deleted_at', null),
+      supabase.from('processes').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).is('deleted_at', null),
+      supabase.from('ai_generations').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).gte('created_at', startOfMonth.toISOString()),
+      supabase.from('tenants').select('storage_used_bytes, storage_quota_bytes').eq('id', profile.tenant_id).single(),
+    ])
+
+    setPlans((plansRes.data || []) as Plan[])
+    setSubscription(subRes.data as Subscription | null)
+    setUsage({
+      users: usersRes.count || 0,
+      clients: clientsRes.count || 0,
+      processes: processesRes.count || 0,
+      aiGenerations: aiRes.count || 0,
+    })
+    if (tenantRes.data) {
+      setTenantStorage({ used: tenantRes.data.storage_used_bytes || 0, quota: tenantRes.data.storage_quota_bytes || 0 })
+    }
+    setBillingLoading(false)
+  }
+
+  useEffect(() => {
+    if (tab === 'plan' && profile?.tenant_id) loadBillingData()
+  }, [tab, profile?.tenant_id])
+
+  // Redirect de volta do Checkout do Stripe (success_url/cancel_url) — só
+  // feedback visual, a ativação real da assinatura vem do webhook.
+  useEffect(() => {
+    const billingResult = searchParams.get('billing')
+    if (!billingResult) return
+    if (billingResult === 'success') toast('Pagamento confirmado! Sua assinatura será ativada em instantes.', 'success')
+    if (billingResult === 'cancel') toast('Checkout cancelado — nenhuma cobrança foi feita.', 'info')
+    const next = new URLSearchParams(searchParams)
+    next.delete('billing')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  async function handleSubscribe(planSlug: Plan['slug']) {
+    setCheckoutLoadingSlug(planSlug)
+    const { data, error: fnErr } = await supabase.functions.invoke('create-checkout-session', { body: { plan_slug: planSlug } })
+    setCheckoutLoadingSlug(null)
+    if (fnErr || !data?.url) {
+      toast(await extractFunctionErrorMessage(fnErr, data), 'error')
+      return
+    }
+    window.location.href = data.url
+  }
+
+  async function handleManageBilling() {
+    setPortalLoading(true)
+    const { data, error: fnErr } = await supabase.functions.invoke('create-customer-portal-session')
+    setPortalLoading(false)
+    if (fnErr || !data?.url) {
+      toast(await extractFunctionErrorMessage(fnErr, data), 'error')
+      return
+    }
+    window.location.href = data.url
+  }
   const [name, setName] = useState(profile?.name || profile?.display_name || '')
   const [city, setCity] = useState(profile?.city || '')
   const [phone, setPhone] = useState(profile?.phone || '')
@@ -541,60 +651,128 @@ export function SettingsPage() {
             {/* PLAN TAB */}
             {tab === 'plan' && (
               <div className="space-y-4">
-                <Card className="overflow-hidden">
-                  <div className="px-6 py-5 border-b border-gray-100 dark:border-dark-700">
-                    <h2 className="text-base font-semibold text-gray-900 dark:text-white">Plano Atual</h2>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex items-center justify-between p-5 bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl text-white mb-5 shadow-lg">
-                      <div>
-                        <p className="text-xs text-white/70 uppercase tracking-wide">Seu plano</p>
-                        <p className="text-2xl font-bold capitalize mt-0.5">{profile?.subscription_plan || 'Free'}</p>
+                {billingLoading && !usage ? (
+                  <Card className="p-10 text-center text-sm text-gray-400">Carregando informações do plano...</Card>
+                ) : (
+                  <>
+                    {/* Plano atual + status */}
+                    <Card className="overflow-hidden">
+                      <div className="px-6 py-5 border-b border-gray-100 dark:border-dark-700 flex items-center justify-between">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Plano Atual</h2>
+                        {subscription?.stripe_customer_id && (
+                          <Button variant="outline" size="sm" onClick={handleManageBilling} loading={portalLoading}>
+                            <ExternalLink className="w-3.5 h-3.5" /> Gerenciar assinatura
+                          </Button>
+                        )}
                       </div>
-                      <div className={cn(
-                        'px-3 py-1.5 rounded-full text-sm font-semibold',
-                        profile?.subscription_status === 'active'
-                          ? 'bg-white/20 text-white'
-                          : 'bg-white/20 text-white'
-                      )}>
-                        {profile?.subscription_status === 'active' ? 'Ativo' : 'Inativo'}
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      {[
-                        { label: 'Processos ilimitados', included: true },
-                        { label: 'Clientes ilimitados', included: true },
-                        { label: 'Integração com Google Calendar', included: true },
-                        { label: 'Monitoramento de publicações', included: profile?.subscription_plan !== 'free' },
-                        { label: 'Relatórios avançados', included: profile?.subscription_plan !== 'free' },
-                        { label: 'API de integração', included: false },
-                        { label: 'Suporte prioritário', included: false },
-                      ].map((item, i) => (
-                        <div key={i} className="flex items-center gap-2.5 text-sm">
-                          {item.included
-                            ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                            : <AlertCircle className="w-4 h-4 text-gray-300 dark:text-gray-600 flex-shrink-0" />
-                          }
-                          <span className={item.included ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-600'}>{item.label}</span>
+                      <div className="p-6">
+                        <div className="flex items-center justify-between p-5 bg-gradient-to-r from-primary-600 to-primary-500 rounded-2xl text-white mb-5 shadow-lg">
+                          <div>
+                            <p className="text-xs text-white/70 uppercase tracking-wide">Seu plano</p>
+                            <p className="text-2xl font-bold mt-0.5">{currentPlan?.name || 'Nenhum plano ativo'}</p>
+                            {subscription?.current_period_end && (
+                              <p className="text-xs text-white/70 mt-1">
+                                {subscription.cancel_at_period_end ? 'Cancela em ' : 'Renova em '}
+                                {formatDate(subscription.current_period_end)}
+                              </p>
+                            )}
+                          </div>
+                          <div className={cn('px-3 py-1.5 rounded-full text-sm font-semibold bg-white/20 text-white')}>
+                            {subscription ? (SUBSCRIPTION_STATUS_META[subscription.status]?.label || subscription.status) : 'Sem assinatura'}
+                          </div>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-                </Card>
 
-                <Card className="p-6 border-2 border-dashed border-primary-200 dark:border-primary-800">
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
-                      <CreditCard className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Upgrade para Pro</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Acesse monitoramento de publicações, relatórios avançados, suporte prioritário e muito mais.</p>
-                    </div>
-                    <Button>Fazer Upgrade</Button>
-                  </div>
-                </Card>
+                        {/* Uso do plano vs limites */}
+                        {usage && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {[
+                              { icon: UsersIcon, label: 'Usuários',    used: usage.users,        limit: currentPlan?.max_users ?? null },
+                              { icon: UsersIcon, label: 'Clientes',    used: usage.clients,      limit: currentPlan?.max_clients ?? null },
+                              { icon: Briefcase, label: 'Processos',   used: usage.processes,    limit: currentPlan?.max_processes ?? null },
+                              { icon: Sparkles,  label: 'IA Jurídica (mês)', used: usage.aiGenerations, limit: currentPlan?.max_ai_generations_month ?? null },
+                            ].map(item => {
+                              const pct = item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0
+                              return (
+                                <div key={item.label} className="p-3.5 bg-gray-50 dark:bg-dark-700 rounded-xl">
+                                  <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1.5">
+                                    <span className="flex items-center gap-1.5"><item.icon className="w-3.5 h-3.5" /> {item.label}</span>
+                                    <span className="font-semibold text-gray-700 dark:text-gray-300">
+                                      {item.used}{item.limit != null ? ` / ${item.limit}` : ' (ilimitado)'}
+                                    </span>
+                                  </div>
+                                  {item.limit != null && (
+                                    <div className="h-1.5 rounded-full bg-gray-200 dark:bg-dark-600 overflow-hidden">
+                                      <div className={cn('h-full rounded-full', pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-primary-500')} style={{ width: `${pct}%` }} />
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })}
+                            {tenantStorage && (
+                              <div className="p-3.5 bg-gray-50 dark:bg-dark-700 rounded-xl sm:col-span-2">
+                                <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1.5">
+                                  <span className="flex items-center gap-1.5"><HardDrive className="w-3.5 h-3.5" /> Armazenamento</span>
+                                  <span className="font-semibold text-gray-700 dark:text-gray-300">{formatGB(tenantStorage.used)} / {formatGB(tenantStorage.quota)}</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-200 dark:bg-dark-600 overflow-hidden">
+                                  <div
+                                    className={cn('h-full rounded-full', tenantStorage.used / (tenantStorage.quota || 1) >= 1 ? 'bg-red-500' : tenantStorage.used / (tenantStorage.quota || 1) >= 0.8 ? 'bg-amber-500' : 'bg-primary-500')}
+                                    style={{ width: `${Math.min(100, Math.round((tenantStorage.used / (tenantStorage.quota || 1)) * 100))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+
+                    {/* Planos disponíveis */}
+                    <Card className="overflow-hidden">
+                      <div className="px-6 py-5 border-b border-gray-100 dark:border-dark-700">
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Planos disponíveis</h2>
+                        {!isBillingAdmin && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Fale com um administrador do escritório para assinar ou trocar de plano.</p>
+                        )}
+                      </div>
+                      <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {plans.map(plan => {
+                          const isCurrent = plan.id === subscription?.plan_id
+                          return (
+                            <div key={plan.id} className={cn(
+                              'rounded-2xl border-2 p-5 flex flex-col',
+                              isCurrent ? 'border-primary-500 bg-primary-50/50 dark:bg-primary-900/10' : 'border-gray-200 dark:border-dark-600'
+                            )}>
+                              <p className="text-sm font-semibold text-gray-900 dark:text-white">{plan.name}</p>
+                              <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                                {(plan.price_cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                <span className="text-xs font-normal text-gray-400">/mês</span>
+                              </p>
+                              <ul className="mt-4 space-y-1.5 text-xs text-gray-600 dark:text-gray-400 flex-1">
+                                <li>{plan.max_users ?? 'Ilimitado'} usuário(s)</li>
+                                <li>{plan.max_clients ?? 'Clientes ilimitados'}{plan.max_clients ? ' clientes' : ''}</li>
+                                <li>{plan.max_processes ?? 'Processos ilimitados'}{plan.max_processes ? ' processos ativos' : ''}</li>
+                                <li>{formatGB(plan.max_storage_bytes)} de armazenamento</li>
+                                <li>IA Jurídica: {plan.max_ai_generations_month ?? 'ilimitada'}{plan.max_ai_generations_month ? '/mês' : ''}</li>
+                              </ul>
+                              {isBillingAdmin && (
+                                <Button
+                                  className="mt-4"
+                                  variant={isCurrent ? 'outline' : 'primary'}
+                                  disabled={isCurrent}
+                                  loading={checkoutLoadingSlug === plan.slug}
+                                  onClick={() => handleSubscribe(plan.slug)}
+                                >
+                                  {isCurrent ? 'Plano atual' : subscription ? 'Trocar de plano' : 'Assinar'}
+                                </Button>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </Card>
+                  </>
+                )}
               </div>
             )}
 

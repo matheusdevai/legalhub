@@ -8,6 +8,11 @@ interface AuthContextType {
   user: User | null
   profile: Profile | null
   loading: boolean
+  // Status da assinatura Stripe do tenant ('trialing'|'active'|'past_due'|
+  // 'canceled'|'incomplete'), null se o tenant ainda não tem linha em
+  // `subscriptions` (ex: criado antes do billing existir). Usado só para o
+  // soft-gate (banner) em Layout — nenhuma tela é bloqueada por isso ainda.
+  subscriptionStatus: string | null
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -19,7 +24,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+
+  async function fetchSubscriptionStatus(tenantId: string) {
+    const { data } = await supabase.from('subscriptions').select('status').eq('tenant_id', tenantId).maybeSingle()
+    setSubscriptionStatus((data as { status: string } | null)?.status ?? null)
+  }
 
   async function fetchProfile(userId: string) {
     const { data } = await supabase
@@ -27,7 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .select('*')
       .eq('user_id', userId)
       .single()
-    if (data) setProfile(data as Profile)
+    if (data) {
+      setProfile(data as Profile)
+      if (data.tenant_id) fetchSubscriptionStatus(data.tenant_id)
+    }
   }
 
   async function refreshProfile() {
@@ -60,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else {
         setProfile(null)
+        setSubscriptionStatus(null)
       }
     })
 
@@ -81,7 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, subscriptionStatus, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )
