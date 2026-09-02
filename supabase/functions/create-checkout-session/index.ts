@@ -12,6 +12,26 @@ const CORS = {
 // CLAUDE.md (não confundir com o projeto Vercel vazio "lawfy-saas").
 const APP_URL = Deno.env.get('APP_URL') || 'https://legalhubgestor.vercel.app'
 
+// Mesmo rate limit de create-user: no máximo RATE_LIMIT chamadas numa janela
+// de RATE_WINDOW_MS, contra edge_function_rate_limits (só service role).
+// Evita que uma credencial de admin comprometida crie Checkout Sessions em
+// volume (spam de e-mail do Stripe pro cliente, ruído na conta Stripe).
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 // Cria (ou reaproveita) a assinatura Stripe do tenant do admin chamador e
 // devolve a URL do Checkout Session hospedado pelo Stripe. Só cartão de
 // crédito — decisão do dono, sem Pix/Boleto por ora.
@@ -52,6 +72,11 @@ Deno.serve(async (req: Request) => {
 
     if (!callerProfile?.tenant_id || !['admin', 'super_admin'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Apenas administradores do escritório podem gerenciar a assinatura' }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+
+    const withinLimit = await checkRateLimit(supabaseAdmin, `create-checkout-session:${callerUser.id}`)
+    if (!withinLimit) {
+      return new Response(JSON.stringify({ error: 'Muitas tentativas de checkout em pouco tempo. Aguarde e tente novamente.' }), { status: 429, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     const body = await req.json().catch(() => ({}))

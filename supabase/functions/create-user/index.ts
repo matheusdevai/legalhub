@@ -89,6 +89,34 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Limite de usuários do plano (plans.max_users, NULL = sem limite). Login
+    // de Portal do Cliente (role 'client') não conta como "usuário" do
+    // escritório, então não entra nessa checagem.
+    if (role !== 'client') {
+      const { data: subscriptionRow } = await supabaseAdmin
+        .from('subscriptions')
+        .select('plan_id')
+        .eq('tenant_id', callerProfile.tenant_id)
+        .maybeSingle()
+
+      if (subscriptionRow?.plan_id) {
+        const { data: planRow } = await supabaseAdmin.from('plans').select('max_users').eq('id', subscriptionRow.plan_id).maybeSingle()
+        const maxUsers = planRow?.max_users ?? null
+
+        if (maxUsers !== null) {
+          const { count } = await supabaseAdmin
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('tenant_id', callerProfile.tenant_id)
+            .neq('role', 'client')
+
+          if ((count ?? 0) >= maxUsers) {
+            return new Response(JSON.stringify({ error: `Limite do plano atingido: seu plano permite no máximo ${maxUsers} usuário(s). Faça upgrade em Configurações > Plano.` }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+          }
+        }
+      }
+    }
+
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,

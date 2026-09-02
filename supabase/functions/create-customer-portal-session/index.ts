@@ -10,6 +10,25 @@ const CORS = {
 
 const APP_URL = Deno.env.get('APP_URL') || 'https://legalhubgestor.vercel.app'
 
+// Mesmo rate limit de create-user/create-checkout-session: no máximo
+// RATE_LIMIT chamadas numa janela de RATE_WINDOW_MS, contra
+// edge_function_rate_limits (só service role).
+const RATE_LIMIT = 10
+const RATE_WINDOW_MS = 60 * 60 * 1000
+
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
+  const { count } = await supabaseAdmin
+    .from('edge_function_rate_limits')
+    .select('*', { count: 'exact', head: true })
+    .eq('rate_key', key)
+    .gte('created_at', windowStart)
+  if ((count ?? 0) >= RATE_LIMIT) return false
+  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
+  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
+  return true
+}
+
 // Devolve a URL do Customer Portal do Stripe, onde o próprio tenant troca de
 // cartão, baixa faturas ou cancela a assinatura sem precisar de suporte.
 Deno.serve(async (req: Request) => {
@@ -49,6 +68,11 @@ Deno.serve(async (req: Request) => {
 
     if (!callerProfile?.tenant_id || !['admin', 'super_admin'].includes(callerProfile.role)) {
       return new Response(JSON.stringify({ error: 'Apenas administradores do escritório podem gerenciar a assinatura' }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+
+    const withinLimit = await checkRateLimit(supabaseAdmin, `create-customer-portal-session:${callerUser.id}`)
+    if (!withinLimit) {
+      return new Response(JSON.stringify({ error: 'Muitas tentativas em pouco tempo. Aguarde e tente novamente.' }), { status: 429, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     const { data: subscription } = await supabaseAdmin
