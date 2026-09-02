@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   User, Lock, Bell, CreditCard, Palette,
@@ -168,14 +168,16 @@ export function SettingsPage() {
   const [usage, setUsage] = useState<{ users: number; clients: number; processes: number; aiGenerations: number } | null>(null)
   const [tenantStorage, setTenantStorage] = useState<{ used: number; quota: number } | null>(null)
   const [billingLoading, setBillingLoading] = useState(false)
+  const [billingError, setBillingError] = useState<string | null>(null)
   const [checkoutLoadingSlug, setCheckoutLoadingSlug] = useState<string | null>(null)
   const [portalLoading, setPortalLoading] = useState(false)
   const isBillingAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
   const currentPlan = plans.find(p => p.id === subscription?.plan_id) || null
 
-  async function loadBillingData() {
+  const loadBillingData = useCallback(async () => {
     if (!profile?.tenant_id) return
     setBillingLoading(true)
+    setBillingError(null)
     const startOfMonth = new Date()
     startOfMonth.setDate(1)
     startOfMonth.setHours(0, 0, 0, 0)
@@ -190,6 +192,16 @@ export function SettingsPage() {
       supabase.from('tenants').select('storage_used_bytes, storage_quota_bytes').eq('id', profile.tenant_id).single(),
     ])
 
+    // Falha de rede/RLS deixaria os dados virarem [] silenciosamente (a aba
+    // mostraria "nenhum plano disponível" em vez de sinalizar o erro) — só
+    // aceita o resultado se todas as consultas vierem sem erro.
+    const firstError = [plansRes.error, subRes.error, usersRes.error, clientsRes.error, processesRes.error, aiRes.error, tenantRes.error].find(Boolean)
+    if (firstError) {
+      setBillingError(firstError.message || 'Erro ao carregar informações do plano.')
+      setBillingLoading(false)
+      return
+    }
+
     setPlans((plansRes.data || []) as Plan[])
     setSubscription(subRes.data as Subscription | null)
     setUsage({
@@ -202,11 +214,11 @@ export function SettingsPage() {
       setTenantStorage({ used: tenantRes.data.storage_used_bytes || 0, quota: tenantRes.data.storage_quota_bytes || 0 })
     }
     setBillingLoading(false)
-  }
+  }, [profile?.tenant_id])
 
   useEffect(() => {
     if (tab === 'plan' && profile?.tenant_id) loadBillingData()
-  }, [tab, profile?.tenant_id])
+  }, [tab, profile?.tenant_id, loadBillingData])
 
   // Redirect de volta do Checkout do Stripe (success_url/cancel_url) — só
   // feedback visual, a ativação real da assinatura vem do webhook.
@@ -653,6 +665,12 @@ export function SettingsPage() {
               <div className="space-y-4">
                 {billingLoading && !usage ? (
                   <Card className="p-10 text-center text-sm text-gray-400">Carregando informações do plano...</Card>
+                ) : billingError ? (
+                  <Card className="p-10 text-center">
+                    <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{billingError}</p>
+                    <Button variant="outline" onClick={loadBillingData}>Tentar novamente</Button>
+                  </Card>
                 ) : (
                   <>
                     {/* Plano atual + status */}

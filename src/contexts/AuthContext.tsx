@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from 'react'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { Profile } from '@/types'
@@ -27,12 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function fetchSubscriptionStatus(tenantId: string) {
+  const fetchSubscriptionStatus = useCallback(async (tenantId: string) => {
     const { data } = await supabase.from('subscriptions').select('status').eq('tenant_id', tenantId).maybeSingle()
     setSubscriptionStatus((data as { status: string } | null)?.status ?? null)
-  }
+  }, [])
 
-  async function fetchProfile(userId: string) {
+  // useCallback com identidade estável (só muda se fetchSubscriptionStatus
+  // mudar, e essa nunca muda) — permite incluir fetchProfile nas deps do
+  // useEffect de auth abaixo sem disparar um re-subscribe a cada render.
+  const fetchProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
       .select('*')
@@ -42,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(data as Profile)
       if (data.tenant_id) fetchSubscriptionStatus(data.tenant_id)
     }
-  }
+  }, [fetchSubscriptionStatus])
 
   async function refreshProfile() {
     if (user) await fetchProfile(user.id)
@@ -79,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [fetchProfile])
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
