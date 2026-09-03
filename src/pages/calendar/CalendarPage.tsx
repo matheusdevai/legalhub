@@ -1310,7 +1310,7 @@ export function CalendarPage() {
           {[
             { step: '1', title: 'Acesse o Google Cloud Console', desc: 'Abra console.cloud.google.com e crie ou selecione um projeto.', link: 'https://console.cloud.google.com/', linkText: 'Abrir Console →' },
             { step: '2', title: 'Ative a Calendar API', desc: '"APIs e Serviços" → "Biblioteca" → pesquise "Google Calendar API" → Ativar.' },
-            { step: '3', title: 'Crie credenciais OAuth 2.0', desc: '"Credenciais" → "Criar" → "ID do Cliente OAuth" → "Aplicativo da Web". Em origens JavaScript autorizadas adicione:', code: 'https://lawfy-saas.vercel.app\nhttp://localhost:5173' },
+            { step: '3', title: 'Crie credenciais OAuth 2.0', desc: '"Credenciais" → "Criar" → "ID do Cliente OAuth" → "Aplicativo da Web". Em origens JavaScript autorizadas adicione:', code: 'https://legalhubgestor.vercel.app\nhttp://localhost:5173' },
             { step: '4', title: 'Copie o Client ID', desc: 'Copie o ID gerado (formato: XXXXX.apps.googleusercontent.com).' },
             { step: '5', title: 'Configure no .env e no Vercel', desc: 'No arquivo .env local e em Settings → Environment Variables no Vercel, adicione:', code: 'VITE_GOOGLE_CLIENT_ID = seu_client_id_aqui' },
             { step: '6', title: 'Novo deploy', desc: 'Faça um novo deploy no Vercel para aplicar a variável. No sidebar da Agenda aparecerá o botão de conexão.' },
