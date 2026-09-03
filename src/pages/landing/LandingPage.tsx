@@ -204,7 +204,7 @@ const PLANS = [
     storageLimit: '100 GB de armazenamento',
     features: [
       'Tudo do plano Pro',
-      'Até 25 usuários (usuário adicional: +R$ 25/mês)',
+      'Até 25 usuários — precisa de mais? Fale com nosso time',
       'Clientes ilimitados',
       'IA Jurídica ilimitada (uso justo)',
       'Onboarding assistido para toda a equipe',
