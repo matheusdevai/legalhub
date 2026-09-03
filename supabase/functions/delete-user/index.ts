@@ -88,11 +88,17 @@ Deno.serve(async (req: Request) => {
       return new Response(JSON.stringify({ error: 'Usuário não encontrado neste escritório' }), { status: 404, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
-    await supabaseAdmin.from('profiles').delete().eq('id', userId)
+    // Auth user primeiro: se isso falhar, nada foi alterado (profile
+    // continua intacto). Se deletássemos o profile antes e o delete do auth
+    // falhasse, sobraria um usuário órfão (auth ativo sem profile).
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
-
     if (deleteError) {
       return new Response(JSON.stringify({ error: 'Erro ao excluir usuário: ' + deleteError.message }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+
+    const { error: profileError } = await supabaseAdmin.from('profiles').delete().eq('id', userId)
+    if (profileError) {
+      return new Response(JSON.stringify({ error: 'Usuário excluído do login, mas houve erro ao remover o perfil: ' + profileError.message }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     return new Response(JSON.stringify({ success: true }), {

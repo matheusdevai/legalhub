@@ -659,7 +659,9 @@ export function UsersPage() {
               value={form.role}
               onChange={e => setForm({ ...form, role: e.target.value })}
             >
-              <option value="admin">Administrador — acesso total</option>
+              {(profile?.role === 'super_admin' || form.role === 'admin') && (
+                <option value="admin">Administrador — acesso total</option>
+              )}
               <option value="lawyer">Advogado — acesso completo</option>
               <option value="intern">Estagiário — acesso limitado</option>
               <option value="financial">Financeiro — módulo financeiro</option>
