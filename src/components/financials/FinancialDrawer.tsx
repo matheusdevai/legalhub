@@ -321,18 +321,24 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             </div>
           </div>
 
-          {/* Parcelamento de honorários — só ao criar receita, e só se não for recorrente */}
-          {canInstallment && !form.recurring && (
+          {/* Parcelamento de honorários — só ao criar receita. Mutuamente exclusivo com
+              recorrência: em vez de sumir da tela quando o outro toggle está ativo (o que
+              dava a falsa impressão de que recorrência "não existe" pra receita), o toggle
+              fica visível e desabilitado, com uma nota explicando o motivo. */}
+          {canInstallment && (
             <div className="rounded-xl border border-slate-200 dark:border-dark-600 overflow-hidden">
               <button
                 type="button"
                 data-testid="toggle-installment-plan"
+                disabled={form.recurring}
                 onClick={() => setPlan('enabled', !plan.enabled)}
                 className={cn(
                   'w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold transition-colors',
-                  plan.enabled
-                    ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
-                    : 'bg-slate-50 dark:bg-dark-800 text-slate-600 dark:text-slate-300'
+                  form.recurring
+                    ? 'bg-slate-50 dark:bg-dark-800 text-slate-300 dark:text-slate-600 cursor-not-allowed'
+                    : plan.enabled
+                      ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400'
+                      : 'bg-slate-50 dark:bg-dark-800 text-slate-600 dark:text-slate-300'
                 )}
               >
                 <span className="flex items-center gap-1.5">
@@ -342,6 +348,12 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
                   <span className={cn('absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', plan.enabled && 'translate-x-4')} />
                 </span>
               </button>
+
+              {form.recurring && (
+                <p data-testid="installment-disabled-note" className="px-3 py-2 text-[11px] text-slate-400 bg-white dark:bg-dark-900">
+                  Indisponível com lançamento recorrente ativo — desmarque a recorrência para parcelar.
+                </p>
+              )}
 
               {plan.enabled && (
                 <div className="p-3 space-y-3 bg-white dark:bg-dark-900">
@@ -431,21 +443,29 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             </div>
           )}
 
-          {/* Recorrência — só ao criar, e só se não houver parcelamento ativo */}
-          {!editId && !plan.enabled && (
+          {/* Recorrência — só ao criar. Mutuamente exclusiva com parcelamento (ver nota acima);
+              o checkbox fica visível e desabilitado (não escondido) quando o parcelamento está
+              ativo, igual ao toggle de parcelamento em relação a esta seção. */}
+          {!editId && (
             <div>
-              <label className="flex items-center gap-2 cursor-pointer select-none mb-1.5">
+              <label className={cn('flex items-center gap-2 select-none mb-1.5', plan.enabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
                 <input
                   type="checkbox"
                   data-testid="field-recurring"
                   checked={form.recurring}
+                  disabled={plan.enabled}
                   onChange={e => set('recurring', e.target.checked)}
-                  className="w-3.5 h-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                  className={cn('w-3.5 h-3.5 rounded border-slate-300 text-primary-600 focus:ring-primary-500', plan.enabled && 'opacity-50 cursor-not-allowed')}
                 />
-                <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                <span className={cn('flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider', plan.enabled ? 'text-slate-300 dark:text-slate-600' : 'text-slate-500 dark:text-slate-400')}>
                   <Layers className="w-3.5 h-3.5" /> Lançamento recorrente
                 </span>
               </label>
+              {plan.enabled && (
+                <p data-testid="recurring-disabled-note" className="text-[11px] text-slate-400 mb-2">
+                  Indisponível com parcelamento ativo — desative o parcelamento para tornar este lançamento recorrente.
+                </p>
+              )}
               {form.recurring && (
                 <div className="grid grid-cols-2 gap-3 mt-2">
                   <select
