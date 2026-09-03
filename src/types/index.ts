@@ -41,6 +41,34 @@ export interface Tenant {
   meta_fechamentos_mensal: number | null
 }
 
+export interface Plan {
+  id: string
+  slug: 'basico' | 'pro' | 'enterprise'
+  name: string
+  price_cents: number
+  stripe_price_id: string | null
+  max_users: number | null
+  max_clients: number | null
+  max_processes: number | null
+  max_storage_bytes: number | null
+  max_ai_generations_month: number | null
+  active: boolean
+}
+
+export interface Subscription {
+  id: string
+  tenant_id: string
+  plan_id: string
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  status: 'trialing' | 'active' | 'past_due' | 'canceled' | 'incomplete'
+  current_period_start: string | null
+  current_period_end: string | null
+  cancel_at_period_end: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface Client {
   id: string
   tenant_id: string

@@ -113,6 +113,14 @@ Deno.serve(async (req: Request) => {
 
     if (profileError) {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+      // Limite de usuários do plano (plans.max_users) é aplicado atomicamente
+      // pelo trigger enforce_user_limit() em profiles (BEFORE INSERT, com
+      // advisory lock por tenant — ver migration 20260902190000). A exceção
+      // dele chega aqui como profileError; traduzimos pra 403 com a mesma
+      // mensagem amigável em vez do 500 genérico abaixo.
+      if (profileError.message.includes('Limite do plano atingido')) {
+        return new Response(JSON.stringify({ error: profileError.message }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+      }
       return new Response(JSON.stringify({ error: 'Erro ao criar perfil: ' + profileError.message }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useCallback, useEffect, useState, ReactNode } from 'react'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { Profile } from '@/types'
@@ -8,6 +8,11 @@ interface AuthContextType {
   user: User | null
   profile: Profile | null
   loading: boolean
+  // Status da assinatura Stripe do tenant ('trialing'|'active'|'past_due'|
+  // 'canceled'|'incomplete'), null se o tenant ainda não tem linha em
+  // `subscriptions` (ex: criado antes do billing existir). Usado só para o
+  // soft-gate (banner) em Layout — nenhuma tela é bloqueada por isso ainda.
+  subscriptionStatus: string | null
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -19,16 +24,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [subscriptionStatus, setSubscriptionStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function fetchProfile(userId: string) {
+  const fetchSubscriptionStatus = useCallback(async (tenantId: string) => {
+    const { data } = await supabase.from('subscriptions').select('status').eq('tenant_id', tenantId).maybeSingle()
+    setSubscriptionStatus((data as { status: string } | null)?.status ?? null)
+  }, [])
+
+  // useCallback com identidade estável (só muda se fetchSubscriptionStatus
+  // mudar, e essa nunca muda) — permite incluir fetchProfile nas deps do
+  // useEffect de auth abaixo sem disparar um re-subscribe a cada render.
+  const fetchProfile = useCallback(async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
       .select('*')
       .eq('user_id', userId)
       .single()
-    if (data) setProfile(data as Profile)
-  }
+    if (data) {
+      setProfile(data as Profile)
+      if (data.tenant_id) fetchSubscriptionStatus(data.tenant_id)
+    }
+  }, [fetchSubscriptionStatus])
 
   async function refreshProfile() {
     if (user) await fetchProfile(user.id)
@@ -60,11 +77,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } else {
         setProfile(null)
+        setSubscriptionStatus(null)
       }
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [fetchProfile])
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -81,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, user, profile, loading, signIn, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user, profile, loading, subscriptionStatus, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )

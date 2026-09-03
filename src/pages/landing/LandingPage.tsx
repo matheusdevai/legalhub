@@ -9,7 +9,6 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
-import { PLAN_STORAGE_QUOTA_BYTES } from '@/lib/storageUtils'
 
 /** Logomarca oficial (a mesma do Login e do Sidebar) — ícone recortado num chip
  *  escuro, já que /logomarca.png é branca e foi feita para fundo escuro. */
@@ -148,56 +147,68 @@ const TESTIMONIALS = [
   },
 ]
 
-const PROMO_MONTHLY_PRICE = 176
+const PROMO_MONTHLY_PRICE = 149
 
 // ─── Planos ─────────────────────────────────────────────────────────────────
+// Espelha o seed real de `plans` em
+// supabase/migrations/20260902160000_stripe_billing_foundation.sql — mudar
+// preço/limite aqui sem atualizar (ou vice-versa) deixa a Landing Page
+// prometendo algo que o billing não aplica.
 const PLANS = [
   {
-    id: 'starter',
-    name: 'Starter',
+    id: 'basico',
+    name: 'Básico',
     tagline: 'Para quem está começando a organizar o escritório',
-    price: 176,
-    processLimit: 'Até 600 processos ativos',
-    storageLimit: `${PLAN_STORAGE_QUOTA_BYTES.starter / 1024 ** 3} GB de armazenamento`,
+    price: 149,
+    processLimit: 'Até 300 processos ativos',
+    storageLimit: '5 GB de armazenamento',
     features: [
+      'Até 3 usuários',
+      'Até 150 clientes cadastrados',
       'Dashboard completo (visão geral, lista, quadro e desempenho)',
       'Clientes com busca automática de CPF/CNPJ',
       'Processos por fase e grupo de ação',
       'Tarefas com recorrência e cálculo de prazo',
       'Agenda sincronizada com o Google Calendar',
       'Financeiro (contas a pagar e a receber)',
+      'IA Jurídica — até 30 gerações/mês',
       'Suporte por e-mail',
     ],
   },
   {
-    id: 'professional',
-    name: 'Professional',
+    id: 'pro',
+    name: 'Pro',
     tagline: 'Para escritórios em crescimento, com equipe e clientes ativos',
-    price: 352,
-    processLimit: 'Até 1.200 processos ativos',
-    storageLimit: `${PLAN_STORAGE_QUOTA_BYTES.professional / 1024 ** 3} GB de armazenamento`,
+    price: 349,
+    processLimit: 'Até 1.500 processos ativos',
+    storageLimit: '25 GB de armazenamento',
     highlight: true,
     features: [
-      'Tudo do plano Starter',
-      'Publicações & Intimações automáticas (CNJ, PJe, Escavador, Jusbrasil)',
+      'Tudo do plano Básico',
+      'Até 10 usuários',
+      'Até 750 clientes cadastrados',
+      'IA Jurídica — até 200 gerações/mês',
+      'Sincronização automática de publicações (OAB/CNJ, Escavador, Jusbrasil)',
       'Portal do Cliente exclusivo',
       'Relatórios de desempenho da equipe',
       'Colaboradores & Parceiros com comissão automática',
-      'Suporte prioritário',
+      'Suporte prioritário via chat',
     ],
   },
   {
     id: 'enterprise',
     name: 'Enterprise',
     tagline: 'Para escritórios com alto volume e times maiores',
-    price: 700,
+    price: 799,
     processLimit: 'Processos ilimitados',
-    storageLimit: `${PLAN_STORAGE_QUOTA_BYTES.enterprise / 1024 ** 3} GB de armazenamento`,
+    storageLimit: '100 GB de armazenamento',
     features: [
-      'Tudo do plano Professional',
-      'Copiloto de Inteligência Artificial',
+      'Tudo do plano Pro',
+      'Até 25 usuários — precisa de mais? Fale com nosso time',
+      'Clientes ilimitados',
+      'IA Jurídica ilimitada (uso justo)',
       'Onboarding assistido para toda a equipe',
-      'Suporte dedicado',
+      'SLA de suporte dedicado',
     ],
   },
 ]
@@ -346,7 +357,7 @@ export function LandingPage() {
   const [scrolled, setScrolled] = useState(false)
   const [showStickyCta, setShowStickyCta] = useState(false)
   const [faqOpen, setFaqOpen] = useState<number | null>(0)
-  const [processCount, setProcessCount] = useState(600)
+  const [processCount, setProcessCount] = useState(300)
   const [testimonialIndex, setTestimonialIndex] = useState(0)
   const [heroTilt, setHeroTilt] = useState({ x: 3, y: -6 })
 
@@ -360,7 +371,7 @@ export function LandingPage() {
     setHeroTilt({ x: 3, y: -6 })
   }
 
-  const recommendedPlanId = processCount <= 600 ? 'starter' : processCount <= 1200 ? 'professional' : 'enterprise'
+  const recommendedPlanId = processCount <= 300 ? 'basico' : processCount <= 1500 ? 'pro' : 'enterprise'
 
   useEffect(() => {
     function onScroll() {
