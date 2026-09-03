@@ -160,6 +160,62 @@ describe('FinancialDrawer — seleção de status', () => {
   })
 })
 
+// ── Recorrência x Parcelamento (mutuamente exclusivos, mas nunca escondidos) ──
+// Regressão: antes, ativar "Parcelar honorários" numa receita fazia a seção de
+// recorrência sumir da tela inteira — dava a falsa impressão de que recorrência
+// não existe para receita (só existia visivelmente pra despesa, que não tem
+// parcelamento). Agora os dois toggles ficam sempre visíveis; o que não está em
+// uso só fica desabilitado, com uma nota explicando o motivo.
+describe('FinancialDrawer — recorrência x parcelamento', () => {
+  it('recorrência aparece habilitada ao criar receita sem parcelamento ativo', () => {
+    renderDrawer({ initial: { type: 'receivable' } })
+    const recurring = screen.getByTestId('field-recurring')
+    expect(recurring).toBeInTheDocument()
+    expect(recurring).not.toBeDisabled()
+  })
+
+  it('recorrência aparece habilitada ao criar despesa (sem opção de parcelamento)', () => {
+    renderDrawer({ initial: { type: 'payable' } })
+    const recurring = screen.getByTestId('field-recurring')
+    expect(recurring).toBeInTheDocument()
+    expect(recurring).not.toBeDisabled()
+    expect(screen.queryByTestId('toggle-installment-plan')).not.toBeInTheDocument()
+  })
+
+  it('ao ativar parcelamento numa receita, recorrência continua visível mas fica desabilitada', async () => {
+    renderDrawer({ initial: { type: 'receivable' } })
+    await userEvent.click(screen.getByTestId('toggle-installment-plan'))
+    const recurring = screen.getByTestId('field-recurring')
+    expect(recurring).toBeInTheDocument()
+    expect(recurring).toBeDisabled()
+    expect(screen.getByTestId('recurring-disabled-note')).toBeInTheDocument()
+  })
+
+  it('ao ativar recorrência numa receita, parcelamento continua visível mas fica desabilitado', async () => {
+    renderDrawer({ initial: { type: 'receivable' } })
+    await userEvent.click(screen.getByTestId('field-recurring'))
+    const installmentToggle = screen.getByTestId('toggle-installment-plan')
+    expect(installmentToggle).toBeInTheDocument()
+    expect(installmentToggle).toBeDisabled()
+    expect(screen.getByTestId('installment-disabled-note')).toBeInTheDocument()
+  })
+
+  it('chama onSave com recurring=true e o intervalo escolhido ao cadastrar receita recorrente', async () => {
+    const { onSave } = renderDrawer({ initial: { type: 'receivable' } })
+    await userEvent.type(screen.getByTestId('field-description'), 'Honorário mensal recorrente')
+    await userEvent.type(screen.getByTestId('field-amount'), '800')
+    await userEvent.click(screen.getByTestId('field-recurring'))
+    await userEvent.selectOptions(screen.getByTestId('field-recurrence-interval'), 'monthly')
+    await userEvent.click(screen.getByTestId('btn-save'))
+    await waitFor(() => {
+      const [arg] = onSave.mock.calls[0] as [FinancialDrawerForm]
+      expect(arg.type).toBe('receivable')
+      expect(arg.recurring).toBe(true)
+      expect(arg.recurrence_interval).toBe('monthly')
+    })
+  })
+})
+
 // ── Clientes e Processos ──────────────────────────────────────────────────────
 describe('FinancialDrawer — campos de cliente e processo', () => {
   it('lista os clientes no select', () => {
