@@ -74,4 +74,42 @@ describe('mergeTemplateVariables', () => {
     })
     expect(result).toBe('(11) 98888-7777')
   })
+
+  it('preenche [NACIONALIDADE], [PROFISSAO] e [RG] com os dados do cliente', () => {
+    const result = mergeTemplateVariables('[NACIONALIDADE] - [PROFISSAO] - [RG]', {
+      client: {
+        name: 'X', cpf_cnpj: null, email: null, phone: null, celular: null,
+        address: null, cidade: null, state: null, bairro: null, cep: null, area_direito: null,
+        nationality: 'brasileira', marital_status: null, profession: 'advogado', rg: '12.345.678-9',
+      },
+    })
+    expect(result).toBe('brasileira - advogado - 12.345.678-9')
+  })
+
+  it.each([
+    ['solteiro', 'Solteiro(a)'],
+    ['casado', 'Casado(a)'],
+    ['divorciado', 'Divorciado(a)'],
+    ['viuvo', 'Viúvo(a)'],
+    ['uniao_estavel', 'União Estável'],
+  ])('mapeia marital_status "%s" para [ESTADO_CIVIL] "%s"', (code, label) => {
+    const result = mergeTemplateVariables('[ESTADO_CIVIL]', {
+      client: {
+        name: 'X', cpf_cnpj: null, email: null, phone: null, celular: null,
+        address: null, cidade: null, state: null, bairro: null, cep: null, area_direito: null,
+        nationality: null, marital_status: code, profession: null, rg: null,
+      },
+    })
+    expect(result).toBe(label)
+  })
+
+  it('deixa [ESTADO_CIVIL] em branco quando marital_status é null ou um código desconhecido', () => {
+    const base = {
+      name: 'X', cpf_cnpj: null, email: null, phone: null, celular: null,
+      address: null, cidade: null, state: null, bairro: null, cep: null, area_direito: null,
+      nationality: null, profession: null, rg: null,
+    }
+    expect(mergeTemplateVariables('[ESTADO_CIVIL]', { client: { ...base, marital_status: null } })).toBe('')
+    expect(mergeTemplateVariables('[ESTADO_CIVIL]', { client: { ...base, marital_status: 'valor_invalido' } })).toBe('')
+  })
 })

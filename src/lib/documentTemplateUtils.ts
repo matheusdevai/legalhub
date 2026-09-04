@@ -13,11 +13,20 @@ function fullAddress(client: TemplateMergeContext['client']): string {
   return parts.join(', ')
 }
 
+// Mesmos códigos do <select> de Estado civil em ClientsPage.tsx — manter em sync.
+const MARITAL_STATUS_LABELS: Record<string, string> = {
+  solteiro: 'Solteiro(a)',
+  casado: 'Casado(a)',
+  divorciado: 'Divorciado(a)',
+  viuvo: 'Viúvo(a)',
+  uniao_estavel: 'União Estável',
+}
+
 /** Placeholders resolvidos por mergeTemplateVariables(). Mantido em sync com o texto de ajuda do Textarea em DocumentsPage. */
 export const TEMPLATE_PLACEHOLDERS = [
   '[NOME_CLIENTE]', '[CPF_CNPJ]', '[ENDERECO]', '[CIDADE]', '[EMAIL]', '[TELEFONE]',
   '[AREA_DIREITO]', '[DATA]', '[NOME_ESCRITORIO]', '[NOME_ADVOGADO]', '[OAB]',
-  '[NUMERO_PROCESSO]',
+  '[NUMERO_PROCESSO]', '[NACIONALIDADE]', '[ESTADO_CIVIL]', '[PROFISSAO]', '[RG]',
 ] as const
 
 export function mergeTemplateVariables(content: string, ctx: TemplateMergeContext): string {
@@ -36,6 +45,10 @@ export function mergeTemplateVariables(content: string, ctx: TemplateMergeContex
     '[NOME_ESCRITORIO]': tenant?.name || '',
     '[NOME_ADVOGADO]': profile?.name || '',
     '[OAB]': profile?.oab_number || '',
+    '[NACIONALIDADE]': client.nationality || '',
+    '[ESTADO_CIVIL]': (client.marital_status && MARITAL_STATUS_LABELS[client.marital_status]) || '',
+    '[PROFISSAO]': client.profession || '',
+    '[RG]': client.rg || '',
   }
   // Diferente dos demais: sem processo vinculado ainda (ex. Procuração gerada no
   // cadastro do cliente, antes de existir processo), o placeholder fica visível de
