@@ -65,7 +65,7 @@ export function AiJuridicaPage() {
   const selectedProcesso = processos.find(p => p.id === selectedProcessoId) ?? null
 
   return (
-    <Layout title="IA Jurídica">
+    <Layout title="Excelência">
       <div className="space-y-4 animate-fade-in">
         {/* Header */}
         <Card className="p-5 bg-gradient-to-r from-indigo-700 via-violet-600 to-purple-600 border-0">
@@ -74,7 +74,7 @@ export function AiJuridicaPage() {
               <Sparkles className="text-white w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-white">IA Jurídica</h1>
+              <h1 className="text-lg font-bold text-white">Excelência</h1>
               <p className="text-sm text-white/75">
                 Análises, petições e peças processuais geradas com apoio de inteligência artificial.
               </p>

@@ -6,12 +6,16 @@ import { buildPeticaoInicialPrompt } from './prompts/peticaoInicial.ts'
 import { buildCumprimentoDespachoPrompt } from './prompts/cumprimentoDespacho.ts'
 import { buildImpugnacaoRecursoPrompt } from './prompts/impugnacaoRecurso.ts'
 import { buildParecerJuridicoPrompt } from './prompts/parecerJuridico.ts'
+import { validateAttachment, type AttachmentInput } from './attachmentValidation.ts'
 
 // ============================================================================
 // ai-gemini-assistant — Edge Function compartilhada da "IA Jurídica" (fase 1/4)
 //
 // Contrato:
-//   POST { tipo, processo_id?, input_context } -> { id, output_text, status }
+//   POST { tipo, processo_id?, input_context, attachment? } -> { id, output_text, status }
+//   attachment (opcional): { mime_type, data_base64, filename } — PDF/JPEG/PNG,
+//   até 15MB, revalidado no servidor (attachmentValidation.ts) e passado como
+//   inlineData extra pro Gemini. Nunca salvo em bucket/tabela — efêmero à chamada.
 //
 // Esta função só cuida de auth/tenant/persistência/chamada à API do Gemini.
 // A engenharia de prompt por `tipo` é responsabilidade da fase 2 — ver
@@ -101,12 +105,17 @@ function buildPrompt(tipo: Tipo, context: Record<string, unknown>): string {
   }
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+async function callGemini(prompt: string, apiKey: string, attachment?: { mimeType: string; data: string }): Promise<string> {
+  // Gemini aceita PDF/imagem nativamente via inlineData como uma part extra —
+  // nenhuma extração de texto no servidor, o modelo lê o arquivo direto.
+  const parts: Record<string, unknown>[] = [{ text: prompt }]
+  if (attachment) parts.push({ inlineData: { mimeType: attachment.mimeType, data: attachment.data } })
+
   const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents: [{ role: 'user', parts }],
       generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
     }),
   })
@@ -168,13 +177,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Payload ---
-    const body = await req.json().catch(() => null) as { tipo?: string; processo_id?: string; input_context?: Record<string, unknown> } | null
+    const body = await req.json().catch(() => null) as { tipo?: string; processo_id?: string; input_context?: Record<string, unknown>; attachment?: AttachmentInput } | null
     const tipo = body?.tipo
     if (!tipo || !TIPOS_VALIDOS.includes(tipo as Tipo)) {
       return new Response(JSON.stringify({ error: `tipo inválido. Valores aceitos: ${TIPOS_VALIDOS.join(', ')}` }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
     const processoId = body?.processo_id ?? null
     const inputContext = body?.input_context ?? {}
+
+    // Nunca confia na validação do cliente — tipo/tamanho revalidados aqui.
+    const attachmentError = validateAttachment(body?.attachment)
+    if (attachmentError) {
+      return new Response(JSON.stringify({ error: attachmentError }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+    const attachment = body?.attachment
+      ? { mimeType: body.attachment.mime_type!, data: body.attachment.data_base64! }
+      : undefined
 
     // Se um processo foi indicado, confirma que pertence ao tenant do chamador
     // antes de vincular (nunca confia no processo_id às cegas).
@@ -209,12 +227,12 @@ Deno.serve(async (req: Request) => {
     const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY')
     if (!GEMINI_KEY) {
       await supabaseAdmin.from('ai_generations').update({ status: 'error', error_message: 'GEMINI_API_KEY não configurada' }).eq('id', generation.id)
-      return new Response(JSON.stringify({ error: 'IA Jurídica ainda não configurada neste ambiente (GEMINI_API_KEY ausente)' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Excelência ainda não configurada neste ambiente (GEMINI_API_KEY ausente)' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     try {
       const prompt = buildPrompt(tipo as Tipo, inputContext)
-      const outputText = await callGemini(prompt, GEMINI_KEY)
+      const outputText = await callGemini(prompt, GEMINI_KEY, attachment)
 
       await supabaseAdmin.from('ai_generations').update({ status: 'completed', output_text: outputText }).eq('id', generation.id)
 

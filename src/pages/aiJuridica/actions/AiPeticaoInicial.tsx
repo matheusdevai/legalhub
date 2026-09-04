@@ -4,7 +4,8 @@ import { Button, Textarea, Input } from '@/components/ui'
 import { runAiGeneration } from '@/lib/aiJuridica'
 import { useAuth } from '@/contexts/AuthContext'
 import type { Process } from '@/types'
-import { AiErrorBox, AiResultOutput } from './aiSharedUi'
+import { AiAttachmentInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
+import type { AiAttachment } from './aiAttachment'
 
 interface Props {
   processo: Process | null
@@ -45,6 +46,7 @@ export function AiPeticaoInicial({ processo }: Props) {
     juizoComarca: processo?.court ?? '',
     tipoAcao: processo?.type ?? processo?.area ?? '',
   }))
+  const [attachment, setAttachment] = useState<AiAttachment | null>(null)
   const [output, setOutput] = useState('')
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
@@ -54,7 +56,7 @@ export function AiPeticaoInicial({ processo }: Props) {
     setForm(f => ({ ...f, [key]: value }))
   }
 
-  const podeGerar = form.fatos.trim().length > 0
+  const podeGerar = form.fatos.trim().length > 0 || !!attachment
 
   async function gerar() {
     setLoading(true)
@@ -80,6 +82,7 @@ export function AiPeticaoInicial({ processo }: Props) {
           advogado_nome: profile?.display_name || profile?.name || null,
           advogado_oab: profile?.oab_number ? `${profile.oab_number}${profile.oab_seccional ? `/${profile.oab_seccional}` : ''}` : null,
         },
+        attachment: attachment ?? undefined,
       })
       setOutput(result.output_text)
       setGeneratedAt(new Date())
@@ -149,12 +152,14 @@ export function AiPeticaoInicial({ processo }: Props) {
         </div>
       </fieldset>
 
+      <AiAttachmentInput value={attachment} onChange={setAttachment} disabled={loading} />
+
       <div className="flex items-center gap-3">
         <Button variant="primary" onClick={gerar} loading={loading} disabled={!podeGerar}>
           <Sparkles className="w-4 h-4" /> Gerar petição inicial
         </Button>
         {!podeGerar && !loading && (
-          <span className="text-xs text-slate-400">Preencha ao menos "Dos fatos" para gerar.</span>
+          <span className="text-xs text-slate-400">Preencha ao menos "Dos fatos" ou anexe um arquivo para gerar.</span>
         )}
       </div>
 

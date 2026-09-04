@@ -26,7 +26,7 @@ const navGroups = [
       { to: '/processos',   icon: Briefcase,  label: 'Processos' },
       { to: '/publicacoes', icon: Newspaper,  label: 'Intimações' },
       { to: '/documentos',  icon: FileText,   label: 'Documentos' },
-      { to: '/ia-juridica', icon: Sparkles,   label: 'IA Jurídica' },
+      { to: '/ia-juridica', icon: Sparkles,   label: 'Excelência' },
       { to: '/escritorio-digital', icon: FolderOpen, label: 'Escritório Digital' },
     ],
   },

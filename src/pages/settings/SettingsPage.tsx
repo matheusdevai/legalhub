@@ -707,7 +707,7 @@ export function SettingsPage() {
                               { icon: UsersIcon, label: 'Usuários',    used: usage.users,        limit: currentPlan?.max_users ?? null },
                               { icon: UsersIcon, label: 'Clientes',    used: usage.clients,      limit: currentPlan?.max_clients ?? null },
                               { icon: Briefcase, label: 'Processos',   used: usage.processes,    limit: currentPlan?.max_processes ?? null },
-                              { icon: Sparkles,  label: 'IA Jurídica (mês)', used: usage.aiGenerations, limit: currentPlan?.max_ai_generations_month ?? null },
+                              { icon: Sparkles,  label: 'Excelência (mês)', used: usage.aiGenerations, limit: currentPlan?.max_ai_generations_month ?? null },
                             ].map(item => {
                               const pct = item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0
                               return (
@@ -771,7 +771,7 @@ export function SettingsPage() {
                                 <li>{plan.max_clients ?? 'Clientes ilimitados'}{plan.max_clients ? ' clientes' : ''}</li>
                                 <li>{plan.max_processes ?? 'Processos ilimitados'}{plan.max_processes ? ' processos ativos' : ''}</li>
                                 <li>{formatGB(plan.max_storage_bytes)} de armazenamento</li>
-                                <li>IA Jurídica: {plan.max_ai_generations_month ?? 'ilimitada'}{plan.max_ai_generations_month ? '/mês' : ''}</li>
+                                <li>Excelência: {plan.max_ai_generations_month ?? 'ilimitada'}{plan.max_ai_generations_month ? '/mês' : ''}</li>
                               </ul>
                               {isBillingAdmin && (
                                 <Button
