@@ -3,7 +3,8 @@ import { Sparkles, Scale } from 'lucide-react'
 import { Button, Card, Input, Textarea } from '@/components/ui'
 import { runAiGeneration } from '@/lib/aiJuridica'
 import type { Process } from '@/types'
-import { AiErrorBox, AiResultOutput } from './aiSharedUi'
+import { AiAttachmentInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
+import type { AiAttachment } from './aiAttachment'
 
 interface Props {
   processo: Process | null
@@ -14,12 +15,13 @@ export function AiParecerJuridico({ processo }: Props) {
   const [questaoJuridica, setQuestaoJuridica] = useState('')
   const [fatosRelevantes, setFatosRelevantes] = useState('')
   const [posicaoDesejada, setPosicaoDesejada] = useState('')
+  const [attachment, setAttachment] = useState<AiAttachment | null>(null)
   const [output, setOutput] = useState('')
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const podeGerar = questaoJuridica.trim().length > 0
+  const podeGerar = questaoJuridica.trim().length > 0 || !!attachment
 
   async function gerar() {
     setLoading(true)
@@ -40,6 +42,7 @@ export function AiParecerJuridico({ processo }: Props) {
           tipo_acao: processo?.type ?? null,
           descricao: processo?.description ?? null,
         },
+        attachment: attachment ?? undefined,
       })
       setOutput(result.output_text)
       setGeneratedAt(new Date())
@@ -102,12 +105,14 @@ export function AiParecerJuridico({ processo }: Props) {
         />
       </fieldset>
 
+      <AiAttachmentInput value={attachment} onChange={setAttachment} disabled={loading} />
+
       <div className="flex items-center gap-3">
         <Button variant="primary" onClick={gerar} loading={loading} disabled={!podeGerar}>
           <Sparkles className="w-4 h-4" /> Gerar parecer
         </Button>
         {!podeGerar && !loading && (
-          <span className="text-xs text-slate-400">Descreva a questão jurídica para gerar.</span>
+          <span className="text-xs text-slate-400">Descreva a questão jurídica ou anexe um arquivo para gerar.</span>
         )}
       </div>
 

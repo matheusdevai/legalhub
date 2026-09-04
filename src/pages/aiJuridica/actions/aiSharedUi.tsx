@@ -1,9 +1,11 @@
-import { Copy, RefreshCw, AlertCircle } from 'lucide-react'
-import { Button, Textarea } from '@/components/ui'
+import { useState } from 'react'
+import { Copy, RefreshCw, AlertCircle, Paperclip, X } from 'lucide-react'
+import { Button, Textarea, Spinner } from '@/components/ui'
 import { toast } from '@/components/ui/Toast'
-import { formatDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
+import { fileToAiAttachment, validateAiAttachmentFile, type AiAttachment } from './aiAttachment'
 
-// UI compartilhada pelos 7 componentes de ação (loading/erro/resultado).
+// UI compartilhada pelos 7 componentes de ação (loading/erro/resultado/anexo).
 
 export function AiErrorBox({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
@@ -57,6 +59,67 @@ export function AiResultOutput({
       <p className="text-xs text-slate-400 dark:text-slate-500 italic">
         Conteúdo gerado por IA — revise antes de usar profissionalmente.
       </p>
+    </div>
+  )
+}
+
+export function AiAttachmentInput({
+  value, onChange, disabled,
+}: {
+  value: AiAttachment | null
+  onChange: (attachment: AiAttachment | null) => void
+  disabled?: boolean
+}) {
+  const [error, setError] = useState('')
+  const [reading, setReading] = useState(false)
+
+  async function handleFile(file: File | undefined) {
+    setError('')
+    if (!file) return
+    const validationError = validateAiAttachmentFile(file)
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+    setReading(true)
+    try {
+      onChange(await fileToAiAttachment(file))
+    } catch {
+      setError('Não foi possível ler o arquivo.')
+    } finally {
+      setReading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+        Anexar arquivo (opcional)
+      </label>
+      {value ? (
+        <div className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-dark-600 bg-slate-50 dark:bg-dark-700">
+          <Paperclip className="w-4 h-4 text-slate-400 flex-shrink-0" />
+          <span className="text-sm text-slate-600 dark:text-slate-300 truncate flex-1">{value.filename}</span>
+          <button type="button" onClick={() => onChange(null)} disabled={disabled}
+            className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 flex-shrink-0 disabled:opacity-50">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ) : (
+        <label className={cn(
+          'flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed transition-colors text-sm',
+          disabled || reading
+            ? 'border-slate-200 dark:border-dark-600 text-slate-400 cursor-not-allowed'
+            : 'border-slate-300 dark:border-dark-600 text-slate-500 dark:text-slate-400 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400 cursor-pointer'
+        )}>
+          {reading
+            ? <><Spinner className="w-3.5 h-3.5" /> Lendo arquivo…</>
+            : <><Paperclip className="w-3.5 h-3.5" /> Anexar PDF ou imagem (máx. 15MB)</>}
+          <input type="file" accept="application/pdf,image/jpeg,image/png" className="hidden" disabled={disabled || reading}
+            onChange={e => { const f = e.target.files?.[0]; handleFile(f); e.target.value = '' }} />
+        </label>
+      )}
+      {error && <p className="text-xs text-red-500">{error}</p>}
     </div>
   )
 }

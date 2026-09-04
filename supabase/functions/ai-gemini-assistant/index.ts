@@ -6,12 +6,16 @@ import { buildPeticaoInicialPrompt } from './prompts/peticaoInicial.ts'
 import { buildCumprimentoDespachoPrompt } from './prompts/cumprimentoDespacho.ts'
 import { buildImpugnacaoRecursoPrompt } from './prompts/impugnacaoRecurso.ts'
 import { buildParecerJuridicoPrompt } from './prompts/parecerJuridico.ts'
+import { validateAttachment, type AttachmentInput } from './attachmentValidation.ts'
 
 // ============================================================================
 // ai-gemini-assistant — Edge Function compartilhada da "IA Jurídica" (fase 1/4)
 //
 // Contrato:
-//   POST { tipo, processo_id?, input_context } -> { id, output_text, status }
+//   POST { tipo, processo_id?, input_context, attachment? } -> { id, output_text, status }
+//   attachment (opcional): { mime_type, data_base64, filename } — PDF/JPEG/PNG,
+//   até 15MB, revalidado no servidor (attachmentValidation.ts) e passado como
+//   inlineData extra pro Gemini. Nunca salvo em bucket/tabela — efêmero à chamada.
 //
 // Esta função só cuida de auth/tenant/persistência/chamada à API do Gemini.
 // A engenharia de prompt por `tipo` é responsabilidade da fase 2 — ver
@@ -36,8 +40,9 @@ const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
 // contra edge_function_rate_limits (só acessível via service role). Limite
 // mais próximo do de create-user do que do de ai-assistant: cada geração
 // aqui é uma chamada pesada (petição/parecer), não uma mensagem de chat.
+// Checagem atômica via RPC check_rate_limit() — ver checkRateLimit() abaixo.
 const RATE_LIMIT = 20
-const RATE_WINDOW_MS = 60 * 60 * 1000
+const RATE_WINDOW_SECONDS = 60 * 60
 
 const TIPOS_VALIDOS = [
   'analise_processo_administrativo',
@@ -51,17 +56,22 @@ const TIPOS_VALIDOS = [
 
 type Tipo = typeof TIPOS_VALIDOS[number]
 
+// Count + insert atômicos via RPC (função Postgres com pg_advisory_xact_lock
+// por rate_key) — um SELECT count() + INSERT separados aqui deixaria N
+// chamadas concorrentes lerem o mesmo count() antes de qualquer INSERT
+// comitar, passando todas juntas acima do limite (TOCTOU). Ver migration
+// 20260903120000_fix_edge_function_rate_limit_race.sql.
 async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
-  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-  const { count } = await supabaseAdmin
-    .from('edge_function_rate_limits')
-    .select('*', { count: 'exact', head: true })
-    .eq('rate_key', key)
-    .gte('created_at', windowStart)
-  if ((count ?? 0) >= RATE_LIMIT) return false
-  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
-  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
-  return true
+  const { data, error } = await supabaseAdmin.rpc('check_rate_limit', {
+    p_key: key,
+    p_limit: RATE_LIMIT,
+    p_window_seconds: RATE_WINDOW_SECONDS,
+  })
+  if (error) {
+    console.error('check_rate_limit RPC error:', error)
+    throw new Error('Erro ao verificar limite de uso')
+  }
+  return data === true
 }
 
 // ----------------------------------------------------------------------------
@@ -101,12 +111,17 @@ function buildPrompt(tipo: Tipo, context: Record<string, unknown>): string {
   }
 }
 
-async function callGemini(prompt: string, apiKey: string): Promise<string> {
+async function callGemini(prompt: string, apiKey: string, attachment?: { mimeType: string; data: string }): Promise<string> {
+  // Gemini aceita PDF/imagem nativamente via inlineData como uma part extra —
+  // nenhuma extração de texto no servidor, o modelo lê o arquivo direto.
+  const parts: Record<string, unknown>[] = [{ text: prompt }]
+  if (attachment) parts.push({ inlineData: { mimeType: attachment.mimeType, data: attachment.data } })
+
   const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents: [{ role: 'user', parts }],
       generationConfig: { maxOutputTokens: 4096, temperature: 0.4 },
     }),
   })
@@ -168,13 +183,22 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Payload ---
-    const body = await req.json().catch(() => null) as { tipo?: string; processo_id?: string; input_context?: Record<string, unknown> } | null
+    const body = await req.json().catch(() => null) as { tipo?: string; processo_id?: string; input_context?: Record<string, unknown>; attachment?: AttachmentInput } | null
     const tipo = body?.tipo
     if (!tipo || !TIPOS_VALIDOS.includes(tipo as Tipo)) {
       return new Response(JSON.stringify({ error: `tipo inválido. Valores aceitos: ${TIPOS_VALIDOS.join(', ')}` }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
     const processoId = body?.processo_id ?? null
     const inputContext = body?.input_context ?? {}
+
+    // Nunca confia na validação do cliente — tipo/tamanho revalidados aqui.
+    const attachmentError = validateAttachment(body?.attachment)
+    if (attachmentError) {
+      return new Response(JSON.stringify({ error: attachmentError }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
+    const attachment = body?.attachment
+      ? { mimeType: body.attachment.mime_type!, data: body.attachment.data_base64! }
+      : undefined
 
     // Se um processo foi indicado, confirma que pertence ao tenant do chamador
     // antes de vincular (nunca confia no processo_id às cegas).
@@ -209,12 +233,12 @@ Deno.serve(async (req: Request) => {
     const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY')
     if (!GEMINI_KEY) {
       await supabaseAdmin.from('ai_generations').update({ status: 'error', error_message: 'GEMINI_API_KEY não configurada' }).eq('id', generation.id)
-      return new Response(JSON.stringify({ error: 'IA Jurídica ainda não configurada neste ambiente (GEMINI_API_KEY ausente)' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
+      return new Response(JSON.stringify({ error: 'Excelência ainda não configurada neste ambiente (GEMINI_API_KEY ausente)' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
 
     try {
       const prompt = buildPrompt(tipo as Tipo, inputContext)
-      const outputText = await callGemini(prompt, GEMINI_KEY)
+      const outputText = await callGemini(prompt, GEMINI_KEY, attachment)
 
       await supabaseAdmin.from('ai_generations').update({ status: 'completed', output_text: outputText }).eq('id', generation.id)
 
