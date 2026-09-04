@@ -541,7 +541,7 @@ export function DocumentsPage() {
             </p>
           )}
           <Textarea label="Conteúdo" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={10}
-            placeholder="Insira o conteúdo. Use [NOME_CLIENTE], [CPF_CNPJ], [ENDERECO], [CIDADE], [EMAIL], [TELEFONE], [AREA_DIREITO], [NOME_ESCRITORIO], [NOME_ADVOGADO], [OAB], [NUMERO_PROCESSO], [DATA] como variáveis..." />
+            placeholder="Insira o conteúdo. Use [NOME_CLIENTE], [CPF_CNPJ], [ENDERECO], [CIDADE], [EMAIL], [TELEFONE], [AREA_DIREITO], [NACIONALIDADE], [ESTADO_CIVIL], [PROFISSAO], [RG], [NOME_ESCRITORIO], [NOME_ADVOGADO], [OAB], [NUMERO_PROCESSO], [DATA] como variáveis..." />
           {!editingLibrary && (
             <Input label="Tags (separadas por vírgula)" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="cível, contrato, honorários" />
           )}
