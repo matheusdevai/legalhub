@@ -40,8 +40,9 @@ const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
 // contra edge_function_rate_limits (só acessível via service role). Limite
 // mais próximo do de create-user do que do de ai-assistant: cada geração
 // aqui é uma chamada pesada (petição/parecer), não uma mensagem de chat.
+// Checagem atômica via RPC check_rate_limit() — ver checkRateLimit() abaixo.
 const RATE_LIMIT = 20
-const RATE_WINDOW_MS = 60 * 60 * 1000
+const RATE_WINDOW_SECONDS = 60 * 60
 
 const TIPOS_VALIDOS = [
   'analise_processo_administrativo',
@@ -55,17 +56,22 @@ const TIPOS_VALIDOS = [
 
 type Tipo = typeof TIPOS_VALIDOS[number]
 
+// Count + insert atômicos via RPC (função Postgres com pg_advisory_xact_lock
+// por rate_key) — um SELECT count() + INSERT separados aqui deixaria N
+// chamadas concorrentes lerem o mesmo count() antes de qualquer INSERT
+// comitar, passando todas juntas acima do limite (TOCTOU). Ver migration
+// 20260903120000_fix_edge_function_rate_limit_race.sql.
 async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
-  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-  const { count } = await supabaseAdmin
-    .from('edge_function_rate_limits')
-    .select('*', { count: 'exact', head: true })
-    .eq('rate_key', key)
-    .gte('created_at', windowStart)
-  if ((count ?? 0) >= RATE_LIMIT) return false
-  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
-  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
-  return true
+  const { data, error } = await supabaseAdmin.rpc('check_rate_limit', {
+    p_key: key,
+    p_limit: RATE_LIMIT,
+    p_window_seconds: RATE_WINDOW_SECONDS,
+  })
+  if (error) {
+    console.error('check_rate_limit RPC error:', error)
+    throw new Error('Erro ao verificar limite de uso')
+  }
+  return data === true
 }
 
 // ----------------------------------------------------------------------------

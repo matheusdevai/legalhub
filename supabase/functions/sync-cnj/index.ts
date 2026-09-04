@@ -11,24 +11,29 @@ const CORS = {
 }
 
 // Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
-// janela de RATE_WINDOW_MS, contra a tabela edge_function_rate_limits (só
+// janela de RATE_WINDOW_SECONDS, contra a tabela edge_function_rate_limits (só
 // acessível via service role). A CNJ_API_KEY é compartilhada por todo o
 // projeto, então chamadas repetidas de uma conta comprometida podem estourar
 // a cota/gerar custo indevido contra a API pública do CNJ para todos os tenants.
 const RATE_LIMIT = 10
-const RATE_WINDOW_MS = 60 * 60 * 1000
+const RATE_WINDOW_SECONDS = 60 * 60
 
+// Count + insert atômicos via RPC (função Postgres com pg_advisory_xact_lock
+// por rate_key) — um SELECT count() + INSERT separados aqui deixaria N
+// chamadas concorrentes lerem o mesmo count() antes de qualquer INSERT
+// comitar, passando todas juntas acima do limite (TOCTOU). Ver migration
+// 20260903120000_fix_edge_function_rate_limit_race.sql.
 async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
-  const windowStart = new Date(Date.now() - RATE_WINDOW_MS).toISOString()
-  const { count } = await supabaseAdmin
-    .from('edge_function_rate_limits')
-    .select('*', { count: 'exact', head: true })
-    .eq('rate_key', key)
-    .gte('created_at', windowStart)
-  if ((count ?? 0) >= RATE_LIMIT) return false
-  await supabaseAdmin.from('edge_function_rate_limits').insert({ rate_key: key })
-  await supabaseAdmin.from('edge_function_rate_limits').delete().lt('created_at', new Date(Date.now() - 24 * RATE_WINDOW_MS).toISOString())
-  return true
+  const { data, error } = await supabaseAdmin.rpc('check_rate_limit', {
+    p_key: key,
+    p_limit: RATE_LIMIT,
+    p_window_seconds: RATE_WINDOW_SECONDS,
+  })
+  if (error) {
+    console.error('check_rate_limit RPC error:', error)
+    throw new Error('Erro ao verificar limite de uso')
+  }
+  return data === true
 }
 
 function oabVariants(num: string): string[] {
