@@ -43,6 +43,16 @@ const TRFS_CNJ = [
 
 type Step = 'config' | 'syncing' | 'result'
 
+interface SyncFnResult {
+  total: number
+  imported: number
+  updated: number
+  errors?: string[]
+  oab?: string
+  first_sync_note?: string | null
+  error?: string
+}
+
 interface SyncResult {
   total: number
   imported: number
@@ -109,23 +119,23 @@ export function OabSyncModal({ onDone }: Props) {
     setPjeSenha('') // não retém a senha do PJe em memória após o disparo
 
     const [jbSettled, escSettled, cnjSettled, pjeSettled] = await Promise.allSettled([
-      supabase.functions.invoke('sync-jusbrasil', { body }).catch((e: any) => ({
-        data: { error: e?.message || 'Erro JusBrasil', total: 0, imported: 0, updated: 0, errors: [] },
+      supabase.functions.invoke<SyncFnResult>('sync-jusbrasil', { body }).catch((e: unknown) => ({
+        data: { error: e instanceof Error ? e.message : 'Erro JusBrasil', total: 0, imported: 0, updated: 0, errors: [] } as SyncFnResult,
         error: null,
       })),
-      supabase.functions.invoke('sync-escavador', { body }).catch((e: any) => ({
-        data: { error: e?.message || 'Erro Escavador', total: 0, imported: 0, updated: 0, errors: [] },
+      supabase.functions.invoke<SyncFnResult>('sync-escavador', { body }).catch((e: unknown) => ({
+        data: { error: e instanceof Error ? e.message : 'Erro Escavador', total: 0, imported: 0, updated: 0, errors: [] } as SyncFnResult,
         error: null,
       })),
       tribunais.length > 0
-        ? supabase.functions.invoke('sync-cnj', { body: cnjBody }).catch((e: any) => ({
-            data: { error: e?.message || 'Erro CNJ', total: 0, imported: 0, updated: 0, errors: [] },
+        ? supabase.functions.invoke<SyncFnResult>('sync-cnj', { body: cnjBody }).catch((e: unknown) => ({
+            data: { error: e instanceof Error ? e.message : 'Erro CNJ', total: 0, imported: 0, updated: 0, errors: [] } as SyncFnResult,
             error: null,
           }))
         : Promise.resolve({ data: null, error: null }),
       usePje
-        ? supabase.functions.invoke('sync-pje', { body: pjeBody }).catch((e: any) => ({
-            data: { error: e?.message || 'Erro PJe', total: 0, imported: 0, updated: 0, errors: [] },
+        ? supabase.functions.invoke<SyncFnResult>('sync-pje', { body: pjeBody }).catch((e: unknown) => ({
+            data: { error: e instanceof Error ? e.message : 'Erro PJe', total: 0, imported: 0, updated: 0, errors: [] } as SyncFnResult,
             error: null,
           }))
         : Promise.resolve({ data: null, error: null }),
@@ -133,9 +143,9 @@ export function OabSyncModal({ onDone }: Props) {
 
     const allErrors: string[] = []
 
-    let jbData: any = null
+    let jbData: SyncFnResult | null = null
     if (jbSettled.status === 'fulfilled') {
-      const d = (jbSettled.value as any)?.data
+      const d = jbSettled.value?.data
       if (d?.error) allErrors.push(`JusBrasil: ${d.error}`)
       else if (d) {
         jbData = d
@@ -143,9 +153,9 @@ export function OabSyncModal({ onDone }: Props) {
       }
     }
 
-    let escData: any = null
+    let escData: SyncFnResult | null = null
     if (escSettled.status === 'fulfilled') {
-      const d = (escSettled.value as any)?.data
+      const d = escSettled.value?.data
       if (d?.error) allErrors.push(`Escavador: ${d.error}`)
       else if (d) {
         escData = d
@@ -153,9 +163,9 @@ export function OabSyncModal({ onDone }: Props) {
       }
     }
 
-    let cnjData: any = null
+    let cnjData: SyncFnResult | null = null
     if (cnjSettled.status === 'fulfilled') {
-      const d = (cnjSettled.value as any)?.data
+      const d = cnjSettled.value?.data
       if (d?.error) allErrors.push(`CNJ: ${d.error}`)
       else if (d) {
         cnjData = d
@@ -163,9 +173,9 @@ export function OabSyncModal({ onDone }: Props) {
       }
     }
 
-    let pjeData: any = null
+    let pjeData: SyncFnResult | null = null
     if (pjeSettled.status === 'fulfilled') {
-      const d = (pjeSettled.value as any)?.data
+      const d = pjeSettled.value?.data
       if (d?.error) allErrors.push(`PJe: ${d.error}`)
       else if (d) {
         pjeData = d

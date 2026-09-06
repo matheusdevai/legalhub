@@ -44,7 +44,7 @@ const EMPTY_EXPENSE: ExpenseForm = {
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 const MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
-const CATEGORY_META: Record<ExpenseCategory, { label: string; icon: any; badge: string; bar: string }> = {
+const CATEGORY_META: Record<ExpenseCategory, { label: string; icon: React.ElementType; badge: string; bar: string }> = {
   process:       { label: 'Processual',  icon: Scale,   badge: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300', bar: 'bg-purple-500' },
   travel:        { label: 'Viagem',      icon: Plane,   badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',       bar: 'bg-blue-500' },
   food:          { label: 'Alimentação', icon: Coffee,  badge: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300', bar: 'bg-orange-500' },
@@ -65,6 +65,11 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 type SecondaryTab = 'comissoes' | 'expenses' | 'anual'
+
+/** Só os campos de fato buscados pelo select() de `load()` (não o Client completo) */
+type FinancialsClientSummary = Pick<Client, 'id' | 'name' | 'phone' | 'colaborador_id' | 'colaborador_pago' | 'colaborador_pago_data' | 'colaborador_pago_valor' | 'total_billed'>
+/** Só os campos de fato buscados pelo select() de `load()` (não o Process completo) */
+type FinancialsProcessSummary = Pick<Process, 'id' | 'number' | 'title'>
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function FinancialsPage() {
@@ -88,8 +93,8 @@ export function FinancialsPage() {
   const [financials, setFinancials] = useState<Financial[]>([])
   const [recurringTemplates, setRecurringTemplates] = useState<Financial[]>([])
   const [recurringModalOpen, setRecurringModalOpen] = useState(false)
-  const [clients, setClients] = useState<Client[]>([])
-  const [processes, setProcesses] = useState<Process[]>([])
+  const [clients, setClients] = useState<FinancialsClientSummary[]>([])
+  const [processes, setProcesses] = useState<FinancialsProcessSummary[]>([])
   const [expenses, setExpenses] = useState<UserExpense[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [accounts, setAccounts] = useState<FinancialAccount[]>([])
@@ -162,18 +167,18 @@ export function FinancialsPage() {
   // ── Load ────────────────────────────────────────────────────────────────────
   async function load() {
     setLoading(true)
-    const promises: any[] = [
+    const basePromises = [
       supabase.from('financials').select('*').is('deleted_at', null).order('due_date', { ascending: false }),
       supabase.from('clients').select('id,name,phone,colaborador_id,colaborador_pago,colaborador_pago_data,colaborador_pago_valor,total_billed').is('deleted_at', null).order('name'),
       supabase.from('processes').select('id,number,title').is('deleted_at', null).order('number'),
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('financial_accounts').select('*').order('created_at'),
-    ]
-    if (effectiveUserId) {
-      promises.push(supabase.from('user_expenses').select('*').eq('user_id', effectiveUserId).is('deleted_at', null).order('expense_date', { ascending: false }))
-      promises.push(supabase.from('expense_budgets').select('*').eq('user_id', effectiveUserId))
-    }
-    const results = await Promise.all(promises)
+    ] as const
+    const extraPromises = effectiveUserId ? [
+      supabase.from('user_expenses').select('*').eq('user_id', effectiveUserId).is('deleted_at', null).order('expense_date', { ascending: false }),
+      supabase.from('expense_budgets').select('*').eq('user_id', effectiveUserId),
+    ] as const : []
+    const results = await Promise.all([...basePromises, ...extraPromises])
     // O "template" recorrente (recurring = true) continua na lista principal — seu
     // due_date é sempre a próxima cobrança/recebimento real (avançado automaticamente
     // pelo cron diário), então até ele virar uma ocorrência concreta ele PRECISA
@@ -215,8 +220,9 @@ export function FinancialsPage() {
 
   const location = useLocation()
   useEffect(() => {
-    if ((location.state as any)?.openNew) { openNew(); window.history.replaceState({}, '') }
-    if ((location.state as any)?.prefillSearch) { setLancSearch((location.state as any).prefillSearch); window.history.replaceState({}, '') }
+    const state = location.state as { openNew?: boolean; prefillSearch?: string } | null
+    if (state?.openNew) { openNew(); window.history.replaceState({}, '') }
+    if (state?.prefillSearch) { setLancSearch(state.prefillSearch); window.history.replaceState({}, '') }
   }, [location.state])
 
   // ── Computed values ─────────────────────────────────────────────────────────
@@ -438,7 +444,7 @@ export function FinancialsPage() {
   const clientsWithCol = clients.filter(c => c.colaborador_id)
   const paidCols = clientsWithCol.filter(c => c.colaborador_pago)
   const pendingCols = clientsWithCol.filter(c => !c.colaborador_pago)
-  const totalPagoCol = paidCols.reduce((s, c) => s + ((c as any).colaborador_pago_valor ?? 0), 0)
+  const totalPagoCol = paidCols.reduce((s, c) => s + (c.colaborador_pago_valor ?? 0), 0)
   const filteredComissoes = paidCols.filter(c => {
     const col = colaboradores.find(x => x.id === c.colaborador_id)
     const q = comissaoSearch.toLowerCase()
@@ -590,8 +596,8 @@ export function FinancialsPage() {
       if (uploadErr) throw uploadErr
       const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path)
       setExpenseForm(f => ({ ...f, receipt_url: publicUrl }))
-    } catch (err: any) {
-      setReceiptError(err.message || 'Erro ao enviar comprovante')
+    } catch (err: unknown) {
+      setReceiptError(err instanceof Error ? err.message : 'Erro ao enviar comprovante')
     } finally {
       setUploadingReceipt(false)
     }
@@ -600,7 +606,7 @@ export function FinancialsPage() {
     if (!expenseForm.description.trim() || !expenseForm.amount || !currentUserId) return
     setSavingExpense(true)
     const selectedProcess = processes.find(p => p.id === expenseForm.process_id)
-    const payload: any = {
+    const payload: Omit<UserExpense, 'id' | 'tenant_id' | 'created_at' | 'deleted_at'> = {
       user_id: currentUserId, category: expenseForm.category, description: expenseForm.description,
       amount: parseFloat(expenseForm.amount), expense_date: expenseForm.expense_date,
       process_id: expenseForm.process_id || null, process_number: selectedProcess?.number || null,
@@ -825,7 +831,7 @@ export function FinancialsPage() {
             { id: 'comissoes', label: 'Comissões', icon: Users },
             { id: 'expenses', label: 'Minhas Despesas', icon: Wallet },
             { id: 'anual', label: 'Relatório Anual', icon: TrendingUp },
-          ] as { id: SecondaryTab | null; label: string; icon: any }[]).map(t => {
+          ] as { id: SecondaryTab | null; label: string; icon: React.ElementType }[]).map(t => {
             const Icon = t.icon
             const active = secondaryTab === t.id
             return (
@@ -1406,7 +1412,7 @@ export function FinancialsPage() {
                           <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{c.name as string}</td>
                           <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{col?.nome || '—'}</td>
                           <td className="px-4 py-3 text-primary-600 dark:text-primary-400 font-semibold">{col?.comissao_percent != null ? `${col.comissao_percent}%` : '—'}</td>
-                          <td className="px-4 py-3 font-bold text-green-600 dark:text-green-400">{(c as any).colaborador_pago_valor != null ? formatCurrency((c as any).colaborador_pago_valor) : '—'}</td>
+                          <td className="px-4 py-3 font-bold text-green-600 dark:text-green-400">{c.colaborador_pago_valor != null ? formatCurrency(c.colaborador_pago_valor) : '—'}</td>
                           <td className="px-4 py-3">
                             <span className={cn('inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
                               c.colaborador_pago ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
@@ -1416,7 +1422,7 @@ export function FinancialsPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                            {c.colaborador_pago && (c as any).colaborador_pago_data ? formatDate((c as any).colaborador_pago_data) : '—'}
+                            {c.colaborador_pago && c.colaborador_pago_data ? formatDate(c.colaborador_pago_data) : '—'}
                           </td>
                         </tr>
                       )
@@ -1744,7 +1750,7 @@ export function FinancialsPage() {
         onSave={save}
         initial={drawerInitial}
         editId={editId}
-        clients={clients.map(c => ({ id: c.id, name: (c as any).name }))}
+        clients={clients.map(c => ({ id: c.id, name: c.name }))}
         processes={processes.map(p => ({ id: p.id, number: p.number, title: p.title }))}
         accounts={accounts.map(a => ({ id: a.id, name: a.name }))}
         saving={saving}

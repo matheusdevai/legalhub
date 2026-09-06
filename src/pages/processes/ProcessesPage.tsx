@@ -11,6 +11,7 @@ import {
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Modal, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
+import type { PostgrestError } from '@supabase/supabase-js'
 import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, Tenant } from '@/types'
 import { formatDate, formatCurrency, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -68,6 +69,16 @@ type ProcessForm = {
   percentual_honorarios: string; contingenciamento: string;
 }
 
+type ProcessPayload = Omit<ProcessForm, 'client_id' | 'colaborador_id' | 'data_protocolo' | 'data_requerimento' | 'next_deadline' | 'next_hearing' | 'modalidade'> & {
+  client_id?: string
+  colaborador_id: string | null
+  data_protocolo: string | null
+  data_requerimento: string | null
+  next_deadline: string | null
+  next_hearing: string | null
+  modalidade: string | null
+}
+
 const EMPTY_FORM: ProcessForm = {
   number: '', title: '', client_id: '', client_name: '', area: '', type: '',
   status: 'active', priority: 'medium', assigned_lawyer: '',
@@ -96,6 +107,13 @@ const FASES = ['NEGOCIAÇÃO', 'CONHECIMENTO', 'RECURSAL', 'EXECUÇÃO', 'ENCERR
 const CONTINGENCIAMENTOS = ['Remoto', 'Possível', 'Provável', 'Quase certo']
 
 type ViewMode = 'table' | 'byColaborador'
+
+type ProcessesLocationState = {
+  openNew?: boolean
+  prefillSearch?: string
+  prefillColaborador?: string
+  openProcessId?: string
+}
 
 const PAGE_SIZE = 15
 
@@ -163,7 +181,7 @@ export function ProcessesPage() {
 
     const DEFAULT_AREAS = ['Previdenciário', 'Cível', 'Consumidor', 'Trabalhista', 'Tributário', 'Criminal']
     const dbAreas = Array.from(new Set(
-      (p || []).map((proc: any) => proc.area).filter(Boolean)
+      (p || []).map((proc: Process) => proc.area).filter(Boolean)
     )) as string[]
     const allAreas = Array.from(new Set([...DEFAULT_AREAS, ...dbAreas])).sort()
     setAreaOptions(allAreas)
@@ -182,7 +200,7 @@ export function ProcessesPage() {
 
   const location = useLocation()
   useEffect(() => {
-    const state = location.state as { openNew?: boolean; prefillSearch?: string; prefillColaborador?: string } | null
+    const state = location.state as ProcessesLocationState | null
     if (state?.openNew) { openNew(); window.history.replaceState({}, '') }
     else if (state?.prefillSearch) { setSearch(state.prefillSearch); window.history.replaceState({}, '') }
     else if (state?.prefillColaborador) {
@@ -192,7 +210,7 @@ export function ProcessesPage() {
     }
   }, [location.state])
   useEffect(() => {
-    const openProcessId = (location.state as any)?.openProcessId
+    const openProcessId = (location.state as ProcessesLocationState | null)?.openProcessId
     if (openProcessId && processes.length) {
       const p = processes.find(pr => pr.id === openProcessId)
       if (p) setViewProcess(p)
@@ -300,7 +318,7 @@ export function ProcessesPage() {
   }
 
   // ─── Seleção em massa ────────────────────────────────────────────────────────
-  function toggleSelect(id: string, e: React.MouseEvent) {
+  function toggleSelect(id: string, e: React.SyntheticEvent) {
     e.stopPropagation()
     setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
@@ -351,7 +369,7 @@ export function ProcessesPage() {
     setForm({
       number: p.number, title: p.title, client_id: p.client_id || '',
       client_name: p.client_name || '', area: p.area || '', type: p.type || '',
-      status: (p.status as any) || 'active', priority: (p.priority as any) || 'medium',
+      status: p.status || 'active', priority: p.priority || 'medium',
       assigned_lawyer: p.assigned_lawyer || '', court: p.court || '',
       judge: p.judge || '', counterparty: p.counterparty || '',
       description: p.description || '', modalidade: p.modalidade || '',
@@ -373,7 +391,7 @@ export function ProcessesPage() {
     const derivedTitle = form.title.trim() || form.type || selectedClient?.name || 'Sem título'
     if (!form.client_id && !form.client_name.trim()) return
     setSaving(true)
-    const payload: any = {
+    const payload: ProcessPayload = {
       ...form,
       title: derivedTitle,
       area: form.area || form.grupo_acao || '',
@@ -386,7 +404,7 @@ export function ProcessesPage() {
       modalidade: form.modalidade || null,
     }
     if (!payload.client_id) delete payload.client_id
-    let error: any = null
+    let error: PostgrestError | null = null
     let processId = editId
     if (editId) {
       const previous = processes.find(p => p.id === editId)
@@ -449,10 +467,10 @@ export function ProcessesPage() {
         { text: p.numero_protocolo || '—', mono: true },
         { text: p.title },
         { text: p.client_name || '—' },
-        { text: p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—', badge: (p.modalidade === 'judicial' ? 'purple' : 'cyan') as any },
+        { text: p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—', badge: p.modalidade === 'judicial' ? 'purple' : 'cyan' },
         { text: p.area || '—' },
         { text: p.court || '—' },
-        { text: PROCESS_STATUS_LABELS[p.status || 'active'], badge: (p.status === 'active' ? 'green' : p.status === 'won' ? 'blue' : p.status === 'lost' ? 'red' : p.status === 'archived' ? 'gray' : 'amber') as any },
+        { text: PROCESS_STATUS_LABELS[p.status || 'active'], badge: p.status === 'active' ? 'green' : p.status === 'won' ? 'blue' : p.status === 'lost' ? 'red' : p.status === 'archived' ? 'gray' : 'amber' },
         { text: formatDate(p.next_deadline) },
       ]
     }
@@ -1026,7 +1044,7 @@ export function ProcessesPage() {
                       >
                         <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                           <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                            checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e as any)} />
+                            checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e)} />
                         </td>
                         <td className="px-4 py-3">
                           <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
@@ -1174,7 +1192,7 @@ export function ProcessesPage() {
                                 >
                                   <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
                                     <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                                      checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e as any)} />
+                                      checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e)} />
                                   </td>
                                   <td className="px-4 py-3 pl-12">
                                     <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
@@ -1811,8 +1829,8 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       if (insertErr) throw insertErr
       const { data } = await supabase.from('documents').select('id,title,type,file_url,file_name,file_size,created_at').eq('process_id', p.id).is('deleted_at', null).order('created_at', { ascending: false })
       setTabDocuments((data || []) as DocItem[])
-    } catch (err: any) {
-      toast(`Erro ao anexar documento: ${err.message || 'tente novamente'}`, 'error')
+    } catch (err: unknown) {
+      toast(`Erro ao anexar documento: ${err instanceof Error ? err.message : 'tente novamente'}`, 'error')
     }
     finally {
       setUploading(false)
@@ -1852,8 +1870,8 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       next_deadline: newDeadline,
       next_hearing: form.next_hearing || null,
       colaborador_id: form.colaborador_id || null,
-      status: form.status as any,
-      modalidade: (form.modalidade || null) as any,
+      status: form.status as Process['status'],
+      modalidade: (form.modalidade || null) as Process['modalidade'],
     }).eq('id', p.id), 'Erro ao salvar processo')
     if (error) { setSaving(false); return }
     await syncProcessCalendarEvents({

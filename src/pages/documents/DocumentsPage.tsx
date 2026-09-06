@@ -29,6 +29,7 @@ interface Document {
   file_mime?: string
   area_direito?: string | null
   auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | 'peticao_inicial' | null
+  is_library_public?: false
 }
 
 // Mesma lista base usada em ClientsPage (área do direito do cliente) — mantém as sugestões alinhadas
@@ -56,6 +57,20 @@ interface LibraryTemplate {
   category: string | null
   content: string
   is_library_public: true
+  area_direito?: string | null
+  auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | 'peticao_inicial' | null
+  file_url?: string
+  file_name?: string
+  file_size?: number
+  file_mime?: string
+}
+
+interface LibraryTemplateRow {
+  id: string
+  title: string
+  type: string
+  category: string | null
+  content: string
   area_direito?: string | null
   auto_doc_kind?: 'procuracao' | 'contrato_honorarios' | 'peticao_inicial' | null
 }
@@ -126,7 +141,7 @@ export function DocumentsPage() {
   const [filterOpen, setFilterOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'escritorio' | 'publica'>('escritorio')
   const [modalOpen, setModalOpen] = useState(false)
-  const [previewDoc, setPreviewDoc] = useState<any | null>(null)
+  const [previewDoc, setPreviewDoc] = useState<Document | LibraryTemplate | null>(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
   const [editId, setEditId] = useState<string | null>(null)
@@ -146,7 +161,7 @@ export function DocumentsPage() {
       supabase.from('document_library_templates').select('*').is('deleted_at', null).order('title'),
     ])
     setDocuments((data || []) as Document[])
-    setLibraryTemplates((libData || []).map((t: any) => ({ ...t, is_library_public: true as const })))
+    setLibraryTemplates(((libData || []) as LibraryTemplateRow[]).map(t => ({ ...t, is_library_public: true as const })))
     setLoading(false)
   }
 
@@ -252,8 +267,8 @@ export function DocumentsPage() {
       setUploadFile(null)
       setUploadForm({ title: '', category: '', tags: '', area_direito: '', auto_doc_kind: '' })
       load()
-    } catch (err: any) {
-      setUploadError(err.message || 'Erro ao fazer upload')
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Erro ao fazer upload')
     } finally {
       setUploading(false)
     }
@@ -281,7 +296,7 @@ export function DocumentsPage() {
 
   const filterLabel = FILTER_OPTIONS.find(f => f.id === typeFilter)?.label || 'Todos os modelos'
 
-  const displayDocs = activeTab === 'escritorio'
+  const displayDocs: (Document | LibraryTemplate)[] = activeTab === 'escritorio'
     ? documents.filter(d => {
         const matchSearch = !search || d.title.toLowerCase().includes(search.toLowerCase())
         const matchType = !typeFilter || d.type === typeFilter
@@ -418,13 +433,13 @@ export function DocumentsPage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-5">
                 {displayDocs.map((doc, idx) => (
-                  <div key={(doc as any).id || idx} className="group flex flex-col">
+                  <div key={doc.id || idx} className="group flex flex-col">
                     {/* Thumbnail card */}
                     <div className="relative rounded-xl overflow-hidden border border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-700 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-lg transition-all cursor-pointer p-2"
                       onClick={() => setPreviewDoc(doc)}>
-                      {(doc as Document).file_url
-                        ? <FileThumbnail mime={(doc as Document).file_mime} name={(doc as Document).file_name} />
-                        : <DocThumbnail content={(doc as any).content || ''} title={doc.title} />}
+                      {doc.file_url
+                        ? <FileThumbnail mime={doc.file_mime} name={doc.file_name} />
+                        : <DocThumbnail content={doc.content || ''} title={doc.title} />}
 
                       {/* Hover overlay */}
                       <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -433,9 +448,9 @@ export function DocumentsPage() {
                           className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Visualizar">
                           <Eye className="w-4 h-4" />
                         </button>
-                        {!(doc as any).is_library_public && (doc as Document).file_url && (
+                        {!doc.is_library_public && doc.file_url && (
                           <a
-                            href={(doc as Document).file_url}
+                            href={doc.file_url}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={e => e.stopPropagation()}
@@ -443,37 +458,37 @@ export function DocumentsPage() {
                             <Download className="w-4 h-4" />
                           </a>
                         )}
-                        {!(doc as any).is_library_public && !(doc as Document).file_url && (
+                        {!doc.is_library_public && !doc.file_url && (
                           <button
                             onClick={e => { e.stopPropagation(); openEdit(doc as Document) }}
                             className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Editar">
                             <Edit3 className="w-4 h-4" />
                           </button>
                         )}
-                        {!(doc as any).is_library_public && (
+                        {!doc.is_library_public && (
                           <button
-                            onClick={e => { e.stopPropagation(); deleteDoc((doc as any).id) }}
+                            onClick={e => { e.stopPropagation(); deleteDoc(doc.id) }}
                             className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors" title="Excluir">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         )}
-                        {(doc as any).is_library_public && (
+                        {doc.is_library_public && (
                           <button
-                            onClick={e => { e.stopPropagation(); openNew({ title: doc.title, type: (doc as any).type, category: (doc as any).category, content: (doc as any).content, area_direito: (doc as any).area_direito || '', auto_doc_kind: (doc as any).auto_doc_kind || '' }) }}
+                            onClick={e => { e.stopPropagation(); openNew({ title: doc.title, type: doc.type, category: doc.category || '', content: doc.content, area_direito: doc.area_direito || '', auto_doc_kind: doc.auto_doc_kind || '' }) }}
                             className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Usar modelo">
                             <Copy className="w-4 h-4" />
                           </button>
                         )}
-                        {(doc as any).is_library_public && isSuperAdmin && (
+                        {doc.is_library_public && isSuperAdmin && (
                           <button
                             onClick={e => { e.stopPropagation(); openEditLibraryTemplate(doc as LibraryTemplate) }}
                             className="p-2 bg-white/90 rounded-lg text-gray-700 hover:bg-white transition-colors" title="Editar (admin)">
                             <Edit3 className="w-4 h-4" />
                           </button>
                         )}
-                        {(doc as any).is_library_public && isSuperAdmin && (
+                        {doc.is_library_public && isSuperAdmin && (
                           <button
-                            onClick={e => { e.stopPropagation(); deleteLibraryTemplate((doc as any).id) }}
+                            onClick={e => { e.stopPropagation(); deleteLibraryTemplate(doc.id) }}
                             className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors" title="Excluir (admin)">
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -483,13 +498,13 @@ export function DocumentsPage() {
 
                     {/* Title below card */}
                     <p className="mt-2 text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight line-clamp-2 text-center">{doc.title}</p>
-                    {(doc as any).category && (
-                      <p className="text-[10px] text-gray-400 text-center mt-0.5">{(doc as any).category}</p>
+                    {doc.category && (
+                      <p className="text-[10px] text-gray-400 text-center mt-0.5">{doc.category}</p>
                     )}
-                    {(doc as any).auto_doc_kind && (
+                    {doc.auto_doc_kind && (
                       <p className="text-[10px] text-center mt-0.5">
                         <span className="px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-400 font-semibold">
-                          Auto · {AUTO_DOC_KIND_LABELS[(doc as any).auto_doc_kind]}{(doc as any).area_direito ? ` · ${(doc as any).area_direito}` : ''}
+                          Auto · {AUTO_DOC_KIND_LABELS[doc.auto_doc_kind]}{doc.area_direito ? ` · ${doc.area_direito}` : ''}
                         </span>
                       </p>
                     )}
@@ -604,24 +619,24 @@ export function DocumentsPage() {
             )}
             {!previewDoc.is_library_public && !previewDoc.file_url && (
               <>
-                <button onClick={() => openDocumentPrintWindow(previewDoc.title, previewDoc.content || '')}
+                <button onClick={() => openDocumentPrintWindow(previewDoc!.title, previewDoc!.content || '')}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                   <FileText className="w-4 h-4" /> Imprimir / PDF
                 </button>
-                <button onClick={() => { openEdit(previewDoc); setPreviewDoc(null) }}
+                <button onClick={() => { openEdit(previewDoc as Document); setPreviewDoc(null) }}
                   className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
                   <Edit3 className="w-4 h-4" /> Editar
                 </button>
               </>
             )}
             {previewDoc.is_library_public && (
-              <button onClick={() => { openNew({ title: previewDoc.title, type: previewDoc.type, category: previewDoc.category, content: previewDoc.content, area_direito: previewDoc.area_direito || '', auto_doc_kind: previewDoc.auto_doc_kind || '' }); setPreviewDoc(null) }}
+              <button onClick={() => { openNew({ title: previewDoc!.title, type: previewDoc!.type, category: previewDoc!.category || '', content: previewDoc!.content, area_direito: previewDoc!.area_direito || '', auto_doc_kind: previewDoc!.auto_doc_kind || '' }); setPreviewDoc(null) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors">
                 <Copy className="w-4 h-4" /> Usar este modelo
               </button>
             )}
             {previewDoc.is_library_public && isSuperAdmin && (
-              <button onClick={() => { openEditLibraryTemplate(previewDoc); setPreviewDoc(null) }}
+              <button onClick={() => { openEditLibraryTemplate(previewDoc as LibraryTemplate); setPreviewDoc(null) }}
                 className="flex items-center gap-2 px-4 py-2 text-sm font-semibold border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                 <Edit3 className="w-4 h-4" /> Editar (admin)
               </button>
