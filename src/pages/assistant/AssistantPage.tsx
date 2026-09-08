@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, AlertTriangle, Clock, ClipboardList, MessageCircle, CalendarClock,
-  AlertOctagon, FileWarning, Scale, ChevronRight,
+  AlertOctagon, FileWarning, Scale, ChevronRight, LayoutDashboard, History,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, Spinner, EmptyState } from '@/components/ui'
 import { AssistantChat } from '@/components/assistant/AssistantChat'
+import { AssistantHistory } from '@/components/assistant/AssistantHistory'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -116,9 +117,17 @@ function AlertColumn({ category, items, onOpen }: { category: AlertCategory; ite
   )
 }
 
+type PageTab = 'visao' | 'historico'
+
+const PAGE_TABS: Array<{ id: PageTab; label: string; icon: React.ElementType }> = [
+  { id: 'visao', label: 'Visão Geral', icon: LayoutDashboard },
+  { id: 'historico', label: 'Histórico', icon: History },
+]
+
 export function AssistantPage() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const [tab, setTab] = useState<PageTab>('visao')
   const [processes, setProcesses] = useState<EngineProcess[]>([])
   const [tasks, setTasks] = useState<EngineTask[]>([])
   const [events, setEvents] = useState<EngineEvent[]>([])
@@ -187,20 +196,41 @@ export function AssistantPage() {
 
   return (
     <Layout title="Assistente IA">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fade-in">
-        <div className="lg:col-span-2 space-y-6">
-          <Card className="p-6 bg-gradient-to-r from-primary-700 via-primary-600 to-sky-500 border-0">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                <Bot className="text-white w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-white">{greeting}{greetName ? `, ${greetName}` : ''}.</h1>
-                <p className="text-sm text-white/75">Veja o que precisa da sua atenção.</p>
-              </div>
+      <div className="space-y-6 animate-fade-in">
+        <Card className="p-6 bg-gradient-to-r from-primary-700 via-primary-600 to-sky-500 border-0">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <Bot className="text-white w-6 h-6" />
             </div>
-          </Card>
+            <div>
+              <h1 className="text-xl font-bold text-white">{greeting}{greetName ? `, ${greetName}` : ''}.</h1>
+              <p className="text-sm text-white/75">Veja o que precisa da sua atenção.</p>
+            </div>
+          </div>
+        </Card>
 
+        <div className="flex items-center gap-1 border-b border-slate-100 dark:border-dark-600">
+          {PAGE_TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors',
+                tab === t.id
+                  ? 'border-primary-600 text-primary-600 dark:text-primary-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300',
+              )}
+            >
+              <t.icon className="w-4 h-4" /> {t.label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'historico' ? (
+          <AssistantHistory />
+        ) : (
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2 space-y-6">
           {error && (
             <Card className="p-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
@@ -265,6 +295,8 @@ export function AssistantPage() {
         <div className="lg:sticky lg:top-6">
           <AssistantChat />
         </div>
+      </div>
+        )}
       </div>
     </Layout>
   )

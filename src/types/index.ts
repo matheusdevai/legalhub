@@ -354,3 +354,21 @@ export interface SystemAnnouncement {
   created_by: string | null
   created_at: string | null
 }
+
+export interface AssistantLog {
+  id: string
+  tenant_id: string
+  user_id: string
+  channel: 'chat' | 'slash_command' | 'action'
+  question: string
+  slash_command: string | null
+  tools_called: string[]
+  answer: string | null
+  status: 'completed' | 'proposed' | 'confirmed' | 'cancelled' | 'error'
+  error_message: string | null
+  created_at: string
+  action_type: 'criar_tarefa' | 'criar_lembrete' | null
+  action_payload: Record<string, unknown> | null
+  related_log_id: string | null
+  created_task_id: string | null
+}
