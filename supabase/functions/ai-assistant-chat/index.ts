@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import {
   consultarPrazos, consultarTarefas, consultarAgenda, consultarProcessos, consultarClientes,
-  proporCriarTarefa, proporCriarLembrete, confirmarAcaoProposta,
+  proporCriarTarefa, proporCriarLembrete, processConfirmAction, processCancelAction,
   type CallerProfile, type ProposedAction,
 } from './tools.ts'
 
@@ -56,6 +56,13 @@ const CORS = {
 const MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-3.6-flash'
 
 const RATE_LIMIT = 60
+// Cap mais restrito pra confirmação/cancelamento de ação (grava no banco) do
+// que pra perguntas de leitura ao chat — bucket próprio (`ai-assistant-action:
+// {user}`), então isso nunca compete com a cota de perguntas do mesmo
+// usuário. Existe especificamente pra limitar quantas tarefas/lembretes um
+// usuário (ou um script automatizando cliques) consegue criar via IA por
+// hora, mesmo que cada confirmação individual seja rápida.
+const ACTION_RATE_LIMIT = 20
 const RATE_WINDOW_SECONDS = 60 * 60
 
 const SLASH_COMMANDS = [
@@ -67,9 +74,9 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 }
 
-async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
+async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string, limit: number = RATE_LIMIT): Promise<boolean> {
   const { data, error } = await supabaseAdmin.rpc('check_rate_limit', {
-    p_key: key, p_limit: RATE_LIMIT, p_window_seconds: RATE_WINDOW_SECONDS,
+    p_key: key, p_limit: limit, p_window_seconds: RATE_WINDOW_SECONDS,
   })
   if (error) {
     console.error('check_rate_limit RPC error:', error)
@@ -378,120 +385,6 @@ async function runSlashCommand(
   }
 }
 
-// ----------------------------------------------------------------------------
-// Confirmação/cancelamento de ação proposta (milestone 3). Body shapes
-// separadas do chat — nunca passam pelo Gemini.
-// ----------------------------------------------------------------------------
-interface ConfirmActionBody {
-  log_id: string
-  type: 'criar_tarefa' | 'criar_lembrete'
-  title: string
-  description?: string | null
-  due_date?: string | null
-  priority?: string | null
-  assigned_to: string
-}
-
-function parseConfirmActionBody(raw: unknown): ConfirmActionBody | null {
-  if (!raw || typeof raw !== 'object') return null
-  const b = raw as Record<string, unknown>
-  if (typeof b.log_id !== 'string' || !b.log_id) return null
-  if (b.type !== 'criar_tarefa' && b.type !== 'criar_lembrete') return null
-  if (typeof b.title !== 'string' || !b.title.trim()) return null
-  if (typeof b.assigned_to !== 'string' || !b.assigned_to) return null
-  return {
-    log_id: b.log_id,
-    type: b.type,
-    title: b.title,
-    description: typeof b.description === 'string' ? b.description : null,
-    due_date: typeof b.due_date === 'string' ? b.due_date : null,
-    priority: typeof b.priority === 'string' ? b.priority : null,
-    assigned_to: b.assigned_to,
-  }
-}
-
-async function handleConfirmAction(
-  db: ReturnType<typeof createClient>,
-  profile: CallerProfile,
-  input: ConfirmActionBody,
-): Promise<Response> {
-  const { data: logRow, error: logErr } = await db
-    .from('ai_assistant_logs')
-    .select('id, user_id, tenant_id, status, action_type')
-    .eq('id', input.log_id)
-    .eq('tenant_id', profile.tenant_id)
-    .maybeSingle()
-  if (logErr) return json({ error: 'Erro ao validar ação' }, 500)
-  const log = logRow as { id: string; user_id: string; status: string; action_type: string | null } | null
-  if (!log || log.user_id !== profile.user_id) return json({ error: 'Ação não encontrada' }, 404)
-  if (log.status !== 'proposed') return json({ error: 'Esta ação já foi processada anteriormente' }, 409)
-  if (log.action_type !== input.type) return json({ error: 'Tipo de ação inconsistente' }, 400)
-
-  try {
-    const result = await confirmarAcaoProposta(db, profile, input)
-    const { error: insertErr } = await db.from('ai_assistant_logs').insert({
-      tenant_id: profile.tenant_id,
-      user_id: profile.user_id,
-      channel: 'action',
-      question: `Confirmar ação: ${input.type}`,
-      action_type: input.type,
-      action_payload: { ...input, assigned_to: result.assigned_to, assigned_name: result.assigned_name },
-      answer: 'Ação confirmada pelo usuário.',
-      status: 'confirmed',
-      related_log_id: input.log_id,
-      created_task_id: result.task_id,
-    })
-    if (insertErr) console.error('ai_assistant_logs insert error (confirm):', insertErr)
-    return json({ task_id: result.task_id })
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Erro ao confirmar ação'
-    const { error: insertErr } = await db.from('ai_assistant_logs').insert({
-      tenant_id: profile.tenant_id,
-      user_id: profile.user_id,
-      channel: 'action',
-      question: `Confirmar ação: ${input.type}`,
-      action_type: input.type,
-      action_payload: input,
-      status: 'error',
-      error_message: message,
-      related_log_id: input.log_id,
-    })
-    if (insertErr) console.error('ai_assistant_logs insert error (confirm error):', insertErr)
-    return json({ error: message }, 400)
-  }
-}
-
-async function handleCancelAction(
-  db: ReturnType<typeof createClient>,
-  profile: CallerProfile,
-  logId: string,
-): Promise<Response> {
-  const { data: logRow, error: logErr } = await db
-    .from('ai_assistant_logs')
-    .select('id, user_id, tenant_id, status, action_type, action_payload')
-    .eq('id', logId)
-    .eq('tenant_id', profile.tenant_id)
-    .maybeSingle()
-  if (logErr) return json({ error: 'Erro ao validar ação' }, 500)
-  const log = logRow as { id: string; user_id: string; status: string; action_type: string | null; action_payload: unknown } | null
-  if (!log || log.user_id !== profile.user_id) return json({ error: 'Ação não encontrada' }, 404)
-  if (log.status !== 'proposed') return json({ error: 'Esta ação já foi processada anteriormente' }, 409)
-
-  const { error: insertErr } = await db.from('ai_assistant_logs').insert({
-    tenant_id: profile.tenant_id,
-    user_id: profile.user_id,
-    channel: 'action',
-    question: `Cancelar ação: ${log.action_type}`,
-    action_type: log.action_type,
-    action_payload: log.action_payload,
-    answer: 'Ação cancelada pelo usuário.',
-    status: 'cancelled',
-    related_log_id: logId,
-  })
-  if (insertErr) console.error('ai_assistant_logs insert error (cancel):', insertErr)
-  return json({ cancelled: true })
-}
-
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -527,19 +420,19 @@ Deno.serve(async (req: Request) => {
     // Confirmação/cancelamento: chamada SEPARADA e autenticada, disparada só
     // pelo clique explícito do usuário na tela — nunca passa pelo Gemini,
     // então usa um bucket de rate limit próprio (não consome a cota de
-    // perguntas ao assistente).
+    // perguntas ao assistente) e mais restrito (ACTION_RATE_LIMIT), já que é
+    // uma ação de escrita. Toda a lógica de decisão (validação, idempotência
+    // via claimProposedAction, gravação, log de auditoria) mora em tools.ts
+    // — processConfirmAction/processCancelAction — pra poder ser testada sob
+    // vitest (index.ts só roda sob Deno).
     if (body?.confirm_action || body?.cancel_action) {
-      const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant-action:${user.id}`)
+      const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant-action:${user.id}`, ACTION_RATE_LIMIT)
       if (!withinLimit) return json({ error: 'Muitas ações em pouco tempo. Aguarde e tente novamente.' }, 429)
 
-      if (body.confirm_action) {
-        const confirmInput = parseConfirmActionBody(body.confirm_action)
-        if (!confirmInput) return json({ error: 'confirm_action inválido' }, 400)
-        return await handleConfirmAction(supabaseAdmin, profile, confirmInput)
-      }
-      const logId = body.cancel_action?.log_id
-      if (!logId) return json({ error: 'cancel_action.log_id é obrigatório' }, 400)
-      return await handleCancelAction(supabaseAdmin, profile, logId)
+      const result = body.confirm_action
+        ? await processConfirmAction(supabaseAdmin, profile, body.confirm_action)
+        : await processCancelAction(supabaseAdmin, profile, body.cancel_action?.log_id)
+      return json(result.body, result.status)
     }
 
     const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant-chat:${user.id}`)

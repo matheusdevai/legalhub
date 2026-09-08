@@ -374,25 +374,64 @@ export async function proporCriarLembrete(
   }
 }
 
-// --- confirmarAcaoProposta ---------------------------------------------------
-// Chamada a partir da requisição SEPARADA de confirmação (nunca do turno de
-// chat). Revalida tudo server-side — nunca confia no payload que a UI manda
-// de volta (o usuário pode ter editado os campos no card, ou o payload pode
-// ter sido adulterado): título não vazio, data no formato certo, prioridade
-// válida, e que assigned_to é de fato um usuário do mesmo tenant e não um
-// cliente do portal.
-export async function confirmarAcaoProposta(
+// --- confirmação/cancelamento de ação proposta -----------------------------
+// Chamado a partir da requisição SEPARADA de confirmação/cancelamento (nunca
+// do turno de chat). Fica todo aqui em tools.ts — e não em index.ts — pelo
+// mesmo motivo de todo o resto do arquivo: index.ts só tem imports "jsr:"
+// (Deno) que não rodam sob vitest/Node, então qualquer lógica de decisão que
+// precise de teste automatizado tem que morar num módulo importável (mesma
+// convenção de CLAUDE.md: extrair pra src/lib antes de testar em vez de via
+// integração). `processConfirmAction`/`processCancelAction` devolvem um
+// `HttpResult` ({status, body}) HTTP-agnóstico — index.ts só faz
+// `json(result.body, result.status)`.
+
+export interface ConfirmActionInput {
+  log_id: string
+  type: 'criar_tarefa' | 'criar_lembrete'
+  title: string
+  description?: string | null
+  due_date?: string | null
+  priority?: string | null
+  assigned_to: string
+}
+
+export function parseConfirmActionInput(raw: unknown): ConfirmActionInput | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as Record<string, unknown>
+  if (typeof b.log_id !== 'string' || !b.log_id) return null
+  if (b.type !== 'criar_tarefa' && b.type !== 'criar_lembrete') return null
+  if (typeof b.title !== 'string' || !b.title.trim()) return null
+  if (typeof b.assigned_to !== 'string' || !b.assigned_to) return null
+  return {
+    log_id: b.log_id,
+    type: b.type,
+    title: b.title,
+    description: typeof b.description === 'string' ? b.description : null,
+    due_date: typeof b.due_date === 'string' ? b.due_date : null,
+    priority: typeof b.priority === 'string' ? b.priority : null,
+    assigned_to: b.assigned_to,
+  }
+}
+
+interface ValidatedConfirmInput {
+  title: string
+  description: string | null
+  due_date: string | null
+  priority: string
+  assignee: { user_id: string; name: string | null; display_name: string | null }
+}
+
+// Valida os campos que o usuário pode ter editado no card — nunca confia no
+// payload que a UI manda de volta. Roda ANTES de reivindicar a proposta
+// (claimProposedAction) de propósito: se o título/data/responsável estiver
+// inválido, a proposta continua 'proposed' e o usuário pode corrigir e
+// tentar confirmar de novo, em vez de perder a proposta por causa de um erro
+// de digitação.
+async function validarAcaoConfirmada(
   db: SupabaseAdmin,
   profile: CallerProfile,
-  input: {
-    type: 'criar_tarefa' | 'criar_lembrete'
-    title: string
-    description?: string | null
-    due_date?: string | null
-    priority?: string | null
-    assigned_to: string
-  },
-): Promise<{ task_id: string; assigned_to: string; assigned_name: string | null }> {
+  input: ConfirmActionInput,
+): Promise<ValidatedConfirmInput> {
   const title = (input.title || '').trim()
   if (!title) throw new Error('Título é obrigatório')
   const { value: due_date, invalid } = normalizeDueDate(input.due_date)
@@ -410,20 +449,36 @@ export async function confirmarAcaoProposta(
     .maybeSingle()
   if (assigneeErr) throw new Error('Erro ao validar responsável')
   if (!assigneeRow) throw new Error('Responsável inválido — selecione alguém do escritório.')
-  const assignee = assigneeRow as { user_id: string; name: string | null; display_name: string | null }
 
+  return {
+    title,
+    description: (input.description || '').trim() || null,
+    due_date,
+    priority,
+    assignee: assigneeRow as { user_id: string; name: string | null; display_name: string | null },
+  }
+}
+
+// Grava a tarefa/lembrete de fato. Só deve ser chamada DEPOIS de
+// claimProposedAction ter reivindicado a proposta com sucesso (senão duas
+// chamadas concorrentes gravariam duas tarefas pro mesmo log_id).
+async function gravarTarefaConfirmada(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  validated: ValidatedConfirmInput,
+): Promise<{ task_id: string; assigned_to: string; assigned_name: string | null }> {
   const { data: taskRow, error: insertErr } = await db
     .from('tasks')
     .insert({
       tenant_id: profile.tenant_id,
-      title,
-      description: (input.description || '').trim() || null,
-      due_date,
-      priority,
+      title: validated.title,
+      description: validated.description,
+      due_date: validated.due_date,
+      priority: validated.priority,
       status: 'pending',
       type: 'custom',
-      assigned_to: assignee.user_id,
-      assigned_name: assignee.name || assignee.display_name || null,
+      assigned_to: validated.assignee.user_id,
+      assigned_name: validated.assignee.name || validated.assignee.display_name || null,
       created_by: profile.user_id,
     })
     .select('id')
@@ -432,15 +487,172 @@ export async function confirmarAcaoProposta(
 
   // Mesmo padrão de notificação de TasksPage.tsx (notifyTaskAssignment): só
   // notifica quando atribui a outra pessoa, nunca quando é a própria.
-  if (assignee.user_id !== profile.user_id) {
+  if (validated.assignee.user_id !== profile.user_id) {
     await db.rpc('notify_user', {
-      target_user_id: assignee.user_id,
+      target_user_id: validated.assignee.user_id,
       p_type: 'task',
       p_title: 'Nova tarefa atribuída a você',
-      p_message: title,
+      p_message: validated.title,
       p_link: '/tarefas',
     })
   }
 
-  return { task_id: (taskRow as { id: string }).id, assigned_to: assignee.user_id, assigned_name: assignee.name || assignee.display_name || null }
+  return {
+    task_id: (taskRow as { id: string }).id,
+    assigned_to: validated.assignee.user_id,
+    assigned_name: validated.assignee.name || validated.assignee.display_name || null,
+  }
+}
+
+// Composição de validarAcaoConfirmada + gravarTarefaConfirmada, sem a
+// reivindicação atômica no meio — usada pelos testes existentes que exercitam
+// o fluxo completo de uma vez. O fluxo real (processConfirmAction, abaixo)
+// SEMPRE reivindica a proposta com claimProposedAction entre as duas etapas.
+export async function confirmarAcaoProposta(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  input: ConfirmActionInput,
+): Promise<{ task_id: string; assigned_to: string; assigned_name: string | null }> {
+  const validated = await validarAcaoConfirmada(db, profile, input)
+  return gravarTarefaConfirmada(db, profile, validated)
+}
+
+export type ClaimResult =
+  | { status: 'claimed'; action_type: string | null; action_payload: unknown }
+  | { status: 'not_found' }
+  | { status: 'already_processed' }
+  | { status: 'type_mismatch' }
+
+// Reivindica atomicamente uma proposta pra confirmação/cancelamento. Isto é
+// o que garante idempotência: duplo clique, retry de rede, ou uma segunda
+// requisição de propósito pro MESMO log_id nunca processam a ação duas
+// vezes (o que criaria tarefas duplicadas). O UPDATE só afeta a linha se ela
+// ainda estiver com status 'proposed' NO MOMENTO EXATO do UPDATE — no
+// Postgres isso é atômico mesmo com duas requisições concorrentes batendo
+// ao mesmo tempo: a segunda sempre vê 0 linhas afetadas, porque a primeira
+// já tomou o lock da linha e mudou o status antes dela reavaliar o WHERE.
+// Um SELECT-então-UPDATE separado (o que este código tinha antes) NÃO tem
+// essa garantia — as duas requisições poderiam passar pelo SELECT antes de
+// qualquer uma escrever.
+export async function claimProposedAction(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  logId: string,
+  newStatus: 'confirmed' | 'cancelled',
+  actionType?: 'criar_tarefa' | 'criar_lembrete',
+): Promise<ClaimResult> {
+  let query = db
+    .from('ai_assistant_logs')
+    .update({ status: newStatus })
+    .eq('id', logId)
+    .eq('tenant_id', profile.tenant_id)
+    .eq('user_id', profile.user_id)
+    .eq('status', 'proposed')
+  if (actionType) query = query.eq('action_type', actionType)
+
+  const { data: claimed, error: claimErr } = await query.select('id, action_type, action_payload')
+  if (claimErr) throw new Error('Erro ao validar ação')
+
+  const claimedRows = (claimed || []) as Array<{ id: string; action_type: string | null; action_payload: unknown }>
+  if (claimedRows.length > 0) {
+    return { status: 'claimed', action_type: claimedRows[0].action_type, action_payload: claimedRows[0].action_payload }
+  }
+
+  // Não reivindicou — busca só pra dar um motivo melhor na mensagem de erro
+  // (leitura pura, não afeta a atomicidade da checagem acima: o resultado
+  // desta consulta nunca decide se a ação é executada ou não).
+  const { data: existing } = await db
+    .from('ai_assistant_logs')
+    .select('id, action_type')
+    .eq('id', logId)
+    .eq('tenant_id', profile.tenant_id)
+    .eq('user_id', profile.user_id)
+    .maybeSingle()
+  const existingRow = existing as { id: string; action_type: string | null } | null
+  if (!existingRow) return { status: 'not_found' }
+  if (actionType && existingRow.action_type !== actionType) return { status: 'type_mismatch' }
+  return { status: 'already_processed' }
+}
+
+export interface HttpResult { status: number; body: Record<string, unknown> }
+
+// Fluxo completo de confirmação: valida campos (sem tocar no banco além de
+// checar o responsável) -> reivindica a proposta atomicamente -> só então
+// grava a tarefa. Se a reivindicação falhar (já processada por outra
+// requisição, não encontrada, ou tipo inconsistente), NADA é gravado.
+export async function processConfirmAction(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  raw: unknown,
+): Promise<HttpResult> {
+  const input = parseConfirmActionInput(raw)
+  if (!input) return { status: 400, body: { error: 'confirm_action inválido' } }
+
+  let validated: ValidatedConfirmInput
+  try {
+    validated = await validarAcaoConfirmada(db, profile, input)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erro ao confirmar ação'
+    return { status: 400, body: { error: message } }
+  }
+
+  const claim = await claimProposedAction(db, profile, input.log_id, 'confirmed', input.type)
+  if (claim.status === 'not_found') return { status: 404, body: { error: 'Ação não encontrada' } }
+  if (claim.status === 'type_mismatch') return { status: 400, body: { error: 'Tipo de ação inconsistente' } }
+  if (claim.status === 'already_processed') return { status: 409, body: { error: 'Esta ação já foi processada anteriormente' } }
+
+  // claim.status === 'claimed': esta é a ÚNICA requisição que vai gravar a
+  // tarefa pra este log_id — nenhuma outra confirmação/cancelamento
+  // concorrente do mesmo log_id também pode ter "ganho a corrida" acima.
+  try {
+    const result = await gravarTarefaConfirmada(db, profile, validated)
+    const { error: insertErr } = await db.from('ai_assistant_logs').insert({
+      tenant_id: profile.tenant_id,
+      user_id: profile.user_id,
+      channel: 'action',
+      question: `Confirmar ação: ${input.type}`,
+      action_type: input.type,
+      action_payload: { ...input, assigned_to: result.assigned_to, assigned_name: result.assigned_name },
+      answer: 'Ação confirmada pelo usuário.',
+      status: 'confirmed',
+      related_log_id: input.log_id,
+      created_task_id: result.task_id,
+    })
+    if (insertErr) console.error('ai_assistant_logs insert error (confirm):', insertErr)
+    return { status: 200, body: { task_id: result.task_id } }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Erro ao criar tarefa'
+    // Já reivindicamos o log (status virou 'confirmed') mas a gravação da
+    // tarefa falhou de verdade (erro inesperado de banco, não erro de
+    // validação — esse já teria sido barrado antes da reivindicação) —
+    // corrige a linha pra não ficar "confirmed" sem tarefa nenhuma.
+    await db.from('ai_assistant_logs').update({ status: 'error', error_message: message }).eq('id', input.log_id)
+    return { status: 500, body: { error: message } }
+  }
+}
+
+export async function processCancelAction(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  logId: unknown,
+): Promise<HttpResult> {
+  if (typeof logId !== 'string' || !logId) return { status: 400, body: { error: 'cancel_action.log_id é obrigatório' } }
+
+  const claim = await claimProposedAction(db, profile, logId, 'cancelled')
+  if (claim.status === 'not_found') return { status: 404, body: { error: 'Ação não encontrada' } }
+  if (claim.status === 'already_processed') return { status: 409, body: { error: 'Esta ação já foi processada anteriormente' } }
+
+  const { error: insertErr } = await db.from('ai_assistant_logs').insert({
+    tenant_id: profile.tenant_id,
+    user_id: profile.user_id,
+    channel: 'action',
+    question: `Cancelar ação: ${claim.action_type}`,
+    action_type: claim.action_type,
+    action_payload: claim.action_payload,
+    answer: 'Ação cancelada pelo usuário.',
+    status: 'cancelled',
+    related_log_id: logId,
+  })
+  if (insertErr) console.error('ai_assistant_logs insert error (cancel):', insertErr)
+  return { status: 200, body: { cancelled: true } }
 }
