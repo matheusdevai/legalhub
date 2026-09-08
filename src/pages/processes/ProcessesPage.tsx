@@ -81,6 +81,7 @@ const EMPTY_FORM: ProcessForm = {
 
 const TIPOS_ACAO: Record<string, string[]> = {
   'Cível': ['Alíquota zero', 'Contratos bancários', 'Indenização por danos morais', 'Revisão contratual', 'Cobrança', 'Outro'],
+  'Consumidor': ['Vício do produto/serviço', 'Cobrança indevida', 'Publicidade enganosa', 'Prática abusiva', 'Outro'],
   'Criminal': ['Pena privativa de liberdade', 'Habeas corpus', 'Tráfico de drogas', 'Furto', 'Roubo', 'Outro'],
   'Trabalhista': ['Rescisão indireta', 'Horas extras', 'Assédio moral', 'FGTS', 'Outro'],
   'Tributário': ['Execução fiscal', 'Mandado de segurança', 'Restituição de tributos', 'Outro'],

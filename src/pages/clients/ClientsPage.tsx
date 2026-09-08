@@ -2330,9 +2330,9 @@ export function ClientsPage() {
               value={form.area_direito} onChange={e => setForm({ ...form, area_direito: e.target.value })}>
               <option value="">Selecione</option>
               {GRUPOS_ACAO.map(a => <option key={a} value={a}>{a}</option>)}
-              {/* Cliente antigo com valor fora da lista canônica (ex: "Consumidor", ou resíduo
-                  de texto livre que a normalização não cobriu) — preserva o valor salvo em vez
-                  de esvaziar a seleção silenciosamente; some assim que o usuário trocar. */}
+              {/* Cliente antigo com valor fora da lista canônica (ex: resíduo de texto livre que
+                  a normalização não cobriu) — preserva o valor salvo em vez de esvaziar a
+                  seleção silenciosamente; some assim que o usuário trocar. */}
               {form.area_direito && !GRUPOS_ACAO.includes(form.area_direito) && (
                 <option value={form.area_direito}>{form.area_direito} (valor antigo)</option>
               )}

@@ -55,6 +55,10 @@ describe('GRUPOS_ACAO / AREA_PREVIDENCIARIO', () => {
     expect(GRUPOS_ACAO).toContain('Outro')
   })
 
+  it('inclui "Consumidor" — área legítima já usada antes do select fechado, mantida pra não perder granularidade', () => {
+    expect(GRUPOS_ACAO).toContain('Consumidor')
+  })
+
   it('AREA_PREVIDENCIARIO é exatamente um dos valores de GRUPOS_ACAO', () => {
     expect(GRUPOS_ACAO).toContain(AREA_PREVIDENCIARIO)
     expect(AREA_PREVIDENCIARIO).toBe('Previdenciário')

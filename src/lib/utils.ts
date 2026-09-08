@@ -139,7 +139,7 @@ export const ROLE_LABELS: Record<string, string> = {
 // coexistindo) — ver migration 20260908130000_normalize_area_direito_previdenciario.sql
 // pra normalização do que já tinha sido digitado em clients.area_direito.
 export const GRUPOS_ACAO = [
-  'Cível', 'Criminal', 'Trabalhista', 'Tributário', 'Administrativo',
+  'Cível', 'Consumidor', 'Criminal', 'Trabalhista', 'Tributário', 'Administrativo',
   'Família', 'Previdenciário', 'Empresarial', 'Imobiliário', 'Outro',
 ]
 // Precisa ser exatamente um dos valores de GRUPOS_ACAO acima — usado por
