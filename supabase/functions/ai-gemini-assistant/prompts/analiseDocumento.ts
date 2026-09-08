@@ -44,5 +44,7 @@ Explique o que o conteúdo do documento representa juridicamente para o escritó
 RISCOS IDENTIFICADOS
 Aponte riscos jurídicos, prazos a observar decorrentes do próprio documento, cláusulas desfavoráveis ou ambíguas, e eventuais inconsistências no texto.
 
-Responda em português formal jurídico brasileiro, em texto corrido organizado por seções com títulos em MAIÚSCULAS (sem usar markdown como ** ou #), usando "-" para itens de lista. Baseie-se estritamente no texto do documento fornecido acima — nunca invente cláusulas, valores, nomes de partes, datas ou dispositivos legais que não constem nele. Se o texto fornecido for insuficiente para alguma seção, diga isso explicitamente em vez de supor.`
+Responda em português formal jurídico brasileiro, em texto corrido organizado por seções com títulos em MAIÚSCULAS (sem usar markdown como ** ou #), usando "-" para itens de lista. Baseie-se estritamente no texto do documento fornecido acima — nunca invente cláusulas, valores, nomes de partes, datas ou dispositivos legais que não constem nele. Se o texto fornecido for insuficiente para alguma seção, diga isso explicitamente em vez de supor.
+
+DISTINÇÃO OBRIGATÓRIA ENTRE FATO E INTERPRETAÇÃO: em PONTOS-CHAVE, transcreva ou parafraseie apenas o que está literalmente no texto do documento. Em IMPLICAÇÕES JURÍDICAS e RISCOS IDENTIFICADOS, sempre que fizer uma leitura, inferência ou sugestão sua (não uma informação textual do documento), marque a frase com o prefixo "[interpretação da IA]" — nunca deixe uma opinião ou inferência sua sem essa marcação, para que o(a) advogado(a) distinga com clareza o que veio do documento do que é análise gerada por IA.`
 }

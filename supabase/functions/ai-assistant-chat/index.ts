@@ -1,32 +1,44 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import {
-  consultarPrazos, consultarTarefas, consultarAgenda, consultarProcessos, consultarClientes,
-  proporCriarTarefa, proporCriarLembrete, processConfirmAction, processCancelAction,
+  consultarPrazos, consultarTarefas, consultarAgenda, consultarProcessos,
+  processConfirmAction, processCancelAction,
   type CallerProfile, type ProposedAction,
 } from './tools.ts'
+import { type AttachmentInput, MAX_TEXT_INPUT_CHARS } from './generation.ts'
+import {
+  TOOL_DECLARATIONS, TOOL_NAMES, type ToolName, GENERATION_TOOL_NAMES, WRITE_TOOL_NAMES, runTool, formatGenerationAnswer,
+  type ChatToolContext,
+} from './router.ts'
 
 // ============================================================================
-// ai-assistant-chat — Chat interno do LegalHub Assistente (milestone 2 leitura
-// + milestone 3 primeira capacidade de escrita, sempre com confirmação).
+// ai-assistant-chat — Chat interno do LegalHub Assistente (milestones 2, 3 e 4).
 //
 // Diferente de ai-gemini-assistant (prompt único, sem tools — usado pela "IA
 // Jurídica" para gerar petições/pareceres), esta função usa function calling
-// real do Gemini: o modelo só enxerga o que as ferramentas em tools.ts
-// devolvem, nunca inventa processo/cliente/prazo/data (reforçado no
-// SYSTEM_PROMPT abaixo).
+// real do Gemini: o modelo só enxerga o que as ferramentas em tools.ts /
+// generation.ts devolvem, nunca inventa processo/cliente/prazo/data
+// (reforçado no SYSTEM_PROMPT abaixo).
 //
-// Escrita (milestone 3): as tools propor_criar_tarefa/propor_criar_lembrete
-// NUNCA gravam nada no turno de chat — elas só devolvem uma "ação proposta"
-// estruturada (ver ProposedAction em tools.ts), que esta função loga com
-// status 'proposed' em ai_assistant_logs e devolve ao frontend como
-// `proposed_action` pra renderizar um card de confirmação. A gravação de
-// fato só acontece através de uma requisição SEPARADA e autenticada
-// (`confirm_action` no body, abaixo), disparada somente quando o usuário
-// clica em "Confirmar" (ou edita e confirma) na UI. Qualquer outra ação de
-// escrita que o usuário peça (fora essas duas) é escalada: o modelo diz que
-// ainda não consegue fazer isso automaticamente e aponta a tela do sistema
-// correspondente — nunca finge executar, nunca inventa uma ferramenta.
+// Três famílias de ferramentas (declarações, roteamento e nomes em
+// router.ts, extraído pra ser testável fora do runtime Deno/jsr — ver
+// router.test.ts):
+// - tools.ts (milestone 2): 5 consultas somente-leitura direto no banco.
+// - tools.ts (milestone 3): propor_criar_tarefa/propor_criar_lembrete — NUNCA
+//   gravam nada no turno de chat, só devolvem uma "ação proposta" estruturada
+//   (ver ProposedAction em tools.ts), que esta função loga com status
+//   'proposed' em ai_assistant_logs e devolve ao frontend como
+//   `proposed_action` pra renderizar um card de confirmação. A gravação de
+//   fato só acontece através de uma requisição SEPARADA e autenticada
+//   (`confirm_action` no body, abaixo), disparada somente quando o usuário
+//   clica em "Confirmar" (ou edita e confirma) na UI.
+// - generation.ts (milestone 4): gerar_minuta/analisar_documento, que geram
+//   texto (nunca gravam nada) invocando ai-gemini-assistant via HTTP — mesma
+//   chamada que a "Excelência" já faz no frontend, sem duplicar prompt.
+// Qualquer outra ação de escrita que o usuário peça (fora essas duas tools de
+// propor_*) é escalada: o modelo diz que ainda não consegue fazer isso
+// automaticamente e aponta a tela do sistema correspondente — nunca finge
+// executar, nunca inventa uma ferramenta.
 //
 // Reaproveita de ai-gemini-assistant: boilerplate de CORS, auth via
 // auth.getUser(), resolução de tenant a partir do profile do chamador (nunca
@@ -34,11 +46,15 @@ import {
 // check_rate_limit (mesma tabela edge_function_rate_limits).
 //
 // Contrato:
-//   POST { message? , slash_command? } -> { answer, tools_called, proposed_action, log_id }
+//   POST { message?, slash_command?, attachment? } -> { answer, tools_called, proposed_action, log_id }
 //     Exatamente um de `message` (linguagem natural) ou `slash_command` (um
 //     dos atalhos da seção 55 do documento de spec) deve vir preenchido.
+//     `attachment` (opcional, só com `message`): { mime_type, data_base64,
+//     filename } — PDF/JPEG/PNG, mesmo formato de ai-gemini-assistant. Só é
+//     usado se o modelo chamar analisar_documento nesta rodada; revalidado
+//     inteiramente por ai-gemini-assistant (nunca salvo aqui).
 //     `proposed_action` vem null exceto quando o modelo chamou uma das tools
-//     de escrita nesse turno.
+//     de escrita (propor_criar_tarefa/propor_criar_lembrete) nesse turno.
 //   POST { confirm_action: { log_id, type, title, description?, due_date?, priority?, assigned_to } } -> { task_id }
 //     Grava de fato a tarefa/lembrete proposto em `log_id`. Só o autor do log
 //     original pode confirmar, e só enquanto o status daquele log ainda for
@@ -85,104 +101,16 @@ async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, ke
   return data === true
 }
 
-// ----------------------------------------------------------------------------
-// Ferramentas expostas ao Gemini (function calling). Descrições em pt-BR —
-// o modelo responde em pt-BR e as descrições ajudam a escolher a tool certa.
-// ----------------------------------------------------------------------------
-const TOOL_DECLARATIONS = [
-  {
-    name: 'consultar_prazos',
-    description: 'Consulta prazos processuais críticos (vencidos ou vencendo hoje) e próximos (até 7 dias) dos processos ativos do escritório.',
-    parameters: {
-      type: 'object',
-      properties: {
-        escopo: { type: 'string', enum: ['criticos', 'proximos', 'todos'], description: 'Qual recorte de prazos retornar. Padrão: todos.' },
-      },
-    },
-  },
-  {
-    name: 'consultar_tarefas',
-    description: 'Consulta tarefas pendentes e/ou atrasadas do usuário (ou do escritório, se ele for admin/financeiro/super_admin).',
-    parameters: {
-      type: 'object',
-      properties: {
-        status: { type: 'string', enum: ['pendentes', 'atrasadas', 'todas'], description: 'Qual recorte de tarefas retornar. Padrão: todas.' },
-      },
-    },
-  },
-  {
-    name: 'consultar_agenda',
-    description: 'Consulta compromissos da agenda (audiências, reuniões, prazos) de hoje, da semana ou do mês.',
-    parameters: {
-      type: 'object',
-      properties: {
-        periodo: { type: 'string', enum: ['hoje', 'semana', 'mes'], description: 'Janela de tempo a consultar. Padrão: hoje.' },
-      },
-    },
-  },
-  {
-    name: 'consultar_processos',
-    description: 'Consulta processos ativos que exigem atenção (prioridade alta/urgente ou prazo vencido/vencendo hoje).',
-    parameters: {
-      type: 'object',
-      properties: {
-        apenas_atencao: { type: 'boolean', description: 'Se true (padrão), retorna só os que exigem atenção; se false, retorna todos os processos ativos.' },
-      },
-    },
-  },
-  {
-    name: 'consultar_clientes',
-    description: 'Busca clientes pelo nome, ou processos por número/título, para responder perguntas sobre um cliente ou caso específico.',
-    parameters: {
-      type: 'object',
-      properties: {
-        busca: { type: 'string', description: 'Nome do cliente ou número/parte do título do processo a buscar.' },
-      },
-      required: ['busca'],
-    },
-  },
-  {
-    name: 'propor_criar_tarefa',
-    description: 'Propõe a criação de uma nova tarefa. NÃO cria a tarefa de fato — apenas monta uma proposta que será exibida ao usuário em um card de confirmação. A tarefa só é gravada se o usuário clicar em "Confirmar" na tela.',
-    parameters: {
-      type: 'object',
-      properties: {
-        titulo: { type: 'string', description: 'Título curto e claro da tarefa.' },
-        descricao: { type: 'string', description: 'Detalhes adicionais da tarefa (opcional).' },
-        data_vencimento: { type: 'string', description: 'Data de vencimento no formato AAAA-MM-DD (opcional).' },
-        prioridade: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'], description: 'Prioridade da tarefa. Padrão: medium.' },
-        atribuir_a_nome: { type: 'string', description: 'Nome da pessoa a quem atribuir a tarefa, SOMENTE se o usuário pedir isso explicitamente (ex: "crie uma tarefa para o João revisar isso"). Se omitido, a tarefa é atribuída ao próprio usuário que está conversando.' },
-      },
-      required: ['titulo'],
-    },
-  },
-  {
-    name: 'propor_criar_lembrete',
-    description: 'Propõe a criação de um lembrete simples (um lembrete é uma tarefa rápida e informal, geralmente sem descrição longa nem vínculo com processo/cliente). NÃO cria nada de fato — apenas monta uma proposta para confirmação explícita do usuário.',
-    parameters: {
-      type: 'object',
-      properties: {
-        titulo: { type: 'string', description: 'O que deve ser lembrado.' },
-        data_vencimento: { type: 'string', description: 'Data do lembrete no formato AAAA-MM-DD (opcional).' },
-        atribuir_a_nome: { type: 'string', description: 'Nome da pessoa a quem atribuir o lembrete, SOMENTE se pedido explicitamente. Padrão: o próprio usuário.' },
-      },
-      required: ['titulo'],
-    },
-  },
-] as const
-
-const TOOL_NAMES = TOOL_DECLARATIONS.map(t => t.name)
-type ToolName = typeof TOOL_NAMES[number]
-
 const SYSTEM_PROMPT = `Você é o LegalHub Assistente, um assistente interno para advogados e equipes de escritórios de advocacia dentro do sistema LegalHub.
 
 REGRAS INEGOCIÁVEIS:
 1. Você NUNCA inventa processo, cliente, prazo, data, tarefa ou compromisso. Toda informação factual que você disser DEVE vir de uma chamada às ferramentas disponíveis. Se a pergunta exigir dado que nenhuma ferramenta cobre, diga claramente que não tem essa informação — nunca complete com um palpite.
 2. Se a pergunta puder ser respondida com uma ferramenta de consulta (consultar_prazos, consultar_tarefas, consultar_agenda, consultar_processos, consultar_clientes), chame a ferramenta antes de responder. Não responda "deixa eu verificar" sem realmente chamar — chame e responda com o resultado.
-3. Você tem exatamente DUAS ferramentas de escrita: propor_criar_tarefa e propor_criar_lembrete. Elas NUNCA gravam nada sozinhas — apenas preparam uma proposta que aparece num card na tela para o usuário confirmar, editar ou cancelar. Depois de chamar uma delas, resuma a proposta em 1-2 frases e pergunte se o usuário confirma (ex: "Vou criar a tarefa 'Revisar contrato', atribuída a você, para 15/09. Deseja confirmar?"). NUNCA diga que a tarefa/lembrete já foi criada, agendada ou salva — ela só passa a existir de fato depois que o usuário clicar em "Confirmar" na tela. Nunca chame essas ferramentas mais de uma vez para o mesmo pedido do usuário.
-4. Fora consultas e essas duas ferramentas de escrita, você não pode criar, editar, excluir ou executar nenhuma outra ação (prazos, documentos, mensagens de WhatsApp, minutas, protocolos, etc.). Se o usuário pedir algo assim, responda algo como "Ainda não consigo fazer isso automaticamente, mas você pode fazer isso na tela de [Tarefas/Agenda/Processos/Clientes/Financeiro] do sistema" — nunca finja que executou uma ação, nunca invente uma ferramenta que não existe.
-5. Seja direto e objetivo, em português do Brasil, com tom profissional e cordial. Use listas curtas quando fizer sentido. Evite textos longos.
-6. Nunca revele detalhes técnicos internos (nomes de tabelas, tenant_id, ids) — fale em termos de negócio (processo, cliente, prazo, tarefa).`
+3. Você tem exatamente DUAS ferramentas de escrita no banco: propor_criar_tarefa e propor_criar_lembrete. Elas NUNCA gravam nada sozinhas — apenas preparam uma proposta que aparece num card na tela para o usuário confirmar, editar ou cancelar. Depois de chamar uma delas, resuma a proposta em 1-2 frases e pergunte se o usuário confirma (ex: "Vou criar a tarefa 'Revisar contrato', atribuída a você, para 15/09. Deseja confirmar?"). NUNCA diga que a tarefa/lembrete já foi criada, agendada ou salva — ela só passa a existir de fato depois que o usuário clicar em "Confirmar" na tela. Nunca chame essas ferramentas mais de uma vez para o mesmo pedido do usuário.
+4. Você também pode gerar o TEXTO de minutas de peças jurídicas (gerar_minuta) e analisar documentos (analisar_documento) quando o usuário pedir — essas ferramentas também nunca gravam nada, apenas geram texto para revisão.
+5. Fora consultas e as quatro ferramentas acima (propor_criar_tarefa, propor_criar_lembrete, gerar_minuta, analisar_documento), você não pode criar, editar, excluir, protocolar ou executar nenhuma outra ação real no sistema (prazos, documentos, mensagens de WhatsApp, protocolos, etc.). Se o usuário pedir algo assim, responda algo como "Ainda não consigo fazer isso automaticamente, mas você pode fazer isso na tela de [Tarefas/Agenda/Processos/Clientes/Financeiro] do sistema" — nunca finja que executou uma ação, nunca invente uma ferramenta que não existe.
+6. Seja direto e objetivo, em português do Brasil, com tom profissional e cordial. Use listas curtas quando fizer sentido. Evite textos longos (exceto o texto de uma minuta ou análise gerada por gerar_minuta/analisar_documento, que deve ser reproduzido na íntegra).
+7. Nunca revele detalhes técnicos internos (nomes de tabelas, tenant_id, ids) — fale em termos de negócio (processo, cliente, prazo, tarefa).`
 
 async function callGemini(
   apiKey: string,
@@ -211,42 +139,23 @@ async function callGemini(
   return { parts: candidate.content?.parts || [] }
 }
 
-async function runTool(
-  db: ReturnType<typeof createClient>,
-  profile: CallerProfile,
-  name: ToolName,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  switch (name) {
-    case 'consultar_prazos': return consultarPrazos(db, profile, args as any)
-    case 'consultar_tarefas': return consultarTarefas(db, profile, args as any)
-    case 'consultar_agenda': return consultarAgenda(db, profile, args as any)
-    case 'consultar_processos': return consultarProcessos(db, profile, args as any)
-    case 'consultar_clientes': return consultarClientes(db, profile, args as any)
-    case 'propor_criar_tarefa': return proporCriarTarefa(db, profile, args as any)
-    case 'propor_criar_lembrete': return proporCriarLembrete(db, profile, args as any)
-    default: {
-      const _exhaustive: never = name
-      throw new Error(`Ferramenta desconhecida: ${_exhaustive}`)
-    }
-  }
-}
-
-const WRITE_TOOL_NAMES = new Set<ToolName>(['propor_criar_tarefa', 'propor_criar_lembrete'])
-
 const MAX_TOOL_ROUNDS = 4
 
 // Conduz o ciclo de function calling: manda a mensagem, se o modelo pedir
 // tool(s), executa (com filtro de tenant/role já embutido em cada tool) e
-// devolve o resultado pro modelo, até ele responder com texto final. Se
-// alguma das tools de escrita (propor_criar_tarefa/propor_criar_lembrete) for
-// chamada, a ProposedAction resultante é capturada em `proposedAction` e
-// devolvida junto da resposta — nunca gravada aqui.
+// devolve o resultado pro modelo, até ele responder com texto final.
+// - Se alguma das tools de escrita (propor_criar_tarefa/propor_criar_lembrete)
+//   for chamada, a ProposedAction resultante é capturada em `proposedAction`
+//   e devolvida junto da resposta — nunca gravada aqui.
+// - Se alguma das tools de geração (gerar_minuta/analisar_documento) for
+//   chamada, o texto pronto (já com o aviso embutido) é devolvido direto como
+//   resposta final, sem mais uma volta ao modelo (ver comentário abaixo).
 async function runChatTurn(
   apiKey: string,
   db: ReturnType<typeof createClient>,
   profile: CallerProfile,
   userMessage: string,
+  ctx: ChatToolContext,
 ): Promise<{ answer: string; toolsCalled: string[]; proposedAction: ProposedAction | null }> {
   const contents: Array<Record<string, unknown>> = [{ role: 'user', parts: [{ text: userMessage }] }]
   const toolsCalled: string[] = []
@@ -264,6 +173,7 @@ async function runChatTurn(
     contents.push({ role: 'model', parts: functionCalls.map(fc => ({ functionCall: fc.functionCall })) })
 
     const responseParts: Array<Record<string, unknown>> = []
+    let generationAnswer: string | null = null
     for (const fc of functionCalls) {
       const name = fc.functionCall.name
       if (!TOOL_NAMES.includes(name as ToolName)) {
@@ -272,14 +182,25 @@ async function runChatTurn(
       }
       toolsCalled.push(name)
       try {
-        const result = await runTool(db, profile, name as ToolName, fc.functionCall.args || {})
+        const result = await runTool(db, profile, name as ToolName, fc.functionCall.args || {}, ctx)
         if (WRITE_TOOL_NAMES.has(name as ToolName)) proposedAction = result as ProposedAction
         responseParts.push({ functionResponse: { name, response: result as Record<string, unknown> } })
+        if (GENERATION_TOOL_NAMES.has(name as ToolName) && generationAnswer === null) {
+          generationAnswer = formatGenerationAnswer(result as Record<string, unknown>)
+        }
       } catch (toolErr: unknown) {
         const message = toolErr instanceof Error ? toolErr.message : 'Erro ao executar a ferramenta'
         responseParts.push({ functionResponse: { name, response: { error: message } } })
       }
     }
+
+    // gerar_minuta/analisar_documento já devolvem o texto final pronto (com o
+    // aviso embutido) — não faz sentido mandar de volta pro Gemini "resumir"
+    // dentro do maxOutputTokens de 1024 do chat (pensado pra respostas curtas
+    // de consulta), o que cortaria ou parafrasearia uma petição inteira.
+    // Responde direto com o texto gerado, sem mais uma volta ao modelo.
+    if (generationAnswer !== null) return { answer: generationAnswer, toolsCalled, proposedAction }
+
     contents.push({ role: 'user', parts: responseParts })
   }
 
@@ -414,6 +335,7 @@ Deno.serve(async (req: Request) => {
 
     const body = await req.json().catch(() => null) as {
       message?: string; slash_command?: string
+      attachment?: { mime_type?: string; data_base64?: string; filename?: string }
       confirm_action?: unknown; cancel_action?: { log_id?: string }
     } | null
 
@@ -440,10 +362,26 @@ Deno.serve(async (req: Request) => {
 
     const message = (body?.message || '').trim()
     slashCommand = (body?.slash_command || '').trim().replace(/^\//, '') || null
+    // Só o shape é checado aqui — mime type/tamanho são revalidados de verdade
+    // por ai-gemini-assistant quando (e só quando) analisar_documento for
+    // chamada; nunca gravado nesta função.
+    const rawAttachment = body?.attachment
+    const attachment: AttachmentInput | null =
+      rawAttachment?.mime_type && rawAttachment?.data_base64 && rawAttachment?.filename
+        ? { mime_type: rawAttachment.mime_type, data_base64: rawAttachment.data_base64, filename: rawAttachment.filename }
+        : null
 
     if (!message && !slashCommand) return json({ error: 'Envie message ou slash_command' }, 400)
     if (slashCommand && !SLASH_COMMANDS.includes(slashCommand as SlashCommand)) {
       return json({ error: `Comando inválido. Válidos: ${SLASH_COMMANDS.map(c => '/' + c).join(', ')}` }, 400)
+    }
+    // Cap de tamanho da mensagem livre — sem isso um texto colado enorme (ex:
+    // petição inteira dentro de `message`, em vez de usar `attachment`) vai
+    // inteiro pro Gemini a cada rodada de function calling. Mesmo teto usado
+    // por gerar_minuta/analisar_documento (MAX_TEXT_INPUT_CHARS, generation.ts)
+    // — só o anexo tem cap próprio (15MB, revalidado em ai-gemini-assistant).
+    if (message.length > MAX_TEXT_INPUT_CHARS) {
+      return json({ error: `Mensagem muito longa (máx. ${MAX_TEXT_INPUT_CHARS.toLocaleString('pt-BR')} caracteres). Reduza o texto e tente novamente.` }, 400)
     }
     question = slashCommand ? `/${slashCommand}` : message
 
@@ -457,7 +395,11 @@ Deno.serve(async (req: Request) => {
         await logInteraction(supabaseAdmin, profile, question, slashCommand, [], null, 'error', 'GEMINI_API_KEY não configurada')
         return json({ error: 'Assistente ainda não configurado neste ambiente (GEMINI_API_KEY ausente)' }, 500)
       }
-      result = await runChatTurn(GEMINI_KEY, supabaseAdmin, profile, message)
+      result = await runChatTurn(GEMINI_KEY, supabaseAdmin, profile, message, {
+        supabaseUrl: Deno.env.get('SUPABASE_URL')!,
+        userToken: token,
+        attachment,
+      })
     }
 
     const logId = await logInteraction(
