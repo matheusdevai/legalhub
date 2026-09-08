@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, Spinner, EmptyState } from '@/components/ui'
+import { AssistantChat } from '@/components/assistant/AssistantChat'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -15,11 +16,12 @@ import {
   type EngineProcess, type EngineTask, type EngineEvent,
 } from '@/lib/assistantEngine'
 
-// Dashboard + Central de Alertas do LegalHub Assistente (fundação — milestone 1).
-// Só leitura: agrega dados já existentes em processes/tasks/calendar_events.
-// TODO (próximas fatias, não implementar aqui): chat em linguagem natural,
-// criação de tarefas pela IA, análise de documentos, geração de minutas,
-// WhatsApp, níveis de automação e log de auditoria — ver especificação completa.
+// Dashboard + Central de Alertas (milestone 1) + Chat interno (milestone 2)
+// do LegalHub Assistente. Milestone 2 é somente leitura: o chat só consulta
+// (via Edge Function ai-assistant-chat), nunca cria/edita nada.
+// TODO (próximas fatias, não implementar aqui): criação de tarefas/lembretes
+// pela IA, análise de documentos, geração de minutas, WhatsApp, níveis de
+// automação — ver especificação completa.
 
 const CATEGORY_META: Record<AlertCategory, { label: string; emoji: string; ring: string; badge: string }> = {
   urgente:     { label: 'Urgente',     emoji: '🔴', ring: 'border-red-200 dark:border-red-800/40',       badge: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' },
@@ -176,78 +178,84 @@ export function AssistantPage() {
 
   return (
     <Layout title="Assistente IA">
-      <div className="space-y-6 animate-fade-in">
-        <Card className="p-6 bg-gradient-to-r from-primary-700 via-primary-600 to-sky-500 border-0">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Bot className="text-white w-6 h-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">{greeting}{greetName ? `, ${greetName}` : ''}.</h1>
-              <p className="text-sm text-white/75">Veja o que precisa da sua atenção.</p>
-            </div>
-          </div>
-        </Card>
-
-        {error && (
-          <Card className="p-4 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {error}
-            </div>
-            <button onClick={load} className="text-sm font-semibold text-primary-600 hover:underline flex-shrink-0">
-              Tentar novamente
-            </button>
-          </Card>
-        )}
-
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <Spinner className="w-6 h-6" />
-          </div>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <OverviewCard label="Prazos críticos" value={overview.criticalDeadlines.length} icon={AlertTriangle} color="red" onClick={() => navigate('/processos')} />
-              <OverviewCard label="Prazos próximos" value={overview.upcomingDeadlines.length} icon={Clock} color="orange" onClick={() => navigate('/processos')} />
-              <OverviewCard label="Pendências" value={overview.pendingTasks.length} icon={ClipboardList} color="amber" onClick={() => navigate('/tarefas')} />
-              <OverviewCard
-                label="Clientes aguardando resposta"
-                value={0}
-                icon={MessageCircle}
-                color="slate"
-                comingSoon="Disponível quando a Caixa de Entrada for implementada"
-              />
-              <OverviewCard label="Compromissos de hoje" value={overview.todayEvents.length} icon={CalendarClock} color="blue" onClick={() => navigate('/agenda')} />
-              <OverviewCard label="Tarefas atrasadas" value={overview.overdueTasks.length} icon={AlertOctagon} color="rose" onClick={() => navigate('/tarefas')} />
-              <OverviewCard
-                label="Documentos pendentes"
-                value={0}
-                icon={FileWarning}
-                color="slate"
-                comingSoon="Disponível quando o controle de documentos pendentes por cliente/processo for implementado"
-              />
-              <OverviewCard label="Processos que exigem atenção" value={overview.attentionProcesses.length} icon={Scale} color="violet" onClick={() => navigate('/processos')} />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-base font-bold text-slate-900 dark:text-white">Central de Alertas</h2>
-                <span className="text-xs text-slate-400">{totalAlerts} item{totalAlerts === 1 ? '' : 's'}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start animate-fade-in">
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="p-6 bg-gradient-to-r from-primary-700 via-primary-600 to-sky-500 border-0">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                <Bot className="text-white w-6 h-6" />
               </div>
-              {totalAlerts === 0 ? (
-                <Card className="p-4">
-                  <EmptyState icon={Bot} title="Nenhum alerta no momento" description="Tudo em dia por aqui." />
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {(Object.keys(CATEGORY_META) as AlertCategory[]).map(cat => (
-                    <AlertColumn key={cat} category={cat} items={alerts[cat]} onOpen={link => navigate(link)} />
-                  ))}
-                </div>
-              )}
+              <div>
+                <h1 className="text-xl font-bold text-white">{greeting}{greetName ? `, ${greetName}` : ''}.</h1>
+                <p className="text-sm text-white/75">Veja o que precisa da sua atenção.</p>
+              </div>
             </div>
-          </>
-        )}
+          </Card>
+
+          {error && (
+            <Card className="p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" /> {error}
+              </div>
+              <button onClick={load} className="text-sm font-semibold text-primary-600 hover:underline flex-shrink-0">
+                Tentar novamente
+              </button>
+            </Card>
+          )}
+
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Spinner className="w-6 h-6" />
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <OverviewCard label="Prazos críticos" value={overview.criticalDeadlines.length} icon={AlertTriangle} color="red" onClick={() => navigate('/processos')} />
+                <OverviewCard label="Prazos próximos" value={overview.upcomingDeadlines.length} icon={Clock} color="orange" onClick={() => navigate('/processos')} />
+                <OverviewCard label="Pendências" value={overview.pendingTasks.length} icon={ClipboardList} color="amber" onClick={() => navigate('/tarefas')} />
+                <OverviewCard
+                  label="Clientes aguardando resposta"
+                  value={0}
+                  icon={MessageCircle}
+                  color="slate"
+                  comingSoon="Disponível quando a Caixa de Entrada for implementada"
+                />
+                <OverviewCard label="Compromissos de hoje" value={overview.todayEvents.length} icon={CalendarClock} color="blue" onClick={() => navigate('/agenda')} />
+                <OverviewCard label="Tarefas atrasadas" value={overview.overdueTasks.length} icon={AlertOctagon} color="rose" onClick={() => navigate('/tarefas')} />
+                <OverviewCard
+                  label="Documentos pendentes"
+                  value={0}
+                  icon={FileWarning}
+                  color="slate"
+                  comingSoon="Disponível quando o controle de documentos pendentes por cliente/processo for implementado"
+                />
+                <OverviewCard label="Processos que exigem atenção" value={overview.attentionProcesses.length} icon={Scale} color="violet" onClick={() => navigate('/processos')} />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-bold text-slate-900 dark:text-white">Central de Alertas</h2>
+                  <span className="text-xs text-slate-400">{totalAlerts} item{totalAlerts === 1 ? '' : 's'}</span>
+                </div>
+                {totalAlerts === 0 ? (
+                  <Card className="p-4">
+                    <EmptyState icon={Bot} title="Nenhum alerta no momento" description="Tudo em dia por aqui." />
+                  </Card>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {(Object.keys(CATEGORY_META) as AlertCategory[]).map(cat => (
+                      <AlertColumn key={cat} category={cat} items={alerts[cat]} onOpen={link => navigate(link)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="lg:sticky lg:top-6">
+          <AssistantChat />
+        </div>
       </div>
     </Layout>
   )
