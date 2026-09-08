@@ -68,7 +68,7 @@ export function AiJuridicaPage() {
     <Layout title="Excelência">
       <div className="space-y-4 animate-fade-in">
         {/* Header */}
-        <Card className="p-5 bg-gradient-to-r from-indigo-700 via-violet-600 to-purple-600 border-0">
+        <Card className="p-5 bg-gradient-to-r from-primary-700 via-primary-600 to-primary-500 border-0">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
               <Sparkles className="text-white w-5 h-5" />
