@@ -4,17 +4,27 @@ import {
   consultarPrazos, consultarTarefas, consultarAgenda, consultarProcessos, consultarClientes,
   type CallerProfile,
 } from './tools.ts'
+import {
+  gerarMinuta, analisarDocumento, GERAR_MINUTA_TIPOS, type AttachmentInput,
+} from './generation.ts'
 
 // ============================================================================
-// ai-assistant-chat — Chat interno do LegalHub Assistente (milestone 2).
+// ai-assistant-chat — Chat interno do LegalHub Assistente (milestones 2 e 4).
 //
 // Diferente de ai-gemini-assistant (prompt único, sem tools — usado pela "IA
 // Jurídica" para gerar petições/pareceres), esta função usa function calling
-// real do Gemini: o modelo só enxerga o que as ferramentas em tools.ts
-// devolvem, nunca inventa processo/cliente/prazo/data (reforçado no
-// SYSTEM_PROMPT abaixo). SOMENTE LEITURA nesta fatia — nenhuma tool de
-// escrita/criação existe ainda; se o usuário pedir uma ação de escrita, o
-// modelo é instruído a dizer que ainda não consegue fazer isso automaticamente.
+// real do Gemini: o modelo só enxerga o que as ferramentas em tools.ts /
+// generation.ts devolvem, nunca inventa processo/cliente/prazo/data
+// (reforçado no SYSTEM_PROMPT abaixo).
+//
+// Duas famílias de ferramentas:
+// - tools.ts (milestone 2): 5 consultas somente-leitura direto no banco.
+// - generation.ts (milestone 4): gerar_minuta/analisar_documento, que geram
+//   texto (nunca gravam nada) invocando ai-gemini-assistant via HTTP — mesma
+//   chamada que a "Excelência" já faz no frontend, sem duplicar prompt.
+// Nenhuma tool de ESCRITA no banco (criar tarefa/lembrete/protocolar minuta)
+// existe nesta função ainda — se o usuário pedir isso, o modelo é instruído a
+// dizer que ainda não consegue fazer isso automaticamente aqui.
 //
 // Reaproveita de ai-gemini-assistant: boilerplate de CORS, auth via
 // auth.getUser(), resolução de tenant a partir do profile do chamador (nunca
@@ -22,9 +32,13 @@ import {
 // check_rate_limit (mesma tabela edge_function_rate_limits).
 //
 // Contrato:
-//   POST { message?, slash_command? } -> { answer, tools_called, log_id }
+//   POST { message?, slash_command?, attachment? } -> { answer, tools_called }
 //   Exatamente um de `message` (linguagem natural) ou `slash_command` (um dos
 //   atalhos da seção 55 do documento de spec) deve vir preenchido.
+//   `attachment` (opcional, só com `message`): { mime_type, data_base64,
+//   filename } — PDF/JPEG/PNG, mesmo formato de ai-gemini-assistant. Só é
+//   usado se o modelo chamar analisar_documento nesta rodada; revalidado
+//   inteiramente por ai-gemini-assistant (nunca salvo aqui).
 // ============================================================================
 
 const CORS = {
@@ -114,18 +128,60 @@ const TOOL_DECLARATIONS = [
       required: ['busca'],
     },
   },
+  {
+    name: 'gerar_minuta',
+    description: 'Gera o TEXTO de uma minuta de peça jurídica (petição inicial, cumprimento de despacho, impugnação/recurso ou parecer jurídico) a partir dos dados que o usuário forneceu na conversa. NUNCA protocola, envia ou salva a peça em lugar nenhum — apenas gera o texto para o usuário revisar. Sempre venha acompanhada do aviso de que é uma minuta para revisão do advogado.',
+    parameters: {
+      type: 'object',
+      properties: {
+        tipo: {
+          type: 'string',
+          enum: [...GERAR_MINUTA_TIPOS],
+          description: 'Tipo de peça a gerar: peticao_inicial, cumprimento_despacho, impugnacao_recurso ou parecer_juridico.',
+        },
+        contexto: {
+          type: 'object',
+          description:
+            'Dados da peça extraídos da conversa, nas chaves esperadas por cada tipo (sempre em português, mesmos nomes de campo do formulário da "Excelência"). ' +
+            'peticao_inicial: autor_nome, autor_qualificacao, reu_nome, reu_qualificacao, juizo_comarca, tipo_acao, fatos, fundamentos_adicionais, pedidos_especificos, valor_causa, provas, advogado_nome, advogado_oab, processo_numero. ' +
+            'cumprimento_despacho: despacho_texto, providencia (juntada_documentos|manifestacao_laudo|cumprimento_geral|outro), detalhes, documentos_juntados, prazo_info, processo_numero, advogado_nome, advogado_oab. ' +
+            'impugnacao_recurso: subtipo (impugnacao_cumprimento_sentenca|apelacao|agravo), decisao_texto, data_ciencia, razoes, preparo_info, processo_numero, advogado_nome, advogado_oab. ' +
+            'parecer_juridico: consulente, questao_juridica, fatos_relevantes, posicao_desejada, processo_numero, processo_titulo, area, tipo_acao. ' +
+            'Deixe de fora qualquer campo que o usuário não tenha informado — não invente valor.',
+        },
+      },
+      required: ['tipo', 'contexto'],
+    },
+  },
+  {
+    name: 'analisar_documento',
+    description: 'Analisa um documento jurídico (petição, decisão, contrato, notificação) e devolve resumo executivo, pontos-chave, implicações jurídicas e riscos. Use o texto colado pelo usuário na conversa, ou o anexo enviado junto com a mensagem, se houver. NUNCA grava nada — apenas gera a análise para leitura.',
+    parameters: {
+      type: 'object',
+      properties: {
+        texto: { type: 'string', description: 'Texto do documento a analisar, se o usuário colou/descreveu o conteúdo na conversa. Deixe vazio se a análise deve se basear só no anexo enviado.' },
+        titulo: { type: 'string', description: 'Título/tipo do documento, se mencionado (ex: "Contrato de honorários", "Decisão interlocutória").' },
+      },
+    },
+  },
 ] as const
 
 const TOOL_NAMES = TOOL_DECLARATIONS.map(t => t.name)
 type ToolName = typeof TOOL_NAMES[number]
+
+// gerar_minuta/analisar_documento devolvem o texto final pronto (já com o
+// "aviso" de revisão embutido pela própria tool, ver generation.ts) — tratadas
+// como terminais no loop de function calling: o resultado é a resposta final
+// da rodada, sem voltar pro Gemini resumir/reescrever (ver runChatTurn).
+const GENERATION_TOOL_NAMES = new Set<ToolName>(['gerar_minuta', 'analisar_documento'])
 
 const SYSTEM_PROMPT = `Você é o LegalHub Assistente, um assistente interno para advogados e equipes de escritórios de advocacia dentro do sistema LegalHub.
 
 REGRAS INEGOCIÁVEIS:
 1. Você NUNCA inventa processo, cliente, prazo, data, tarefa ou compromisso. Toda informação factual que você disser DEVE vir de uma chamada às ferramentas disponíveis (consultar_prazos, consultar_tarefas, consultar_agenda, consultar_processos, consultar_clientes). Se a pergunta exigir dado que nenhuma ferramenta cobre, diga claramente que não tem essa informação — nunca complete com um palpite.
 2. Se a pergunta puder ser respondida com uma ferramenta, chame a ferramenta antes de responder. Não responda "deixa eu verificar" sem realmente chamar — chame e responda com o resultado.
-3. Você é SOMENTE LEITURA nesta versão. Você não pode criar, editar, excluir ou confirmar nenhuma ação (tarefas, lembretes, prazos, documentos, mensagens de WhatsApp, minutas). Se o usuário pedir algo assim, responda algo como "Ainda não consigo fazer isso automaticamente, mas você pode fazer isso na tela de [Tarefas/Agenda/Processos/Clientes] do sistema" — nunca finja que executou uma ação.
-4. Seja direto e objetivo, em português do Brasil, com tom profissional e cordial. Use listas curtas quando fizer sentido. Evite textos longos.
+3. Você pode gerar o TEXTO de minutas de peças jurídicas (gerar_minuta) e analisar documentos (analisar_documento) quando o usuário pedir. Fora isso, você é SOMENTE LEITURA: não pode protocolar, salvar, editar, excluir ou confirmar nenhuma ação real no sistema (tarefas, lembretes, prazos, documentos, mensagens de WhatsApp). Se o usuário pedir uma ação de escrita além de gerar um texto — "crie uma tarefa", "agende isso", "protocole essa petição" —, responda algo como "Ainda não consigo fazer isso automaticamente, mas você pode fazer isso na tela de [Tarefas/Agenda/Processos/Clientes] do sistema" — nunca finja que executou uma ação.
+4. Seja direto e objetivo, em português do Brasil, com tom profissional e cordial. Use listas curtas quando fizer sentido. Evite textos longos (exceto o texto de uma minuta ou análise gerada por gerar_minuta/analisar_documento, que deve ser reproduzido na íntegra).
 5. Nunca revele detalhes técnicos internos (nomes de tabelas, tenant_id, ids) — fale em termos de negócio (processo, cliente, prazo, tarefa).`
 
 async function callGemini(
@@ -155,11 +211,18 @@ async function callGemini(
   return { parts: candidate.content?.parts || [] }
 }
 
+interface ChatToolContext {
+  supabaseUrl: string
+  userToken: string
+  attachment: AttachmentInput | null
+}
+
 async function runTool(
   db: ReturnType<typeof createClient>,
   profile: CallerProfile,
   name: ToolName,
   args: Record<string, unknown>,
+  ctx: ChatToolContext,
 ): Promise<unknown> {
   switch (name) {
     case 'consultar_prazos': return consultarPrazos(db, profile, args as any)
@@ -167,6 +230,12 @@ async function runTool(
     case 'consultar_agenda': return consultarAgenda(db, profile, args as any)
     case 'consultar_processos': return consultarProcessos(db, profile, args as any)
     case 'consultar_clientes': return consultarClientes(db, profile, args as any)
+    // supabaseUrl/userToken sempre da requisição autenticada atual (nunca de
+    // args do modelo) — gerarMinuta/analisarDocumento chamam ai-gemini-assistant
+    // com o Bearer do próprio usuário, que resolve tenant/rate limit por conta
+    // própria (mesmo padrão de auth de tools.ts, um passo adiante).
+    case 'gerar_minuta': return gerarMinuta(ctx.supabaseUrl, ctx.userToken, profile, args as any)
+    case 'analisar_documento': return analisarDocumento(ctx.supabaseUrl, ctx.userToken, args as any, ctx.attachment)
     default: {
       const _exhaustive: never = name
       throw new Error(`Ferramenta desconhecida: ${_exhaustive}`)
@@ -176,6 +245,14 @@ async function runTool(
 
 const MAX_TOOL_ROUNDS = 4
 
+function formatGenerationAnswer(result: Record<string, unknown>): string {
+  if (typeof result.error === 'string') return result.error
+  const aviso = typeof result.aviso === 'string' ? result.aviso : null
+  const texto = typeof result.minuta === 'string' ? result.minuta : typeof result.analise === 'string' ? result.analise : null
+  if (!texto) return 'Não consegui gerar o conteúdo — tente novamente.'
+  return aviso ? `${aviso}\n\n${texto}` : texto
+}
+
 // Conduz o ciclo de function calling: manda a mensagem, se o modelo pedir
 // tool(s), executa (com filtro de tenant/role já embutido em cada tool) e
 // devolve o resultado pro modelo, até ele responder com texto final.
@@ -184,6 +261,7 @@ async function runChatTurn(
   db: ReturnType<typeof createClient>,
   profile: CallerProfile,
   userMessage: string,
+  ctx: ChatToolContext,
 ): Promise<{ answer: string; toolsCalled: string[] }> {
   const contents: Array<Record<string, unknown>> = [{ role: 'user', parts: [{ text: userMessage }] }]
   const toolsCalled: string[] = []
@@ -200,6 +278,7 @@ async function runChatTurn(
     contents.push({ role: 'model', parts: functionCalls.map(fc => ({ functionCall: fc.functionCall })) })
 
     const responseParts: Array<Record<string, unknown>> = []
+    let generationAnswer: string | null = null
     for (const fc of functionCalls) {
       const name = fc.functionCall.name
       if (!TOOL_NAMES.includes(name as ToolName)) {
@@ -208,13 +287,24 @@ async function runChatTurn(
       }
       toolsCalled.push(name)
       try {
-        const result = await runTool(db, profile, name as ToolName, fc.functionCall.args || {})
+        const result = await runTool(db, profile, name as ToolName, fc.functionCall.args || {}, ctx)
         responseParts.push({ functionResponse: { name, response: result as Record<string, unknown> } })
+        if (GENERATION_TOOL_NAMES.has(name as ToolName) && generationAnswer === null) {
+          generationAnswer = formatGenerationAnswer(result as Record<string, unknown>)
+        }
       } catch (toolErr: unknown) {
         const message = toolErr instanceof Error ? toolErr.message : 'Erro ao executar a ferramenta'
         responseParts.push({ functionResponse: { name, response: { error: message } } })
       }
     }
+
+    // gerar_minuta/analisar_documento já devolvem o texto final pronto (com o
+    // aviso embutido) — não faz sentido mandar de volta pro Gemini "resumir"
+    // dentro do maxOutputTokens de 1024 do chat (pensado pra respostas curtas
+    // de consulta), o que cortaria ou parafrasearia uma petição inteira.
+    // Responde direto com o texto gerado, sem mais uma volta ao modelo.
+    if (generationAnswer !== null) return { answer: generationAnswer, toolsCalled }
+
     contents.push({ role: 'user', parts: responseParts })
   }
 
@@ -350,9 +440,21 @@ Deno.serve(async (req: Request) => {
     const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant-chat:${user.id}`)
     if (!withinLimit) return json({ error: 'Muitas perguntas em pouco tempo. Aguarde e tente novamente.' }, 429)
 
-    const body = await req.json().catch(() => null) as { message?: string; slash_command?: string } | null
+    const body = await req.json().catch(() => null) as {
+      message?: string
+      slash_command?: string
+      attachment?: { mime_type?: string; data_base64?: string; filename?: string }
+    } | null
     const message = (body?.message || '').trim()
     slashCommand = (body?.slash_command || '').trim().replace(/^\//, '') || null
+    // Só o shape é checado aqui — mime type/tamanho são revalidados de verdade
+    // por ai-gemini-assistant quando (e só quando) analisar_documento for
+    // chamada; nunca gravado nesta função.
+    const rawAttachment = body?.attachment
+    const attachment: AttachmentInput | null =
+      rawAttachment?.mime_type && rawAttachment?.data_base64 && rawAttachment?.filename
+        ? { mime_type: rawAttachment.mime_type, data_base64: rawAttachment.data_base64, filename: rawAttachment.filename }
+        : null
 
     if (!message && !slashCommand) return json({ error: 'Envie message ou slash_command' }, 400)
     if (slashCommand && !SLASH_COMMANDS.includes(slashCommand as SlashCommand)) {
@@ -369,7 +471,11 @@ Deno.serve(async (req: Request) => {
         await logInteraction(supabaseAdmin, profile, question, slashCommand, [], null, 'error', 'GEMINI_API_KEY não configurada')
         return json({ error: 'Assistente ainda não configurado neste ambiente (GEMINI_API_KEY ausente)' }, 500)
       }
-      result = await runChatTurn(GEMINI_KEY, supabaseAdmin, profile, message)
+      result = await runChatTurn(GEMINI_KEY, supabaseAdmin, profile, message, {
+        supabaseUrl: Deno.env.get('SUPABASE_URL')!,
+        userToken: token,
+        attachment,
+      })
     }
 
     await logInteraction(supabaseAdmin, profile, question, slashCommand, result.toolsCalled, result.answer, 'completed', null)
