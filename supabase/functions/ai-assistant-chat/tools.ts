@@ -240,3 +240,207 @@ export async function consultarClientes(
     })),
   }
 }
+
+// ============================================================================
+// propor_criar_tarefa / propor_criar_lembrete — milestone 3, primeira
+// capacidade de ESCRITA do assistente.
+//
+// As duas funções abaixo NUNCA gravam em `tasks`: elas só resolvem o
+// responsável e devolvem uma "ação proposta" estruturada, que a Edge Function
+// (index.ts) loga com status 'proposed' e devolve pro frontend renderizar o
+// card de confirmação. A gravação de fato só acontece em
+// confirmarAcaoProposta(), chamada por uma requisição SEPARADA e autenticada,
+// disparada somente quando o usuário clica em "Confirmar" (ou edita e
+// confirma) na UI — nunca durante o turno de chat com o Gemini.
+//
+// Não existe um conceito de "lembrete" separado de "tarefa" no banco
+// (ver src/types/index.ts Task — sem campo/tipo 'reminder'): um lembrete
+// criado pelo assistente é uma linha normal em `tasks`, type 'custom',
+// prioridade 'low' por padrão (tarefa usa 'medium'). A distinção é só de UX
+// (o usuário pede "me lembra de X" vs "crie uma tarefa para X").
+// ============================================================================
+
+export interface ProposedAction {
+  type: 'criar_tarefa' | 'criar_lembrete'
+  title: string
+  description: string | null
+  due_date: string | null
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  assigned_to: string
+  assigned_name: string | null
+  /** Aviso não-bloqueante pro usuário (ex: nome não encontrado, data inválida) — some quando null. */
+  note: string | null
+}
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const PRIORITIES = new Set(['low', 'medium', 'high', 'urgent'])
+
+function normalizeDueDate(dueDate?: string | null): { value: string | null; invalid: boolean } {
+  if (!dueDate) return { value: null, invalid: false }
+  return DATE_RE.test(dueDate) ? { value: dueDate, invalid: false } : { value: null, invalid: true }
+}
+
+// Resolve pra quem a tarefa/lembrete vai. Por padrão o próprio usuário que
+// está conversando (assigned_to = profile.user_id); só atribui a outra
+// pessoa se o texto pedir isso explicitamente E o nome bater com exatamente
+// 1 pessoa do tenant.
+//
+// IMPORTANTE — permissão replicada, não inventada: TasksPage.tsx (campo
+// "Responsável" do modal de criação de tarefa) não impõe NENHUMA restrição
+// de role sobre quem pode atribuir tarefa a quem — qualquer usuário
+// autenticado do tenant (admin, lawyer, intern, financial) pode escolher
+// qualquer colega no dropdown de responsável, sem checagem adicional. O
+// assistente replica exatamente essa ausência de restrição (nem mais
+// permissivo, nem mais restritivo) — ver investigação registrada no handoff
+// desta fatia.
+export async function resolveAssignee(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  nomeSolicitado?: string | null,
+): Promise<{ assigned_to: string; assigned_name: string | null; note: string | null }> {
+  const nome = (nomeSolicitado || '').trim()
+  if (!nome) return { assigned_to: profile.user_id, assigned_name: profile.name, note: null }
+
+  const { data, error } = await db
+    .from('profiles')
+    .select('user_id, name, display_name, role')
+    .eq('tenant_id', profile.tenant_id)
+    .neq('role', 'client')
+    .or(`name.ilike.%${nome}%,display_name.ilike.%${nome}%`)
+    .limit(5)
+  if (error) throw new Error('Erro ao buscar responsável')
+
+  const rows = (data || []) as Array<{ user_id: string; name: string | null; display_name: string | null; role: string }>
+  if (rows.length === 1) {
+    const match = rows[0]
+    return { assigned_to: match.user_id, assigned_name: match.name || match.display_name || null, note: null }
+  }
+  const note = rows.length === 0
+    ? `Não encontrei ninguém chamado "${nome}" no escritório — atribuí a você. Use "Editar" para corrigir.`
+    : `Encontrei mais de uma pessoa chamada "${nome}" — atribuí a você. Use "Editar" para corrigir.`
+  return { assigned_to: profile.user_id, assigned_name: profile.name, note }
+}
+
+export async function proporCriarTarefa(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  args: { titulo: string; descricao?: string; data_vencimento?: string; prioridade?: string; atribuir_a_nome?: string },
+): Promise<ProposedAction> {
+  const titulo = (args?.titulo || '').trim()
+  if (!titulo) throw new Error('Título da tarefa é obrigatório')
+  const { value: due_date, invalid } = normalizeDueDate(args?.data_vencimento)
+  const priority = (PRIORITIES.has(args?.prioridade || '') ? args!.prioridade : 'medium') as ProposedAction['priority']
+  const assignee = await resolveAssignee(db, profile, args?.atribuir_a_nome)
+  const note = [
+    assignee.note,
+    invalid ? `Não entendi a data "${args?.data_vencimento}" — deixei sem prazo. Use "Editar" para corrigir.` : null,
+  ].filter(Boolean).join(' ') || null
+
+  return {
+    type: 'criar_tarefa',
+    title: titulo,
+    description: (args?.descricao || '').trim() || null,
+    due_date,
+    priority,
+    assigned_to: assignee.assigned_to,
+    assigned_name: assignee.assigned_name,
+    note,
+  }
+}
+
+export async function proporCriarLembrete(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  args: { titulo: string; data_vencimento?: string; atribuir_a_nome?: string },
+): Promise<ProposedAction> {
+  const titulo = (args?.titulo || '').trim()
+  if (!titulo) throw new Error('Título do lembrete é obrigatório')
+  const { value: due_date, invalid } = normalizeDueDate(args?.data_vencimento)
+  const assignee = await resolveAssignee(db, profile, args?.atribuir_a_nome)
+  const note = [
+    assignee.note,
+    invalid ? `Não entendi a data "${args?.data_vencimento}" — deixei sem prazo. Use "Editar" para corrigir.` : null,
+  ].filter(Boolean).join(' ') || null
+
+  return {
+    type: 'criar_lembrete',
+    title: titulo,
+    description: null,
+    due_date,
+    priority: 'low',
+    assigned_to: assignee.assigned_to,
+    assigned_name: assignee.assigned_name,
+    note,
+  }
+}
+
+// --- confirmarAcaoProposta ---------------------------------------------------
+// Chamada a partir da requisição SEPARADA de confirmação (nunca do turno de
+// chat). Revalida tudo server-side — nunca confia no payload que a UI manda
+// de volta (o usuário pode ter editado os campos no card, ou o payload pode
+// ter sido adulterado): título não vazio, data no formato certo, prioridade
+// válida, e que assigned_to é de fato um usuário do mesmo tenant e não um
+// cliente do portal.
+export async function confirmarAcaoProposta(
+  db: SupabaseAdmin,
+  profile: CallerProfile,
+  input: {
+    type: 'criar_tarefa' | 'criar_lembrete'
+    title: string
+    description?: string | null
+    due_date?: string | null
+    priority?: string | null
+    assigned_to: string
+  },
+): Promise<{ task_id: string; assigned_to: string; assigned_name: string | null }> {
+  const title = (input.title || '').trim()
+  if (!title) throw new Error('Título é obrigatório')
+  const { value: due_date, invalid } = normalizeDueDate(input.due_date)
+  if (invalid) throw new Error('Data de vencimento inválida (use AAAA-MM-DD)')
+  const priority = input.type === 'criar_lembrete'
+    ? 'low'
+    : (PRIORITIES.has(input.priority || '') ? (input.priority as string) : 'medium')
+
+  const { data: assigneeRow, error: assigneeErr } = await db
+    .from('profiles')
+    .select('user_id, name, display_name, role')
+    .eq('tenant_id', profile.tenant_id)
+    .eq('user_id', input.assigned_to)
+    .neq('role', 'client')
+    .maybeSingle()
+  if (assigneeErr) throw new Error('Erro ao validar responsável')
+  if (!assigneeRow) throw new Error('Responsável inválido — selecione alguém do escritório.')
+  const assignee = assigneeRow as { user_id: string; name: string | null; display_name: string | null }
+
+  const { data: taskRow, error: insertErr } = await db
+    .from('tasks')
+    .insert({
+      tenant_id: profile.tenant_id,
+      title,
+      description: (input.description || '').trim() || null,
+      due_date,
+      priority,
+      status: 'pending',
+      type: 'custom',
+      assigned_to: assignee.user_id,
+      assigned_name: assignee.name || assignee.display_name || null,
+      created_by: profile.user_id,
+    })
+    .select('id')
+    .single()
+  if (insertErr || !taskRow) throw new Error('Erro ao criar tarefa')
+
+  // Mesmo padrão de notificação de TasksPage.tsx (notifyTaskAssignment): só
+  // notifica quando atribui a outra pessoa, nunca quando é a própria.
+  if (assignee.user_id !== profile.user_id) {
+    await db.rpc('notify_user', {
+      target_user_id: assignee.user_id,
+      p_type: 'task',
+      p_title: 'Nova tarefa atribuída a você',
+      p_message: title,
+      p_link: '/tarefas',
+    })
+  }
+
+  return { task_id: (taskRow as { id: string }).id, assigned_to: assignee.user_id, assigned_name: assignee.name || assignee.display_name || null }
+}

@@ -2,19 +2,31 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import {
   consultarPrazos, consultarTarefas, consultarAgenda, consultarProcessos, consultarClientes,
-  type CallerProfile,
+  proporCriarTarefa, proporCriarLembrete, confirmarAcaoProposta,
+  type CallerProfile, type ProposedAction,
 } from './tools.ts'
 
 // ============================================================================
-// ai-assistant-chat — Chat interno do LegalHub Assistente (milestone 2).
+// ai-assistant-chat — Chat interno do LegalHub Assistente (milestone 2 leitura
+// + milestone 3 primeira capacidade de escrita, sempre com confirmação).
 //
 // Diferente de ai-gemini-assistant (prompt único, sem tools — usado pela "IA
 // Jurídica" para gerar petições/pareceres), esta função usa function calling
 // real do Gemini: o modelo só enxerga o que as ferramentas em tools.ts
 // devolvem, nunca inventa processo/cliente/prazo/data (reforçado no
-// SYSTEM_PROMPT abaixo). SOMENTE LEITURA nesta fatia — nenhuma tool de
-// escrita/criação existe ainda; se o usuário pedir uma ação de escrita, o
-// modelo é instruído a dizer que ainda não consegue fazer isso automaticamente.
+// SYSTEM_PROMPT abaixo).
+//
+// Escrita (milestone 3): as tools propor_criar_tarefa/propor_criar_lembrete
+// NUNCA gravam nada no turno de chat — elas só devolvem uma "ação proposta"
+// estruturada (ver ProposedAction em tools.ts), que esta função loga com
+// status 'proposed' em ai_assistant_logs e devolve ao frontend como
+// `proposed_action` pra renderizar um card de confirmação. A gravação de
+// fato só acontece através de uma requisição SEPARADA e autenticada
+// (`confirm_action` no body, abaixo), disparada somente quando o usuário
+// clica em "Confirmar" (ou edita e confirma) na UI. Qualquer outra ação de
+// escrita que o usuário peça (fora essas duas) é escalada: o modelo diz que
+// ainda não consegue fazer isso automaticamente e aponta a tela do sistema
+// correspondente — nunca finge executar, nunca inventa uma ferramenta.
 //
 // Reaproveita de ai-gemini-assistant: boilerplate de CORS, auth via
 // auth.getUser(), resolução de tenant a partir do profile do chamador (nunca
@@ -22,9 +34,17 @@ import {
 // check_rate_limit (mesma tabela edge_function_rate_limits).
 //
 // Contrato:
-//   POST { message?, slash_command? } -> { answer, tools_called, log_id }
-//   Exatamente um de `message` (linguagem natural) ou `slash_command` (um dos
-//   atalhos da seção 55 do documento de spec) deve vir preenchido.
+//   POST { message? , slash_command? } -> { answer, tools_called, proposed_action, log_id }
+//     Exatamente um de `message` (linguagem natural) ou `slash_command` (um
+//     dos atalhos da seção 55 do documento de spec) deve vir preenchido.
+//     `proposed_action` vem null exceto quando o modelo chamou uma das tools
+//     de escrita nesse turno.
+//   POST { confirm_action: { log_id, type, title, description?, due_date?, priority?, assigned_to } } -> { task_id }
+//     Grava de fato a tarefa/lembrete proposto em `log_id`. Só o autor do log
+//     original pode confirmar, e só enquanto o status daquele log ainda for
+//     'proposed' (idempotente contra duplo clique).
+//   POST { cancel_action: { log_id } } -> { cancelled: true }
+//     Marca a proposta como cancelada, sem gravar nada em `tasks`.
 // ============================================================================
 
 const CORS = {
@@ -114,6 +134,34 @@ const TOOL_DECLARATIONS = [
       required: ['busca'],
     },
   },
+  {
+    name: 'propor_criar_tarefa',
+    description: 'Propõe a criação de uma nova tarefa. NÃO cria a tarefa de fato — apenas monta uma proposta que será exibida ao usuário em um card de confirmação. A tarefa só é gravada se o usuário clicar em "Confirmar" na tela.',
+    parameters: {
+      type: 'object',
+      properties: {
+        titulo: { type: 'string', description: 'Título curto e claro da tarefa.' },
+        descricao: { type: 'string', description: 'Detalhes adicionais da tarefa (opcional).' },
+        data_vencimento: { type: 'string', description: 'Data de vencimento no formato AAAA-MM-DD (opcional).' },
+        prioridade: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'], description: 'Prioridade da tarefa. Padrão: medium.' },
+        atribuir_a_nome: { type: 'string', description: 'Nome da pessoa a quem atribuir a tarefa, SOMENTE se o usuário pedir isso explicitamente (ex: "crie uma tarefa para o João revisar isso"). Se omitido, a tarefa é atribuída ao próprio usuário que está conversando.' },
+      },
+      required: ['titulo'],
+    },
+  },
+  {
+    name: 'propor_criar_lembrete',
+    description: 'Propõe a criação de um lembrete simples (um lembrete é uma tarefa rápida e informal, geralmente sem descrição longa nem vínculo com processo/cliente). NÃO cria nada de fato — apenas monta uma proposta para confirmação explícita do usuário.',
+    parameters: {
+      type: 'object',
+      properties: {
+        titulo: { type: 'string', description: 'O que deve ser lembrado.' },
+        data_vencimento: { type: 'string', description: 'Data do lembrete no formato AAAA-MM-DD (opcional).' },
+        atribuir_a_nome: { type: 'string', description: 'Nome da pessoa a quem atribuir o lembrete, SOMENTE se pedido explicitamente. Padrão: o próprio usuário.' },
+      },
+      required: ['titulo'],
+    },
+  },
 ] as const
 
 const TOOL_NAMES = TOOL_DECLARATIONS.map(t => t.name)
@@ -122,11 +170,12 @@ type ToolName = typeof TOOL_NAMES[number]
 const SYSTEM_PROMPT = `Você é o LegalHub Assistente, um assistente interno para advogados e equipes de escritórios de advocacia dentro do sistema LegalHub.
 
 REGRAS INEGOCIÁVEIS:
-1. Você NUNCA inventa processo, cliente, prazo, data, tarefa ou compromisso. Toda informação factual que você disser DEVE vir de uma chamada às ferramentas disponíveis (consultar_prazos, consultar_tarefas, consultar_agenda, consultar_processos, consultar_clientes). Se a pergunta exigir dado que nenhuma ferramenta cobre, diga claramente que não tem essa informação — nunca complete com um palpite.
-2. Se a pergunta puder ser respondida com uma ferramenta, chame a ferramenta antes de responder. Não responda "deixa eu verificar" sem realmente chamar — chame e responda com o resultado.
-3. Você é SOMENTE LEITURA nesta versão. Você não pode criar, editar, excluir ou confirmar nenhuma ação (tarefas, lembretes, prazos, documentos, mensagens de WhatsApp, minutas). Se o usuário pedir algo assim, responda algo como "Ainda não consigo fazer isso automaticamente, mas você pode fazer isso na tela de [Tarefas/Agenda/Processos/Clientes] do sistema" — nunca finja que executou uma ação.
-4. Seja direto e objetivo, em português do Brasil, com tom profissional e cordial. Use listas curtas quando fizer sentido. Evite textos longos.
-5. Nunca revele detalhes técnicos internos (nomes de tabelas, tenant_id, ids) — fale em termos de negócio (processo, cliente, prazo, tarefa).`
+1. Você NUNCA inventa processo, cliente, prazo, data, tarefa ou compromisso. Toda informação factual que você disser DEVE vir de uma chamada às ferramentas disponíveis. Se a pergunta exigir dado que nenhuma ferramenta cobre, diga claramente que não tem essa informação — nunca complete com um palpite.
+2. Se a pergunta puder ser respondida com uma ferramenta de consulta (consultar_prazos, consultar_tarefas, consultar_agenda, consultar_processos, consultar_clientes), chame a ferramenta antes de responder. Não responda "deixa eu verificar" sem realmente chamar — chame e responda com o resultado.
+3. Você tem exatamente DUAS ferramentas de escrita: propor_criar_tarefa e propor_criar_lembrete. Elas NUNCA gravam nada sozinhas — apenas preparam uma proposta que aparece num card na tela para o usuário confirmar, editar ou cancelar. Depois de chamar uma delas, resuma a proposta em 1-2 frases e pergunte se o usuário confirma (ex: "Vou criar a tarefa 'Revisar contrato', atribuída a você, para 15/09. Deseja confirmar?"). NUNCA diga que a tarefa/lembrete já foi criada, agendada ou salva — ela só passa a existir de fato depois que o usuário clicar em "Confirmar" na tela. Nunca chame essas ferramentas mais de uma vez para o mesmo pedido do usuário.
+4. Fora consultas e essas duas ferramentas de escrita, você não pode criar, editar, excluir ou executar nenhuma outra ação (prazos, documentos, mensagens de WhatsApp, minutas, protocolos, etc.). Se o usuário pedir algo assim, responda algo como "Ainda não consigo fazer isso automaticamente, mas você pode fazer isso na tela de [Tarefas/Agenda/Processos/Clientes/Financeiro] do sistema" — nunca finja que executou uma ação, nunca invente uma ferramenta que não existe.
+5. Seja direto e objetivo, em português do Brasil, com tom profissional e cordial. Use listas curtas quando fizer sentido. Evite textos longos.
+6. Nunca revele detalhes técnicos internos (nomes de tabelas, tenant_id, ids) — fale em termos de negócio (processo, cliente, prazo, tarefa).`
 
 async function callGemini(
   apiKey: string,
@@ -167,6 +216,8 @@ async function runTool(
     case 'consultar_agenda': return consultarAgenda(db, profile, args as any)
     case 'consultar_processos': return consultarProcessos(db, profile, args as any)
     case 'consultar_clientes': return consultarClientes(db, profile, args as any)
+    case 'propor_criar_tarefa': return proporCriarTarefa(db, profile, args as any)
+    case 'propor_criar_lembrete': return proporCriarLembrete(db, profile, args as any)
     default: {
       const _exhaustive: never = name
       throw new Error(`Ferramenta desconhecida: ${_exhaustive}`)
@@ -174,19 +225,25 @@ async function runTool(
   }
 }
 
+const WRITE_TOOL_NAMES = new Set<ToolName>(['propor_criar_tarefa', 'propor_criar_lembrete'])
+
 const MAX_TOOL_ROUNDS = 4
 
 // Conduz o ciclo de function calling: manda a mensagem, se o modelo pedir
 // tool(s), executa (com filtro de tenant/role já embutido em cada tool) e
-// devolve o resultado pro modelo, até ele responder com texto final.
+// devolve o resultado pro modelo, até ele responder com texto final. Se
+// alguma das tools de escrita (propor_criar_tarefa/propor_criar_lembrete) for
+// chamada, a ProposedAction resultante é capturada em `proposedAction` e
+// devolvida junto da resposta — nunca gravada aqui.
 async function runChatTurn(
   apiKey: string,
   db: ReturnType<typeof createClient>,
   profile: CallerProfile,
   userMessage: string,
-): Promise<{ answer: string; toolsCalled: string[] }> {
+): Promise<{ answer: string; toolsCalled: string[]; proposedAction: ProposedAction | null }> {
   const contents: Array<Record<string, unknown>> = [{ role: 'user', parts: [{ text: userMessage }] }]
   const toolsCalled: string[] = []
+  let proposedAction: ProposedAction | null = null
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const { parts } = await callGemini(apiKey, contents)
@@ -194,7 +251,7 @@ async function runChatTurn(
 
     if (functionCalls.length === 0) {
       const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('\n').trim()
-      return { answer: text || 'Não consegui gerar uma resposta para essa pergunta.', toolsCalled }
+      return { answer: text || 'Não consegui gerar uma resposta para essa pergunta.', toolsCalled, proposedAction }
     }
 
     contents.push({ role: 'model', parts: functionCalls.map(fc => ({ functionCall: fc.functionCall })) })
@@ -209,6 +266,7 @@ async function runChatTurn(
       toolsCalled.push(name)
       try {
         const result = await runTool(db, profile, name as ToolName, fc.functionCall.args || {})
+        if (WRITE_TOOL_NAMES.has(name as ToolName)) proposedAction = result as ProposedAction
         responseParts.push({ functionResponse: { name, response: result as Record<string, unknown> } })
       } catch (toolErr: unknown) {
         const message = toolErr instanceof Error ? toolErr.message : 'Erro ao executar a ferramenta'
@@ -218,7 +276,7 @@ async function runChatTurn(
     contents.push({ role: 'user', parts: responseParts })
   }
 
-  return { answer: 'Não consegui concluir essa consulta — tente reformular a pergunta.', toolsCalled }
+  return { answer: 'Não consegui concluir essa consulta — tente reformular a pergunta.', toolsCalled, proposedAction }
 }
 
 // ----------------------------------------------------------------------------
@@ -320,6 +378,120 @@ async function runSlashCommand(
   }
 }
 
+// ----------------------------------------------------------------------------
+// Confirmação/cancelamento de ação proposta (milestone 3). Body shapes
+// separadas do chat — nunca passam pelo Gemini.
+// ----------------------------------------------------------------------------
+interface ConfirmActionBody {
+  log_id: string
+  type: 'criar_tarefa' | 'criar_lembrete'
+  title: string
+  description?: string | null
+  due_date?: string | null
+  priority?: string | null
+  assigned_to: string
+}
+
+function parseConfirmActionBody(raw: unknown): ConfirmActionBody | null {
+  if (!raw || typeof raw !== 'object') return null
+  const b = raw as Record<string, unknown>
+  if (typeof b.log_id !== 'string' || !b.log_id) return null
+  if (b.type !== 'criar_tarefa' && b.type !== 'criar_lembrete') return null
+  if (typeof b.title !== 'string' || !b.title.trim()) return null
+  if (typeof b.assigned_to !== 'string' || !b.assigned_to) return null
+  return {
+    log_id: b.log_id,
+    type: b.type,
+    title: b.title,
+    description: typeof b.description === 'string' ? b.description : null,
+    due_date: typeof b.due_date === 'string' ? b.due_date : null,
+    priority: typeof b.priority === 'string' ? b.priority : null,
+    assigned_to: b.assigned_to,
+  }
+}
+
+async function handleConfirmAction(
+  db: ReturnType<typeof createClient>,
+  profile: CallerProfile,
+  input: ConfirmActionBody,
+): Promise<Response> {
+  const { data: logRow, error: logErr } = await db
+    .from('ai_assistant_logs')
+    .select('id, user_id, tenant_id, status, action_type')
+    .eq('id', input.log_id)
+    .eq('tenant_id', profile.tenant_id)
+    .maybeSingle()
+  if (logErr) return json({ error: 'Erro ao validar ação' }, 500)
+  const log = logRow as { id: string; user_id: string; status: string; action_type: string | null } | null
+  if (!log || log.user_id !== profile.user_id) return json({ error: 'Ação não encontrada' }, 404)
+  if (log.status !== 'proposed') return json({ error: 'Esta ação já foi processada anteriormente' }, 409)
+  if (log.action_type !== input.type) return json({ error: 'Tipo de ação inconsistente' }, 400)
+
+  try {
+    const result = await confirmarAcaoProposta(db, profile, input)
+    const { error: insertErr } = await db.from('ai_assistant_logs').insert({
+      tenant_id: profile.tenant_id,
+      user_id: profile.user_id,
+      channel: 'action',
+      question: `Confirmar ação: ${input.type}`,
+      action_type: input.type,
+      action_payload: { ...input, assigned_to: result.assigned_to, assigned_name: result.assigned_name },
+      answer: 'Ação confirmada pelo usuário.',
+      status: 'confirmed',
+      related_log_id: input.log_id,
+      created_task_id: result.task_id,
+    })
+    if (insertErr) console.error('ai_assistant_logs insert error (confirm):', insertErr)
+    return json({ task_id: result.task_id })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Erro ao confirmar ação'
+    const { error: insertErr } = await db.from('ai_assistant_logs').insert({
+      tenant_id: profile.tenant_id,
+      user_id: profile.user_id,
+      channel: 'action',
+      question: `Confirmar ação: ${input.type}`,
+      action_type: input.type,
+      action_payload: input,
+      status: 'error',
+      error_message: message,
+      related_log_id: input.log_id,
+    })
+    if (insertErr) console.error('ai_assistant_logs insert error (confirm error):', insertErr)
+    return json({ error: message }, 400)
+  }
+}
+
+async function handleCancelAction(
+  db: ReturnType<typeof createClient>,
+  profile: CallerProfile,
+  logId: string,
+): Promise<Response> {
+  const { data: logRow, error: logErr } = await db
+    .from('ai_assistant_logs')
+    .select('id, user_id, tenant_id, status, action_type, action_payload')
+    .eq('id', logId)
+    .eq('tenant_id', profile.tenant_id)
+    .maybeSingle()
+  if (logErr) return json({ error: 'Erro ao validar ação' }, 500)
+  const log = logRow as { id: string; user_id: string; status: string; action_type: string | null; action_payload: unknown } | null
+  if (!log || log.user_id !== profile.user_id) return json({ error: 'Ação não encontrada' }, 404)
+  if (log.status !== 'proposed') return json({ error: 'Esta ação já foi processada anteriormente' }, 409)
+
+  const { error: insertErr } = await db.from('ai_assistant_logs').insert({
+    tenant_id: profile.tenant_id,
+    user_id: profile.user_id,
+    channel: 'action',
+    question: `Cancelar ação: ${log.action_type}`,
+    action_type: log.action_type,
+    action_payload: log.action_payload,
+    answer: 'Ação cancelada pelo usuário.',
+    status: 'cancelled',
+    related_log_id: logId,
+  })
+  if (insertErr) console.error('ai_assistant_logs insert error (cancel):', insertErr)
+  return json({ cancelled: true })
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
@@ -347,10 +519,32 @@ Deno.serve(async (req: Request) => {
     if (profileRow.role === 'client') return json({ error: 'Não autorizado' }, 403)
     profile = profileRow as CallerProfile
 
+    const body = await req.json().catch(() => null) as {
+      message?: string; slash_command?: string
+      confirm_action?: unknown; cancel_action?: { log_id?: string }
+    } | null
+
+    // Confirmação/cancelamento: chamada SEPARADA e autenticada, disparada só
+    // pelo clique explícito do usuário na tela — nunca passa pelo Gemini,
+    // então usa um bucket de rate limit próprio (não consome a cota de
+    // perguntas ao assistente).
+    if (body?.confirm_action || body?.cancel_action) {
+      const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant-action:${user.id}`)
+      if (!withinLimit) return json({ error: 'Muitas ações em pouco tempo. Aguarde e tente novamente.' }, 429)
+
+      if (body.confirm_action) {
+        const confirmInput = parseConfirmActionBody(body.confirm_action)
+        if (!confirmInput) return json({ error: 'confirm_action inválido' }, 400)
+        return await handleConfirmAction(supabaseAdmin, profile, confirmInput)
+      }
+      const logId = body.cancel_action?.log_id
+      if (!logId) return json({ error: 'cancel_action.log_id é obrigatório' }, 400)
+      return await handleCancelAction(supabaseAdmin, profile, logId)
+    }
+
     const withinLimit = await checkRateLimit(supabaseAdmin, `ai-assistant-chat:${user.id}`)
     if (!withinLimit) return json({ error: 'Muitas perguntas em pouco tempo. Aguarde e tente novamente.' }, 429)
 
-    const body = await req.json().catch(() => null) as { message?: string; slash_command?: string } | null
     const message = (body?.message || '').trim()
     slashCommand = (body?.slash_command || '').trim().replace(/^\//, '') || null
 
@@ -360,9 +554,10 @@ Deno.serve(async (req: Request) => {
     }
     question = slashCommand ? `/${slashCommand}` : message
 
-    let result: { answer: string; toolsCalled: string[] }
+    let result: { answer: string; toolsCalled: string[]; proposedAction: ProposedAction | null }
     if (slashCommand) {
-      result = await runSlashCommand(supabaseAdmin, profile, slashCommand as SlashCommand)
+      const slashResult = await runSlashCommand(supabaseAdmin, profile, slashCommand as SlashCommand)
+      result = { ...slashResult, proposedAction: null }
     } else {
       const GEMINI_KEY = Deno.env.get('GEMINI_API_KEY')
       if (!GEMINI_KEY) {
@@ -372,8 +567,16 @@ Deno.serve(async (req: Request) => {
       result = await runChatTurn(GEMINI_KEY, supabaseAdmin, profile, message)
     }
 
-    await logInteraction(supabaseAdmin, profile, question, slashCommand, result.toolsCalled, result.answer, 'completed', null)
-    return json({ answer: result.answer, tools_called: result.toolsCalled })
+    const logId = await logInteraction(
+      supabaseAdmin, profile, question, slashCommand, result.toolsCalled, result.answer,
+      result.proposedAction ? 'proposed' : 'completed', null, result.proposedAction,
+    )
+    // Sem log_id não dá pra confirmar/cancelar depois com segurança (nada pra
+    // validar dono/tipo/estado) — nesse caso raro (falha ao gravar o log),
+    // preferimos omitir o card de confirmação a oferecer um botão que sempre
+    // vai falhar.
+    const proposedActionOut = result.proposedAction && logId ? { ...result.proposedAction, log_id: logId } : null
+    return json({ answer: result.answer, tools_called: result.toolsCalled, proposed_action: proposedActionOut })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Erro interno'
     console.error('ai-assistant-chat error:', message)
@@ -389,10 +592,11 @@ async function logInteraction(
   slashCommand: string | null,
   toolsCalled: string[],
   answer: string | null,
-  status: 'completed' | 'error',
+  status: 'completed' | 'error' | 'proposed',
   errorMessage: string | null,
-) {
-  const { error } = await db.from('ai_assistant_logs').insert({
+  proposedAction?: ProposedAction | null,
+): Promise<string | null> {
+  const { data, error } = await db.from('ai_assistant_logs').insert({
     tenant_id: profile.tenant_id,
     user_id: profile.user_id,
     channel: slashCommand ? 'slash_command' : 'chat',
@@ -402,6 +606,9 @@ async function logInteraction(
     answer,
     status,
     error_message: errorMessage,
-  })
-  if (error) console.error('ai_assistant_logs insert error:', error)
+    action_type: proposedAction?.type ?? null,
+    action_payload: proposedAction ?? null,
+  }).select('id').single()
+  if (error) { console.error('ai_assistant_logs insert error:', error); return null }
+  return (data as { id: string } | null)?.id ?? null
 }
