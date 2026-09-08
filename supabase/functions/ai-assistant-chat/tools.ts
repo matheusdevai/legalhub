@@ -172,7 +172,6 @@ export async function consultarProcessos(
   profile: CallerProfile,
   args: { apenas_atencao?: boolean },
 ) {
-  const today = todayISO()
   const { data, error } = await db
     .from('processes')
     .select('id, number, title, client_name, next_deadline, priority, status')
@@ -184,9 +183,12 @@ export async function consultarProcessos(
   const rows = (data || []) as Array<{ id: string; number: string; title: string; client_name: string | null; next_deadline: string | null; priority: string | null; status: string }>
   const apenasAtencao = args?.apenas_atencao !== false
 
-  const exigemAtencao = rows.filter(p =>
-    p.priority === 'high' || p.priority === 'urgent' || (!!p.next_deadline && p.next_deadline <= today)
-  )
+  // Mesmo critério de "processo que exige atenção" de assistantEngine.ts
+  // (attentionProcesses, milestone 1): só prioridade alta/urgente — sem
+  // checar prazo vencido aqui, senão o chat responderia um número diferente
+  // do card "Processos que exigem atenção" do dashboard pro mesmo tenant no
+  // mesmo momento. Prazo vencido já é coberto por consultar_prazos.
+  const exigemAtencao = rows.filter(p => p.priority === 'high' || p.priority === 'urgent')
   const lista = apenasAtencao ? exigemAtencao : rows
 
   return {

@@ -43,12 +43,26 @@ CREATE OR REPLACE TRIGGER "trg_auto_tenant_ai_assistant_logs" BEFORE INSERT ON "
 
 ALTER TABLE "public"."ai_assistant_logs" ENABLE ROW LEVEL SECURITY;
 
--- Mesmo padrão de "ai_generations_tenant_isolation": isolamento total por
--- tenant_id, sem acesso do portal do cliente. A Edge Function grava via
--- service role (bypassa RLS); esta policy cobre leitura futura pela própria
--- UI (ex.: um admin revisando o uso do assistente no tenant).
-CREATE POLICY "ai_assistant_logs_tenant_isolation" ON "public"."ai_assistant_logs" USING ((("tenant_id" = "public"."current_tenant_id"()) AND (NOT "public"."is_client_user"()))) WITH CHECK ((("tenant_id" = "public"."current_tenant_id"()) AND (NOT "public"."is_client_user"())));
-
-GRANT ALL ON TABLE "public"."ai_assistant_logs" TO "anon";
-GRANT ALL ON TABLE "public"."ai_assistant_logs" TO "authenticated";
-GRANT ALL ON TABLE "public"."ai_assistant_logs" TO "service_role";
+-- Isolamento por tenant NÃO É SUFICIENTE aqui: a linha de log pode conter,
+-- em `question`/`answer`, dado de tarefa que `consultar_tarefas` já filtrou
+-- por dono (lawyer/intern só veem as próprias tarefas — ver tools.ts). Se
+-- qualquer usuário do tenant pudesse ler todas as linhas, esse filtro de
+-- role seria anulado pelo próprio log. Por isso, igual ao padrão de
+-- `user_expenses` (isolamento por tenant E por dono, ver CLAUDE.md):
+-- usuário comum só lê as PRÓPRIAS linhas; admin/super_admin leem todas as
+-- linhas do tenant (mesmo padrão de "audit_log_select_admin").
+--
+-- Só existe policy de SELECT — de propósito. A Edge Function grava via
+-- service role, que bypassa RLS, então nenhuma policy de INSERT é necessária
+-- para `authenticated`. Não há policy de UPDATE/DELETE: log de auditoria é
+-- append-only, ninguém (nem admin) deve poder alterar ou apagar uma linha
+-- pela API.
+CREATE POLICY "ai_assistant_logs_select_own_or_admin" ON "public"."ai_assistant_logs" FOR SELECT TO "authenticated" USING (
+  ("tenant_id" = "public"."current_tenant_id"())
+  AND (NOT "public"."is_client_user"())
+  AND (
+    "user_id" = ( SELECT "auth"."uid"() )
+    OR EXISTS ( SELECT 1 FROM "public"."profiles" "p"
+      WHERE ("p"."user_id" = ( SELECT "auth"."uid"() )) AND ("p"."role" = ANY (ARRAY['admin'::"text", 'super_admin'::"text"])) )
+  )
+);
