@@ -16,12 +16,14 @@ import {
   type EngineProcess, type EngineTask, type EngineEvent,
 } from '@/lib/assistantEngine'
 
-// Dashboard + Central de Alertas (milestone 1) + Chat interno (milestone 2)
-// do LegalHub Assistente. Milestone 2 é somente leitura: o chat só consulta
-// (via Edge Function ai-assistant-chat), nunca cria/edita nada.
-// TODO (próximas fatias, não implementar aqui): criação de tarefas/lembretes
-// pela IA, análise de documentos, geração de minutas, WhatsApp, níveis de
-// automação — ver especificação completa.
+// Dashboard + Central de Alertas (milestone 1) + Chat interno (milestone 2
+// leitura + milestone 3 escrita) do LegalHub Assistente. O chat (via Edge
+// Function ai-assistant-chat) consulta livremente, mas só grava algo em
+// `tasks` (criar tarefa/lembrete) depois de o usuário confirmar
+// explicitamente o card de ação proposta — nunca sozinho.
+// TODO (próximas fatias, não implementar aqui): análise de documentos,
+// geração de minutas, WhatsApp, níveis de automação configuráveis (hoje tudo
+// exige confirmação manual, sem exceção) — ver especificação completa.
 
 const CATEGORY_META: Record<AlertCategory, { label: string; emoji: string; ring: string; badge: string }> = {
   urgente:     { label: 'Urgente',     emoji: '🔴', ring: 'border-red-200 dark:border-red-800/40',       badge: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' },
