@@ -16,7 +16,7 @@ function process(overrides: Partial<EngineProcess>): EngineProcess {
 function task(overrides: Partial<EngineTask>): EngineTask {
   return {
     id: 't1', title: 'Tarefa teste', due_date: null, priority: 'medium',
-    status: 'pending', assigned_name: 'Dr. Fulano', client_id: null, ...overrides,
+    status: 'pending', assigned_name: 'Dr. Fulano', assigned_to: null, ...overrides,
   }
 }
 

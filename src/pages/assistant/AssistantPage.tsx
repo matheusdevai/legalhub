@@ -140,7 +140,7 @@ export function AssistantPage() {
         .eq('tenant_id', profile!.tenant_id!)
         .is('deleted_at', null),
       supabase.from('tasks')
-        .select('id, title, due_date, priority, status, assigned_name, client_id')
+        .select('id, title, due_date, priority, status, assigned_name, assigned_to')
         .eq('tenant_id', profile!.tenant_id!)
         .is('deleted_at', null)
         .neq('status', 'done')
@@ -155,8 +155,15 @@ export function AssistantPage() {
       setLoading(false)
       return
     }
+    let taskList = (taskData || []) as EngineTask[]
+    // Mesma restrição de TasksPage.tsx: advogado/estagiário só vê as próprias
+    // tarefas, nunca as dos colegas — o assistente não pode revelar mais do
+    // que qualquer outra tela do sistema já revela pra esse papel.
+    if (profile?.role === 'lawyer' || profile?.role === 'intern') {
+      taskList = taskList.filter(task => task.assigned_to === profile.user_id)
+    }
     setProcesses((procData || []) as EngineProcess[])
-    setTasks((taskData || []) as EngineTask[])
+    setTasks(taskList)
     setEvents((eventData || []) as EngineEvent[])
     setLoading(false)
   }

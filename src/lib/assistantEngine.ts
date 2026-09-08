@@ -9,7 +9,7 @@ import type { Process, Task, CalendarEvent } from '@/types'
 // real e devem ganhar suas próprias regras aqui em vez de ficarem "em breve".
 
 export type EngineProcess = Pick<Process, 'id' | 'number' | 'title' | 'client_name' | 'next_deadline' | 'priority' | 'status'>
-export type EngineTask = Pick<Task, 'id' | 'title' | 'due_date' | 'priority' | 'status' | 'assigned_name' | 'client_id'>
+export type EngineTask = Pick<Task, 'id' | 'title' | 'due_date' | 'priority' | 'status' | 'assigned_name' | 'assigned_to'>
 export type EngineEvent = Pick<CalendarEvent, 'id' | 'title' | 'type' | 'date' | 'time' | 'client_name' | 'location' | 'status'>
 
 export interface AssistantOverview {
