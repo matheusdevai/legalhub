@@ -28,6 +28,7 @@ const DocumentsPage    = lazy(() => import('@/pages/documents/DocumentsPage').th
 const EscritorioDigitalPage = lazy(() => import('@/pages/escritorioDigital/EscritorioDigitalPage').then(m => ({ default: m.EscritorioDigitalPage })))
 const PublicacoesPage  = lazy(() => import('@/pages/publicacoes/PublicacoesPage').then(m => ({ default: m.PublicacoesPage })))
 const AiJuridicaPage   = lazy(() => import('@/pages/aiJuridica/AiJuridicaPage').then(m => ({ default: m.AiJuridicaPage })))
+const AssistantPage    = lazy(() => import('@/pages/assistant/AssistantPage').then(m => ({ default: m.AssistantPage })))
 const ClientPortalPage = lazy(() => import('@/pages/portal/ClientPortalPage').then(m => ({ default: m.ClientPortalPage })))
 
 // Rotas de equipe (escritório) — nunca acessíveis a um login de cliente (role 'client'),
@@ -92,6 +93,7 @@ function AppRoutes() {
       <Route path="/escritorio-digital" element={<PrivateRoute><EscritorioDigitalPage /></PrivateRoute>} />
       <Route path="/publicacoes" element={<PrivateRoute><PublicacoesPage /></PrivateRoute>} />
       <Route path="/ia-juridica" element={<PrivateRoute><AiJuridicaPage /></PrivateRoute>} />
+      <Route path="/assistente-ia" element={<PrivateRoute><AssistantPage /></PrivateRoute>} />
       <Route path="/admin" element={<PrivateRoute><AdminRoute><AdminPage /></AdminRoute></PrivateRoute>} />
       <Route path="/portal" element={<ClientPortalRoute><ClientPortalPage /></ClientPortalRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

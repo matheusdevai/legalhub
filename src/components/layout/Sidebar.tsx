@@ -4,7 +4,7 @@ import {
   Calendar, UserCheck,
   Shield, BarChart2, X, UserCog,
   FileText, Newspaper, ChevronLeft, ChevronRight, Target, FolderOpen,
-  Sparkles,
+  Sparkles, Bot,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -14,9 +14,10 @@ const navGroups = [
   {
     label: 'Principal',
     items: [
-      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/agenda',    icon: Calendar,         label: 'Agenda' },
-      { to: '/tarefas',   icon: CheckSquare,       label: 'Atividades' },
+      { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/assistente-ia', icon: Bot,             label: 'Assistente IA' },
+      { to: '/agenda',        icon: Calendar,         label: 'Agenda' },
+      { to: '/tarefas',       icon: CheckSquare,       label: 'Atividades' },
     ],
   },
   {
