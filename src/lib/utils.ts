@@ -129,6 +129,23 @@ export const ROLE_LABELS: Record<string, string> = {
   super_admin: 'Super Admin',
 }
 
+// ─── Áreas do Direito / Grupos de ação ──────────────────────────────────────────
+// Fonte única compartilhada por ProcessesPage (Grupo de ação) e ClientsPage (Área
+// do Direito) — os dois <select> fechados usam exatamente a mesma lista, pra não
+// voltar a existir duas variantes soltas que dessincronizam com o tempo. Antes de
+// virarem <select> fechado, os dois campos aceitavam texto livre (input+datalist)
+// e acumulavam variantes/erros de digitação da mesma área pra sempre nas
+// sugestões (ex: "Direito Previdenciario", "Providenciaria", "Previdenciário"
+// coexistindo) — ver migration 20260908130000_normalize_area_direito_previdenciario.sql
+// pra normalização do que já tinha sido digitado em clients.area_direito.
+export const GRUPOS_ACAO = [
+  'Cível', 'Criminal', 'Trabalhista', 'Tributário', 'Administrativo',
+  'Família', 'Previdenciário', 'Empresarial', 'Imobiliário', 'Outro',
+]
+// Precisa ser exatamente um dos valores de GRUPOS_ACAO acima — usado por
+// ClientsPage pra decidir quando mostrar o campo "Benefício Previdenciário".
+export const AREA_PREVIDENCIARIO = 'Previdenciário'
+
 // ─── Variação percentual mês a mês (Dashboard) ─────────────────────────────────
 // Sem mês anterior pra comparar (previous = 0), não dá pra calcular uma razão —
 // tratamos como +100% se houve produção este mês, ou 0% se também não houve nada.

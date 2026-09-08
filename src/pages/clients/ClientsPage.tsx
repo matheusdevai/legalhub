@@ -13,7 +13,7 @@ import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Client, Colaborador, Process, Profile, Financial } from '@/types'
-import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency } from '@/lib/utils'
+import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency, GRUPOS_ACAO, AREA_PREVIDENCIARIO } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow, downloadVCard, openDocumentPrintWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
 import { buildClientImportPreview } from '@/lib/clientImportUtils'
@@ -179,7 +179,6 @@ export function ClientsPage() {
   const [systemUsers, setSystemUsers] = useState<Profile[]>([])
   const [clientProcesses, setClientProcesses] = useState<Record<string, Process[]>>({})
   const [cityOptions, setCityOptions] = useState<string[]>([])
-  const [areaOptions, setAreaOptions] = useState<string[]>([])
   const [loading, setLoading] = usePageLoadingState()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -614,9 +613,6 @@ export function ClientsPage() {
     setClientProcesses(procMap)
     const cities = Array.from(new Set((c || []).map((cl: Client) => cl.cidade).filter(Boolean))).sort() as string[]
     setCityOptions(cities)
-    const DEFAULT_AREAS = ['Previdenciário', 'Cível', 'Consumidor', 'Trabalhista', 'Tributário', 'Criminal']
-    const dbAreas = Array.from(new Set((c || []).map((cl: Client) => cl.area_direito).filter(Boolean))) as string[]
-    setAreaOptions(Array.from(new Set([...DEFAULT_AREAS, ...dbAreas])).sort())
     setLoading(false)
   }
 
@@ -1430,7 +1426,7 @@ export function ClientsPage() {
                         className="w-full px-2.5 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
                       >
                         <option value="">Todas</option>
-                        {areaOptions.map(a => <option key={a} value={a}>{a}</option>)}
+                        {GRUPOS_ACAO.map(a => <option key={a} value={a}>{a}</option>)}
                       </select>
                     </div>
 
@@ -2329,12 +2325,20 @@ export function ClientsPage() {
           {/* Campos jurídicos */}
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Área do Direito</label>
-            <input list="area-options"
+            <select
               className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              placeholder="Selecione ou digite" value={form.area_direito} onChange={e => setForm({ ...form, area_direito: e.target.value })} />
-            <datalist id="area-options">{areaOptions.map(a => <option key={a} value={a} />)}</datalist>
+              value={form.area_direito} onChange={e => setForm({ ...form, area_direito: e.target.value })}>
+              <option value="">Selecione</option>
+              {GRUPOS_ACAO.map(a => <option key={a} value={a}>{a}</option>)}
+              {/* Cliente antigo com valor fora da lista canônica (ex: "Consumidor", ou resíduo
+                  de texto livre que a normalização não cobriu) — preserva o valor salvo em vez
+                  de esvaziar a seleção silenciosamente; some assim que o usuário trocar. */}
+              {form.area_direito && !GRUPOS_ACAO.includes(form.area_direito) && (
+                <option value={form.area_direito}>{form.area_direito} (valor antigo)</option>
+              )}
+            </select>
           </div>
-          {form.area_direito.trim().toLowerCase() === 'previdenciário' && (
+          {form.area_direito === AREA_PREVIDENCIARIO && (
             <div>
               <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Benefício Previdenciário</label>
               <input list="beneficio-options"
@@ -2566,7 +2570,7 @@ export function ClientsPage() {
                     <DetailField icon={Mail} label="Email" value={viewClient.email ? <a href={`mailto:${viewClient.email}`} className="text-primary-600 dark:text-primary-400 hover:underline">{viewClient.email}</a> : null} />
                     <DetailField icon={MapPin} label="Cidade" value={viewClient.cidade} />
                     <DetailField icon={Scale} label="Área do Direito" value={viewClient.area_direito} />
-                    {viewClient.area_direito?.trim().toLowerCase() === 'previdenciário' && (
+                    {viewClient.area_direito === AREA_PREVIDENCIARIO && (
                       <DetailField icon={Scale} label="Benefício Previdenciário" value={viewClient.beneficio_previdenciario} />
                     )}
                     <DetailField icon={Calendar} label="Data de Entrada" value={viewClient.entry_date ? formatDate(viewClient.entry_date) : null} />

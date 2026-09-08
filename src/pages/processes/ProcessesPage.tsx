@@ -12,7 +12,7 @@ import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Modal, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, Tenant } from '@/types'
-import { formatDate, formatCurrency, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
+import { formatDate, formatCurrency, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName, GRUPOS_ACAO } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
@@ -79,7 +79,6 @@ const EMPTY_FORM: ProcessForm = {
   percentual_honorarios: '', contingenciamento: '',
 }
 
-const GRUPOS_ACAO = ['Cível', 'Criminal', 'Trabalhista', 'Tributário', 'Administrativo', 'Família', 'Previdenciário', 'Empresarial', 'Imobiliário', 'Outro']
 const TIPOS_ACAO: Record<string, string[]> = {
   'Cível': ['Alíquota zero', 'Contratos bancários', 'Indenização por danos morais', 'Revisão contratual', 'Cobrança', 'Outro'],
   'Criminal': ['Pena privativa de liberdade', 'Habeas corpus', 'Tráfico de drogas', 'Furto', 'Roubo', 'Outro'],

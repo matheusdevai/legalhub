@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeMonthlyChangePercent, sanitizeFileName } from './utils'
+import { computeMonthlyChangePercent, sanitizeFileName, GRUPOS_ACAO, AREA_PREVIDENCIARIO } from './utils'
 
 describe('computeMonthlyChangePercent', () => {
   it('calcula a variação percentual normal entre dois meses', () => {
@@ -36,5 +36,27 @@ describe('sanitizeFileName', () => {
 
   it('mantém nomes já seguros intactos', () => {
     expect(sanitizeFileName('relatorio-2026_v2.xlsx')).toBe('relatorio-2026_v2.xlsx')
+  })
+})
+
+// GRUPOS_ACAO é a única fonte de verdade compartilhada pelos <select> fechados de
+// ClientsPage (Área do Direito), ProcessesPage e TasksPage (Grupo de ação) — antes
+// desses campos serem select fechado, cada tela tinha sua própria lista de sugestões
+// em texto livre, que acumulava variantes/erros de digitação da mesma área pra
+// sempre (bug reportado: "Direito Previdenciário" duplicado com 4 grafias). Estes
+// testes existem pra pegar cedo qualquer edição futura que dessincronize a lista
+// (ex: item removido/renomeado sem atualizar as três telas).
+describe('GRUPOS_ACAO / AREA_PREVIDENCIARIO', () => {
+  it('não tem itens duplicados', () => {
+    expect(new Set(GRUPOS_ACAO).size).toBe(GRUPOS_ACAO.length)
+  })
+
+  it('inclui "Outro" como opção de escape', () => {
+    expect(GRUPOS_ACAO).toContain('Outro')
+  })
+
+  it('AREA_PREVIDENCIARIO é exatamente um dos valores de GRUPOS_ACAO', () => {
+    expect(GRUPOS_ACAO).toContain(AREA_PREVIDENCIARIO)
+    expect(AREA_PREVIDENCIARIO).toBe('Previdenciário')
   })
 })
