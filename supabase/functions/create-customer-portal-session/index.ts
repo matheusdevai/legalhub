@@ -81,7 +81,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const { data: subscription } = await supabaseAdmin
-      .from('subscriptions')
+      .from('billing_subscriptions')
       .select('stripe_customer_id')
       .eq('tenant_id', callerProfile.tenant_id)
       .maybeSingle()

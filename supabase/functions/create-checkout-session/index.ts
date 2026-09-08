@@ -101,7 +101,7 @@ Deno.serve(async (req: Request) => {
     // Reaproveita o stripe_customer_id já existente (assinatura anterior/em
     // andamento) em vez de criar um Customer novo a cada tentativa de checkout.
     const { data: existingSubscription } = await supabaseAdmin
-      .from('subscriptions')
+      .from('billing_subscriptions')
       .select('stripe_customer_id')
       .eq('tenant_id', callerProfile.tenant_id)
       .maybeSingle()

@@ -39,7 +39,7 @@ BEGIN
   PERFORM pg_advisory_xact_lock(hashtext(NEW.tenant_id::text), hashtext('profiles'));
 
   SELECT p.max_users INTO v_limit
-    FROM public.subscriptions s
+    FROM public.billing_subscriptions s
     JOIN public.plans p ON p.id = s.plan_id
    WHERE s.tenant_id = NEW.tenant_id;
 

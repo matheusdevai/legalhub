@@ -1,0 +1,13 @@
+-- Supabase concede EXECUTE por padrao (default privileges do schema public)
+-- a anon/authenticated em toda funcao nova, mesmo apos REVOKE ALL FROM PUBLIC
+-- na propria migration de criacao (REVOKE ... FROM PUBLIC nao remove grants
+-- diretos ja concedidos a anon/authenticated pelas default privileges).
+-- check_rate_limit() so deve ser chamada por service_role (Edge Functions) --
+-- ver comentario original em 20260908001623_fix_edge_function_rate_limit_race.sql.
+--
+-- Achado ao verificar get_advisors logo apos aplicar a migration anterior:
+-- sem este REVOKE, qualquer usuario anon/authenticated podia chamar
+-- check_rate_limit via RPC com uma rate_key arbitraria (ex: forjando a chave
+-- de outro usuario/tenant), poluindo ou zerando a contagem de rate limit
+-- alheia.
+REVOKE EXECUTE ON FUNCTION "public"."check_rate_limit"("p_key" "text", "p_limit" integer, "p_window_seconds" integer) FROM "anon", "authenticated";

@@ -49,7 +49,7 @@ BEGIN
             WHEN 'processes' THEN p.max_processes
           END)
     INTO v_limit
-    FROM public.subscriptions s
+    FROM public.billing_subscriptions s
     JOIN public.plans p ON p.id = s.plan_id
    WHERE s.tenant_id = NEW.tenant_id;
 

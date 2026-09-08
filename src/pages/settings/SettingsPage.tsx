@@ -184,7 +184,7 @@ export function SettingsPage() {
 
     const [plansRes, subRes, usersRes, clientsRes, processesRes, aiRes, tenantRes] = await Promise.all([
       supabase.from('plans').select('*').eq('active', true).order('price_cents', { ascending: true }),
-      supabase.from('subscriptions').select('*').eq('tenant_id', profile.tenant_id).maybeSingle(),
+      supabase.from('billing_subscriptions').select('*').eq('tenant_id', profile.tenant_id).maybeSingle(),
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).neq('role', 'client'),
       supabase.from('clients').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).is('deleted_at', null),
       supabase.from('processes').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).is('deleted_at', null),

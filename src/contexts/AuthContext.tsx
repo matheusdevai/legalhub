@@ -10,8 +10,9 @@ interface AuthContextType {
   loading: boolean
   // Status da assinatura Stripe do tenant ('trialing'|'active'|'past_due'|
   // 'canceled'|'incomplete'), null se o tenant ainda não tem linha em
-  // `subscriptions` (ex: criado antes do billing existir). Usado só para o
-  // soft-gate (banner) em Layout — nenhuma tela é bloqueada por isso ainda.
+  // `billing_subscriptions` (ex: criado antes do billing existir). Usado só
+  // para o soft-gate (banner) em Layout — nenhuma tela é bloqueada por isso
+  // ainda.
   subscriptionStatus: string | null
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
@@ -28,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   const fetchSubscriptionStatus = useCallback(async (tenantId: string) => {
-    const { data } = await supabase.from('subscriptions').select('status').eq('tenant_id', tenantId).maybeSingle()
+    const { data } = await supabase.from('billing_subscriptions').select('status').eq('tenant_id', tenantId).maybeSingle()
     setSubscriptionStatus((data as { status: string } | null)?.status ?? null)
   }, [])
 

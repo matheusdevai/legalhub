@@ -3,12 +3,19 @@
 -- crédito apenas (sem Pix/Boleto), chaves de teste até o dono criar a conta
 -- Stripe (ver checklist de go-live no README).
 --
--- Nomenclatura: `plans`/`subscriptions` são tabelas NOVAS e não têm nenhuma
--- relação com `lh_subscriptions`/`lh_tenants` (LicitaHub, já dropadas em
--- 20260831001217_remove_licitahub_tables.sql) nem com as colunas legadas
--- `profiles.subscription_status`/`profiles.subscription_plan` (billing por
--- usuário — modelo errado, mantidas por ora sem uso; a fonte de verdade do
--- plano do tenant passa a ser `subscriptions`, nunca `profiles`).
+-- Nomenclatura: `plans`/`billing_subscriptions` são tabelas NOVAS e não têm
+-- nenhuma relação com `lh_subscriptions`/`lh_tenants` (LicitaHub, já
+-- dropadas em 20260831001217_remove_licitahub_tables.sql) nem com as
+-- colunas legadas `profiles.subscription_status`/`profiles.subscription_plan`
+-- (billing por usuário — modelo errado, mantidas por ora sem uso; a fonte de
+-- verdade do plano do tenant passa a ser `billing_subscriptions`, nunca
+-- `profiles`).
+--
+-- Nome `billing_subscriptions` (em vez de `subscriptions`): este projeto
+-- Supabase já tem uma tabela `public.subscriptions` de OUTRO produto (colunas
+-- user_id/email/plano/status/expira_em/nexano_payload, sem relação com
+-- legalhub — ver CLAUDE.md). CREATE TABLE IF NOT EXISTS teria virado no-op
+-- contra ela silenciosamente; o nome com prefixo evita a colisão.
 
 -- ─── plans ───────────────────────────────────────────────────────────────
 -- Catálogo de planos. `stripe_price_id` fica NULL até o dono criar o Product
@@ -43,10 +50,10 @@ VALUES
     ('enterprise', 'Enterprise', 79900, 25, NULL, NULL, 107374182400, NULL)
 ON CONFLICT ("slug") DO NOTHING;
 
--- ─── subscriptions ───────────────────────────────────────────────────────
+-- ─── billing_subscriptions ───────────────────────────────────────────────
 -- 1 linha por tenant. Só é criada/atualizada pela Edge Function stripe-webhook
 -- (service_role, bypassa RLS) — nunca por escrita direta do cliente.
-CREATE TABLE IF NOT EXISTS "public"."subscriptions" (
+CREATE TABLE IF NOT EXISTS "public"."billing_subscriptions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "tenant_id" "uuid" NOT NULL,
     "plan_id" "uuid" NOT NULL,
@@ -58,18 +65,18 @@ CREATE TABLE IF NOT EXISTS "public"."subscriptions" (
     "cancel_at_period_end" boolean DEFAULT false NOT NULL,
     "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
     "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "subscriptions_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "subscriptions_tenant_id_key" UNIQUE ("tenant_id"),
-    CONSTRAINT "subscriptions_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE CASCADE,
-    CONSTRAINT "subscriptions_plan_id_fkey" FOREIGN KEY ("plan_id") REFERENCES "public"."plans"("id"),
-    CONSTRAINT "subscriptions_status_check" CHECK (("status" = ANY (ARRAY['trialing'::"text", 'active'::"text", 'past_due'::"text", 'canceled'::"text", 'incomplete'::"text"])))
+    CONSTRAINT "billing_subscriptions_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "billing_subscriptions_tenant_id_key" UNIQUE ("tenant_id"),
+    CONSTRAINT "billing_subscriptions_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "public"."tenants"("id") ON DELETE CASCADE,
+    CONSTRAINT "billing_subscriptions_plan_id_fkey" FOREIGN KEY ("plan_id") REFERENCES "public"."plans"("id"),
+    CONSTRAINT "billing_subscriptions_status_check" CHECK (("status" = ANY (ARRAY['trialing'::"text", 'active'::"text", 'past_due'::"text", 'canceled'::"text", 'incomplete'::"text"])))
 );
 
-ALTER TABLE "public"."subscriptions" OWNER TO "postgres";
+ALTER TABLE "public"."billing_subscriptions" OWNER TO "postgres";
 
-CREATE INDEX "idx_subscriptions_stripe_customer" ON "public"."subscriptions" USING "btree" ("stripe_customer_id");
+CREATE INDEX "idx_billing_subscriptions_stripe_customer" ON "public"."billing_subscriptions" USING "btree" ("stripe_customer_id");
 
-CREATE OR REPLACE TRIGGER "subscriptions_updated_at" BEFORE UPDATE ON "public"."subscriptions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
+CREATE OR REPLACE TRIGGER "billing_subscriptions_updated_at" BEFORE UPDATE ON "public"."billing_subscriptions" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at"();
 
 -- ─── stripe_events ───────────────────────────────────────────────────────
 -- Idempotência do webhook: Stripe pode reenviar o mesmo evento mais de uma
@@ -89,7 +96,7 @@ ALTER TABLE "public"."stripe_events" OWNER TO "postgres";
 
 -- ─── RLS ─────────────────────────────────────────────────────────────────
 ALTER TABLE "public"."plans" ENABLE ROW LEVEL SECURITY;
-ALTER TABLE "public"."subscriptions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."billing_subscriptions" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."stripe_events" ENABLE ROW LEVEL SECURITY;
 
 -- Catálogo de planos é leitura pública para qualquer usuário autenticado
@@ -99,16 +106,17 @@ CREATE POLICY "plans_select_authenticated" ON "public"."plans" FOR SELECT TO "au
 -- Só membros do próprio tenant (equipe, não Portal do Cliente) enxergam a
 -- própria assinatura. Sem policy de escrita: só service_role grava aqui
 -- (stripe-webhook), e service_role sempre bypassa RLS.
-CREATE POLICY "subscriptions_tenant_isolation" ON "public"."subscriptions" FOR SELECT USING ((("tenant_id" = "public"."current_tenant_id"()) AND (NOT "public"."is_client_user"())));
+CREATE POLICY "billing_subscriptions_tenant_isolation" ON "public"."billing_subscriptions" FOR SELECT USING ((("tenant_id" = "public"."current_tenant_id"()) AND (NOT "public"."is_client_user"())));
 
 -- stripe_events não tem NENHUMA policy de propósito: é log interno do
 -- webhook (pode conter payload sensível), só service_role deve tocar nele.
 
 -- ─── tenant_is_active() ──────────────────────────────────────────────────
 -- Mesmo padrão de current_tenant_id()/is_client_user(): SECURITY DEFINER,
--- lê subscriptions do tenant da sessão atual. Retorna true (não bloqueia)
--- quando o tenant ainda não tem linha em subscriptions — cobre tenants
--- criados antes do billing existir e o período de teste/onboarding.
+-- lê billing_subscriptions do tenant da sessão atual. Retorna true (não
+-- bloqueia) quando o tenant ainda não tem linha em billing_subscriptions —
+-- cobre tenants criados antes do billing existir e o período de
+-- teste/onboarding.
 --
 -- NÃO está referenciada em nenhuma policy de RLS ainda — o bloqueio de
 -- inadimplentes hoje é só o soft-gate (banner) no frontend. Esta função é a
@@ -120,7 +128,7 @@ CREATE OR REPLACE FUNCTION "public"."tenant_is_active"() RETURNS boolean
     SET "search_path" TO 'public', 'pg_temp'
     AS $$
   SELECT COALESCE(
-    (SELECT status IN ('trialing', 'active') FROM public.subscriptions WHERE tenant_id = public.current_tenant_id()),
+    (SELECT status IN ('trialing', 'active') FROM public.billing_subscriptions WHERE tenant_id = public.current_tenant_id()),
     true
   )
 $$;
@@ -132,7 +140,7 @@ ALTER FUNCTION "public"."tenant_is_active"() OWNER TO "postgres";
 -- INSERT em clients/processes quando o tenant já atingiu o limite do plano
 -- contratado. Recebe o nome da tabela via argumento do trigger (TG_ARGV) para
 -- não duplicar a função por tabela. NULL no limite = sem limite (Enterprise
--- ou tenant sem subscriptions ainda, ex: pré-Stripe) — nunca bloqueia.
+-- ou tenant sem billing_subscriptions ainda, ex: pré-Stripe) — nunca bloqueia.
 CREATE OR REPLACE FUNCTION "public"."enforce_plan_limit"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public', 'pg_temp'
@@ -151,7 +159,7 @@ BEGIN
             WHEN 'processes' THEN p.max_processes
           END)
     INTO v_limit
-    FROM public.subscriptions s
+    FROM public.billing_subscriptions s
     JOIN public.plans p ON p.id = s.plan_id
    WHERE s.tenant_id = NEW.tenant_id;
 

@@ -5,11 +5,14 @@ import Stripe from 'https://esm.sh/stripe@22.6.0?target=deno'
 // Endpoint público chamado pelo Stripe (server-to-server) — autenticação é
 // por assinatura HMAC do corpo bruto (header stripe-signature), não por JWT
 // de usuário nem x-cron-secret. Roda com service_role (bypassa RLS): é o
-// único lugar do sistema que escreve em `subscriptions`.
+// único lugar do sistema que escreve em `billing_subscriptions`.
 //
-// Mapeia tenant_id ↔ stripe_customer_id via `subscriptions.tenant_id`
+// Mapeia tenant_id ↔ stripe_customer_id via `billing_subscriptions.tenant_id`
 // (chave única). O vínculo nasce em checkout.session.completed, lendo
 // client_reference_id/metadata.tenant_id setados por create-checkout-session.
+//
+// Nome `billing_subscriptions` (não `subscriptions`): este projeto Supabase
+// já tem uma tabela `public.subscriptions` de outro produto — ver CLAUDE.md.
 
 type SupabaseAdmin = ReturnType<typeof createClient>
 
@@ -22,7 +25,7 @@ function mapStripeStatus(status: string): 'trialing' | 'active' | 'past_due' | '
     case 'incomplete': return 'incomplete'
     case 'incomplete_expired': return 'canceled'
     // 'unpaid'/'paused': tratamos como "precisa de atenção", mesmo bucket de
-    // past_due — não temos esses dois no CHECK de subscriptions.status.
+    // past_due — não temos esses dois no CHECK de billing_subscriptions.status.
     case 'unpaid': return 'past_due'
     case 'paused': return 'past_due'
     default: return 'incomplete'
@@ -30,7 +33,7 @@ function mapStripeStatus(status: string): 'trialing' | 'active' | 'past_due' | '
 }
 
 async function lookupTenantIdBySubscriptionId(supabaseAdmin: SupabaseAdmin, stripeSubscriptionId: string): Promise<string | null> {
-  const { data } = await supabaseAdmin.from('subscriptions').select('tenant_id').eq('stripe_subscription_id', stripeSubscriptionId).maybeSingle()
+  const { data } = await supabaseAdmin.from('billing_subscriptions').select('tenant_id').eq('stripe_subscription_id', stripeSubscriptionId).maybeSingle()
   return (data as { tenant_id: string } | null)?.tenant_id ?? null
 }
 
@@ -124,7 +127,7 @@ Deno.serve(async (req: Request) => {
         const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId)
         const { data: plan } = await supabaseAdmin.from('plans').select('id, max_storage_bytes').eq('id', planId).maybeSingle()
 
-        await supabaseAdmin.from('subscriptions').upsert({
+        await supabaseAdmin.from('billing_subscriptions').upsert({
           tenant_id: tenantId,
           plan_id: planId,
           stripe_customer_id: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
@@ -167,14 +170,14 @@ Deno.serve(async (req: Request) => {
         // Dashboard) não deve apagar o plano atual da assinatura.
         if (planId) updatePayload.plan_id = planId
 
-        await supabaseAdmin.from('subscriptions').update(updatePayload).eq('stripe_subscription_id', subscription.id)
+        await supabaseAdmin.from('billing_subscriptions').update(updatePayload).eq('stripe_subscription_id', subscription.id)
         await syncTenantStorageQuota(supabaseAdmin, tenantId, maxStorageBytes)
         break
       }
 
       case 'customer.subscription.deleted': {
         const subscription = event.data.object as Stripe.Subscription
-        await supabaseAdmin.from('subscriptions').update({ status: 'canceled', cancel_at_period_end: false }).eq('stripe_subscription_id', subscription.id)
+        await supabaseAdmin.from('billing_subscriptions').update({ status: 'canceled', cancel_at_period_end: false }).eq('stripe_subscription_id', subscription.id)
         break
       }
 
@@ -185,7 +188,7 @@ Deno.serve(async (req: Request) => {
         const tenantId = await lookupTenantIdBySubscriptionId(supabaseAdmin, stripeSubscriptionId)
         if (!tenantId) break
 
-        await supabaseAdmin.from('subscriptions').update({ status: 'past_due' }).eq('stripe_subscription_id', stripeSubscriptionId)
+        await supabaseAdmin.from('billing_subscriptions').update({ status: 'past_due' }).eq('stripe_subscription_id', stripeSubscriptionId)
         await notifyPaymentFailed(supabaseAdmin, tenantId)
         break
       }
@@ -197,7 +200,7 @@ Deno.serve(async (req: Request) => {
         // Relê a subscription completa em vez de confiar só no invoice — é a
         // fonte de verdade do status/período atual pós-cobrança bem-sucedida.
         const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId)
-        await supabaseAdmin.from('subscriptions').update({
+        await supabaseAdmin.from('billing_subscriptions').update({
           status: mapStripeStatus(subscription.status),
           current_period_start: new Date(subscription.current_period_start * 1000).toISOString(),
           current_period_end: new Date(subscription.current_period_end * 1000).toISOString(),
@@ -212,7 +215,7 @@ Deno.serve(async (req: Request) => {
     // O evento já está marcado em stripe_events (visto acima). Logamos e
     // respondemos 200 mesmo assim: um efeito colateral que falhou aqui (ex:
     // erro transitório de rede numa notificação) não deve fazer o Stripe
-    // reenviar o evento pra sempre — o estado de subscriptions já foi
+    // reenviar o evento pra sempre — o estado de billing_subscriptions já foi
     // tentado nas linhas acima do bloco que falhou.
     console.error(`stripe-webhook: erro processando ${event.type} (${event.id})`, err)
   }
