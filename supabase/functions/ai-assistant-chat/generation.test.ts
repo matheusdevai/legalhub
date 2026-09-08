@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   gerarMinuta, analisarDocumento, GERAR_MINUTA_TIPOS, MINUTA_DISCLAIMER, ANALISE_DOCUMENTO_DISCLAIMER,
-  type AttachmentInput,
+  MAX_TEXT_INPUT_CHARS, type AttachmentInput,
 } from './generation'
 import type { CallerProfile } from './tools'
 
@@ -103,6 +103,26 @@ describe('gerarMinuta', () => {
     expect(result).toEqual({ error: 'Erro ao chamar a IA Jurídica.' })
     expect(JSON.stringify(result)).not.toContain('ECONNREFUSED')
   })
+
+  it('recusa contexto acima do teto de tamanho sem chamar a rede', async () => {
+    const fetchMock = mockFetchOnce({ ok: true, json: { output_text: 'x' } })
+    const fatos = 'a'.repeat(MAX_TEXT_INPUT_CHARS + 1)
+    const result = await gerarMinuta(SUPABASE_URL, USER_TOKEN, profile(), { tipo: 'peticao_inicial', contexto: { fatos } })
+    expect(result).toEqual({ error: expect.stringContaining('muito longo') })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('aceita contexto exatamente no teto de tamanho (limite é inclusivo)', async () => {
+    const fetchMock = mockFetchOnce({ ok: true, json: { output_text: 'MINUTA' } })
+    // '{"fatos":"...' + '"}' = 12 caracteres de envelope JSON; ajusta `fatos`
+    // pra JSON.stringify(contexto).length bater exatamente no teto.
+    const fatos = 'a'.repeat(MAX_TEXT_INPUT_CHARS - 12)
+    const contexto = { fatos }
+    expect(JSON.stringify(contexto).length).toBe(MAX_TEXT_INPUT_CHARS)
+    const result = await gerarMinuta(SUPABASE_URL, USER_TOKEN, profile({ name: null }), { tipo: 'peticao_inicial', contexto })
+    expect(result).toEqual({ aviso: MINUTA_DISCLAIMER, minuta: 'MINUTA' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('analisarDocumento', () => {
@@ -156,5 +176,22 @@ describe('analisarDocumento', () => {
     const result = await analisarDocumento(SUPABASE_URL, USER_TOKEN, { texto: 'algo' }, null)
     expect(result).toEqual({ error: 'Erro ao chamar a IA Jurídica.' })
     expect(JSON.stringify(result)).not.toContain('segredo.internal')
+  })
+
+  it('recusa texto colado acima do teto de tamanho sem chamar a rede, mesmo com anexo presente', async () => {
+    const fetchMock = mockFetchOnce({ ok: true, json: { output_text: 'x' } })
+    const texto = 'a'.repeat(MAX_TEXT_INPUT_CHARS + 1)
+    const attachment: AttachmentInput = { mime_type: 'application/pdf', data_base64: 'YWJj', filename: 'doc.pdf' }
+    const result = await analisarDocumento(SUPABASE_URL, USER_TOKEN, { texto }, attachment)
+    expect(result).toEqual({ error: expect.stringContaining('muito longo') })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('aceita texto colado exatamente no teto de tamanho', async () => {
+    const fetchMock = mockFetchOnce({ ok: true, json: { output_text: 'ANÁLISE' } })
+    const texto = 'a'.repeat(MAX_TEXT_INPUT_CHARS)
+    const result = await analisarDocumento(SUPABASE_URL, USER_TOKEN, { texto }, null)
+    expect(result).toEqual({ aviso: ANALISE_DOCUMENTO_DISCLAIMER, analise: 'ANÁLISE' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

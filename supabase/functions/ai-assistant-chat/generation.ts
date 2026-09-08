@@ -26,6 +26,17 @@ export const GERAR_MINUTA_TIPOS = [
 ] as const
 type GerarMinutaTipo = typeof GERAR_MINUTA_TIPOS[number]
 
+// Teto de tamanho pra qualquer texto livre que entra nestas ferramentas
+// (mensagem do chat, contexto de gerar_minuta, texto colado em
+// analisar_documento). ai-gemini-assistant/attachmentValidation.ts só cobre o
+// anexo (15MB); nada limitava o texto solto até aqui — sem isso um texto
+// colado gigante ia inteiro pro Gemini a cada rodada, sem necessidade (o
+// modelo já trunca/ignora o que não cabe no contexto, mas o custo de
+// tokens/latência é pago mesmo assim). Não há teto equivalente em
+// ai-gemini-assistant pra espelhar; 50k caracteres cobre confortavelmente uma
+// petição inicial ou decisão longa colada à mão.
+export const MAX_TEXT_INPUT_CHARS = 50_000
+
 export const MINUTA_DISCLAIMER =
   'MINUTA PARA REVISÃO DO ADVOGADO — texto gerado por IA. NUNCA deve ser tratada como protocolada ou definitiva: revise, complete os placeholders entre colchetes e valide todo o conteúdo antes de qualquer uso profissional.'
 
@@ -82,6 +93,10 @@ export async function gerarMinuta(
   // se o usuário não tiver informado outro nome na conversa.
   if (!contexto.advogado_nome && profile.name) contexto.advogado_nome = profile.name
 
+  if (JSON.stringify(contexto).length > MAX_TEXT_INPUT_CHARS) {
+    return { error: `Contexto muito longo (máx. ${MAX_TEXT_INPUT_CHARS.toLocaleString('pt-BR')} caracteres). Reduza o texto e tente novamente.` }
+  }
+
   const result = await invokeAiGeminiAssistant(supabaseUrl, userToken, {
     tipo,
     input_context: contexto,
@@ -102,6 +117,9 @@ export async function analisarDocumento(
   const texto = (args?.texto || '').trim()
   if (!texto && !attachment) {
     return { error: 'Nenhum texto de documento ou anexo foi fornecido para análise. Peça ao usuário para colar o texto ou anexar um PDF/imagem.' }
+  }
+  if (texto.length > MAX_TEXT_INPUT_CHARS) {
+    return { error: `Texto muito longo (máx. ${MAX_TEXT_INPUT_CHARS.toLocaleString('pt-BR')} caracteres). Reduza o texto ou envie como anexo.` }
   }
 
   const result = await invokeAiGeminiAssistant(supabaseUrl, userToken, {
