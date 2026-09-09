@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, AlertTriangle, Clock, ClipboardList, MessageCircle, CalendarClock,
-  AlertOctagon, FileWarning, Scale, ChevronRight, LayoutDashboard, History,
+  AlertOctagon, FileWarning, Scale, ChevronRight, LayoutDashboard, History, ListChecks,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, Spinner, EmptyState } from '@/components/ui'
 import { AssistantChat } from '@/components/assistant/AssistantChat'
 import { AssistantHistory } from '@/components/assistant/AssistantHistory'
+import { AssistantPendencias } from '@/components/assistant/AssistantPendencias'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -117,10 +118,11 @@ function AlertColumn({ category, items, onOpen }: { category: AlertCategory; ite
   )
 }
 
-type PageTab = 'visao' | 'historico'
+type PageTab = 'visao' | 'pendencias' | 'historico'
 
 const PAGE_TABS: Array<{ id: PageTab; label: string; icon: React.ElementType }> = [
   { id: 'visao', label: 'Visão Geral', icon: LayoutDashboard },
+  { id: 'pendencias', label: 'Pendências', icon: ListChecks },
   { id: 'historico', label: 'Histórico', icon: History },
 ]
 
@@ -228,6 +230,8 @@ export function AssistantPage() {
 
         {tab === 'historico' ? (
           <AssistantHistory />
+        ) : tab === 'pendencias' ? (
+          <AssistantPendencias />
         ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
