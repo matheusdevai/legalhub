@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { verifyMetaWebhookSignature } from './signature.ts'
 import { parseInboundMessages } from './webhookParser.ts'
-import { normalizePhone, findMatchingClientId } from './phoneMatch.ts'
+import { normalizePhone, findMatchingClient, type ClientMatch } from './phoneMatch.ts'
 
 // ============================================================================
 // whatsapp-webhook — Milestone 8 da Fase 2 (WhatsApp via Meta Cloud API).
@@ -19,6 +19,17 @@ import { normalizePhone, findMatchingClientId } from './phoneMatch.ts'
 //
 // `sendWhatsAppMessage` (whatsapp.ts) está pronta e testada isoladamente, mas
 // ainda não é chamada por nenhuma UI — a Milestone 9 (inbox) que vai usá-la.
+//
+// ⚠️ DEPLOY: esta function é um webhook público chamado pela Meta (server-to-
+// server, sem JWT de usuário do Supabase) — igual a stripe-webhook. A
+// autenticação real é a validação de assinatura HMAC abaixo (não há seção
+// [functions.*] em supabase/config.toml neste projeto pra nenhuma function,
+// nem pra stripe-webhook; o padrão aqui é configurar por flag no comando de
+// deploy). Deploy com verify_jwt desligado:
+//   supabase functions deploy whatsapp-webhook --no-verify-jwt
+// (ou o equivalente no MCP `deploy_edge_function`). Deployar com o default
+// (verify_jwt ligado) faz a Meta receber 401 em toda chamada, já que ela
+// nunca manda um JWT do Supabase.
 // ============================================================================
 
 const CORS = {
@@ -26,6 +37,13 @@ const CORS = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-hub-signature-256',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
+
+// Teto de tamanho de corpo aceito ANTES de bufferizar (`req.text()`) — uma
+// mensagem de WhatsApp (mesmo com mídia, que só traz um `id` de referência no
+// payload, nunca o arquivo em si) não deveria nem chegar perto disso. Rejeita
+// cedo por Content-Length em vez de ler um corpo arbitrariamente grande pra
+// só então calcular o HMAC.
+const MAX_BODY_BYTES = 1 * 1024 * 1024
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -56,7 +74,7 @@ async function resolveTenantId(supabaseAdmin: SupabaseAdmin, phoneNumberId: stri
   return (data as { tenant_id: string } | null)?.tenant_id ?? null
 }
 
-async function resolveClientId(supabaseAdmin: SupabaseAdmin, tenantId: string, fromPhone: string): Promise<string | null> {
+async function resolveClientMatch(supabaseAdmin: SupabaseAdmin, tenantId: string, fromPhone: string): Promise<ClientMatch> {
   const { data } = await supabaseAdmin
     .from('clients')
     .select('id, phone')
@@ -64,7 +82,7 @@ async function resolveClientId(supabaseAdmin: SupabaseAdmin, tenantId: string, f
     .is('deleted_at', null)
     .not('phone', 'is', null)
   const clients = (data as Array<{ id: string; phone: string | null }> | null) || []
-  return findMatchingClientId(fromPhone, clients)
+  return findMatchingClient(fromPhone, clients)
 }
 
 async function handleIncomingMessages(rawBody: string, supabaseAdmin: SupabaseAdmin): Promise<Response> {
@@ -89,11 +107,12 @@ async function handleIncomingMessages(rawBody: string, supabaseAdmin: SupabaseAd
     }
 
     const phoneNumber = normalizePhone(message.from)
-    const clientId = await resolveClientId(supabaseAdmin, tenantId, phoneNumber)
+    const { clientId, confidence } = await resolveClientMatch(supabaseAdmin, tenantId, phoneNumber)
 
     const { error } = await supabaseAdmin.from('whatsapp_messages').insert({
       tenant_id: tenantId,
       client_id: clientId,
+      client_match_confidence: confidence,
       phone_number: phoneNumber,
       direction: 'inbound',
       message_type: message.messageType,
@@ -137,6 +156,11 @@ Deno.serve(async (req: Request) => {
 
   if (!appSecret) {
     return json({ error: 'WHATSAPP_APP_SECRET não configurado neste ambiente' }, 501)
+  }
+
+  const contentLength = Number(req.headers.get('content-length') ?? '0')
+  if (contentLength > MAX_BODY_BYTES) {
+    return json({ error: 'Corpo da requisição excede o tamanho máximo aceito' }, 413)
   }
 
   // Corpo bruto, sem parse — a verificação de assinatura precisa dos bytes
