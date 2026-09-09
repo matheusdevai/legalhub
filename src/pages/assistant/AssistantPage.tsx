@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Bot, AlertTriangle, Clock, ClipboardList, MessageCircle, CalendarClock,
-  AlertOctagon, FileWarning, Scale, ChevronRight, LayoutDashboard, History, ListChecks,
+  AlertOctagon, FileWarning, Scale, ChevronRight, LayoutDashboard, History, ListChecks, BarChart3,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Card, Spinner, EmptyState } from '@/components/ui'
 import { AssistantChat } from '@/components/assistant/AssistantChat'
 import { AssistantHistory } from '@/components/assistant/AssistantHistory'
 import { AssistantPendencias } from '@/components/assistant/AssistantPendencias'
+import { AssistantRelatorio } from '@/components/assistant/AssistantRelatorio'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -118,12 +119,13 @@ function AlertColumn({ category, items, onOpen }: { category: AlertCategory; ite
   )
 }
 
-type PageTab = 'visao' | 'pendencias' | 'historico'
+type PageTab = 'visao' | 'pendencias' | 'historico' | 'relatorio'
 
 const PAGE_TABS: Array<{ id: PageTab; label: string; icon: React.ElementType }> = [
   { id: 'visao', label: 'Visão Geral', icon: LayoutDashboard },
   { id: 'pendencias', label: 'Pendências', icon: ListChecks },
   { id: 'historico', label: 'Histórico', icon: History },
+  { id: 'relatorio', label: 'Relatório', icon: BarChart3 },
 ]
 
 export function AssistantPage() {
@@ -232,6 +234,8 @@ export function AssistantPage() {
           <AssistantHistory />
         ) : tab === 'pendencias' ? (
           <AssistantPendencias />
+        ) : tab === 'relatorio' ? (
+          <AssistantRelatorio />
         ) : (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         <div className="lg:col-span-2 space-y-6">
