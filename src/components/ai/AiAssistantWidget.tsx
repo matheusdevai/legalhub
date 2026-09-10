@@ -1,9 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { Sparkles, X, Send, ChevronDown } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 import { cn } from '@/lib/utils'
+import { askAssistant, type ProposedAction } from '@/lib/assistantChat'
+import { AssistantActionCard, type ActionStatus } from '@/components/ai/AssistantActionCard'
 
-type ChatMessage = { role: 'user' | 'assistant'; content: string }
+// Unificação dos assistentes de IA — mesmo motivo/trade-off de AiCopilotoTab.tsx:
+// este widget usava a Edge Function antiga ai-assistant (só leitura, sem
+// histórico); agora usa ai-assistant-chat (mesmas 9 tools da página dedicada
+// /assistente-ia, incluindo escrita com confirmação — ver AssistantActionCard).
+// Cada pergunta passa a ser independente (sem memória de turnos anteriores).
+
+type ChatMessage = {
+  role: 'user' | 'assistant'
+  content: string
+  proposedAction?: ProposedAction
+  actionStatus?: ActionStatus
+}
 
 const SUGESTOES = [
   'Como está o desempenho do escritório hoje?',
@@ -28,23 +40,27 @@ export function AiAssistantWidget() {
     const content = text.trim()
     if (!content || loading) return
     setError('')
-    const next = [...messages, { role: 'user' as const, content }]
-    setMessages(next)
+    setMessages(prev => [...prev, { role: 'user', content }])
     setInput('')
     setLoading(true)
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke('ai-assistant', {
-        body: { messages: next },
-      })
-      if (fnErr) throw fnErr
-      if (data?.error) throw new Error(data.error)
-      setMessages([...next, { role: 'assistant', content: data.reply || '...' }])
+      const result = await askAssistant({ message: content })
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: result.answer,
+        proposedAction: result.proposed_action || undefined,
+        actionStatus: result.proposed_action ? 'pending' : undefined,
+      }])
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Erro ao consultar o assistente. Tente novamente.'
       setError(msg)
     } finally {
       setLoading(false)
     }
+  }
+
+  function updateActionStatus(index: number, status: ActionStatus) {
+    setMessages(prev => prev.map((m, i) => (i === index ? { ...m, actionStatus: status } : m)))
   }
 
   return (
@@ -101,15 +117,25 @@ export function AiAssistantWidget() {
                     <Sparkles className="text-primary-600 dark:text-primary-400" style={{ width: 12, height: 12 }} />
                   </div>
                 )}
-                <div
-                  className={cn(
-                    'rounded-2xl px-3 py-2 text-sm max-w-[85%] whitespace-pre-wrap leading-relaxed',
-                    m.role === 'user'
-                      ? 'bg-primary-600 text-white rounded-tr-sm'
-                      : 'bg-slate-100 dark:bg-dark-700 text-gray-700 dark:text-gray-300 rounded-tl-sm',
+                <div className="min-w-0 max-w-[85%]">
+                  <div
+                    className={cn(
+                      'rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed',
+                      m.role === 'user'
+                        ? 'bg-primary-600 text-white rounded-tr-sm'
+                        : 'bg-slate-100 dark:bg-dark-700 text-gray-700 dark:text-gray-300 rounded-tl-sm',
+                    )}
+                  >
+                    {m.content}
+                  </div>
+                  {m.proposedAction && (
+                    <AssistantActionCard
+                      action={m.proposedAction}
+                      status={m.actionStatus || 'pending'}
+                      onConfirmed={() => updateActionStatus(i, 'confirmed')}
+                      onCancelled={() => updateActionStatus(i, 'cancelled')}
+                    />
                   )}
-                >
-                  {m.content}
                 </div>
               </div>
             ))}

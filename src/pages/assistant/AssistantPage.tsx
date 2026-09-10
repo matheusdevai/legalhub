@@ -20,13 +20,18 @@ import {
 } from '@/lib/assistantEngine'
 
 // Dashboard + Central de Alertas (milestone 1) + Chat interno (milestone 2
-// leitura + milestone 3 escrita) do LegalHub Assistente. O chat (via Edge
-// Function ai-assistant-chat) consulta livremente, mas só grava algo em
-// `tasks` (criar tarefa/lembrete) depois de o usuário confirmar
-// explicitamente o card de ação proposta — nunca sozinho.
-// TODO (próximas fatias, não implementar aqui): análise de documentos,
-// geração de minutas, WhatsApp, níveis de automação configuráveis (hoje tudo
-// exige confirmação manual, sem exceção) — ver especificação completa.
+// leitura + milestone 3 escrita + milestone 4 geração de minuta/análise de
+// documento) do LegalHub Assistente. O chat (via Edge Function
+// ai-assistant-chat) consulta livremente e gera texto (minuta/análise)
+// livremente, mas só grava algo em `tasks` (criar tarefa/lembrete) depois de
+// o usuário confirmar explicitamente o card de ação proposta — nunca sozinho.
+// Este mesmo backend (ai-assistant-chat) também é usado pela aba "IA" do
+// Dashboard e pelo widget flutuante global (AiCopilotoTab.tsx/
+// AiAssistantWidget.tsx) desde a unificação dos assistentes de IA — os três
+// pontos de entrada têm a mesma capacidade por trás, com UI própria cada um.
+// TODO (próximas fatias, não implementar aqui): integração com WhatsApp,
+// níveis de automação configuráveis (hoje tudo exige confirmação manual, sem
+// exceção) — ver especificação completa.
 
 const CATEGORY_META: Record<AlertCategory, { label: string; emoji: string; ring: string; badge: string }> = {
   urgente:     { label: 'Urgente',     emoji: '🔴', ring: 'border-red-200 dark:border-red-800/40',       badge: 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300' },

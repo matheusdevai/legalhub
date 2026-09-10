@@ -41,6 +41,7 @@ src/
     users/UsersPage.tsx
     documents/DocumentsPage.tsx
     publicacoes/PublicacoesPage.tsx  — layout master-detail (lista + IntimacaoReadingPanel); subcomponentes IntimacaoListItem.tsx/IntimacaoReadingPanel.tsx na mesma pasta
+    assistant/AssistantPage.tsx — "LegalHub Assistente" (/assistente-ia), ver seção própria abaixo
     reports/ReportsPage.tsx
     settings/SettingsPage.tsx
     support/SupportPage.tsx
@@ -296,6 +297,21 @@ const { session, user, profile, loading, signIn, signOut, refreshProfile } = use
 // profile.role → controle de acesso
 // profile.tenant_id → isolamento multi-tenant
 ```
+
+## Assistente de IA ("LegalHub Assistente")
+Backend único (unificado — ver nota histórica abaixo): Edge Function `ai-assistant-chat` (Gemini, `GEMINI_API_KEY`/`GEMINI_MODEL`, default `gemini-3.6-flash`), com 9 tools (`supabase/functions/ai-assistant-chat/tools.ts` + `router.ts` + `generation.ts`):
+- 5 de leitura (`consultar_prazos`, `consultar_tarefas`, `consultar_agenda`, `consultar_processos`, `consultar_clientes`) — sempre filtradas por `tenant_id` + role do chamador (lawyer/intern só veem as próprias tarefas, mesmo filtro de `TasksPage.tsx`).
+- 2 de escrita (`propor_criar_tarefa`, `propor_criar_lembrete`) — NUNCA gravam sozinhas: devolvem uma `ProposedAction` logada com status `'proposed'` em `ai_assistant_logs`, que vira um card de confirmação (Confirmar/Cancelar) na UI. Só grava em `tasks` quando o usuário confirma, via requisição separada (`confirm_action`) com reivindicação atômica (`claimProposedAction`, UPDATE condicional em `status='proposed'`) — protege contra duplo clique/retry criando tarefa duplicada.
+- 2 de geração (`gerar_minuta`, `analisar_documento`) — delegam via HTTP pra `ai-gemini-assistant` (mesma function que a página "Excelência"/`/ia-juridica` usa), sem duplicar prompt.
+
+Três pontos de entrada na UI, todos no mesmo backend desde a unificação — cada um chama `askAssistant()`/`confirmAssistantAction()`/`cancelAssistantAction()` de `src/lib/assistantChat.ts` (nunca `supabase.functions.invoke` direto):
+- `/assistente-ia` → `AssistantPage.tsx` + `AssistantChat.tsx` (a mais completa: 4 abas — Visão Geral, Pendências, Histórico, Relatório — chat fixo lateral).
+- Aba "Inteligência Artificial" do Dashboard → `AiCopilotoTab.tsx`.
+- Widget flutuante global (toda página, montado em `Layout.tsx`) → `AiAssistantWidget.tsx`.
+
+Histórico: tabela `ai_assistant_logs` (RLS: dono vê as próprias linhas, admin/super_admin veem o tenant todo — necessário porque uma linha pode conter tarefa que já foi filtrada por role numa tool). É só um log auditável (aba "Histórico", read-only) — a conversa ativa do chat em si é sempre volátil (reinicia a cada reload/troca de superfície), sem "retomar de onde parou".
+
+Nota histórica: existia uma segunda Edge Function mais antiga e mais simples (`ai-assistant`, "Copiloto Lawfy" — 6 tools só leitura, sem confirmação, sem histórico) que `AiCopilotoTab.tsx`/`AiAssistantWidget.tsx` usavam antes da unificação. Foi removida (nenhuma outra tela dependia dela, confirmado por grep) — se encontrar alguma referência residual a `ai-assistant` (sem o `-chat`) em código antigo/branch não mesclada, é resquício da versão pré-unificação.
 
 ## Scripts
 ```bash
