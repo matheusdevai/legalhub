@@ -30,6 +30,18 @@ const FONTE_LABELS: Record<string, string> = {
   cnj: 'CNJ (DataJud)',
 }
 
+// `link` vem de uma API externa (DJEN) sem garantia de esquema — nunca renderizar
+// como href sem validar, ou um valor tipo "javascript:..." viraria um link clicável
+// (XSS). Só http(s) é aceito; qualquer outra coisa é tratada como ausente.
+export function isSafeHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 interface Props {
   item: IntimacaoReadingData | null
   prazoCriadoEm: string | null
@@ -99,7 +111,7 @@ export function IntimacaoReadingPanel({ item, prazoCriadoEm, onBack, onMarkStatu
             )}
           </div>
         )}
-        {item.link && (
+        {item.link && isSafeHttpUrl(item.link) && (
           <a
             href={item.link}
             target="_blank"
