@@ -340,21 +340,32 @@ async function fetchDjenPage(oabNum: string, oabState: string, dataInicio: strin
   }
 }
 
+// OAB às vezes está cadastrada com zeros à esquerda em algum tribunal — mesmo
+// cuidado tomado em sync-pje/index.ts (função irmã desta, chamada manualmente).
+function pjeOabVariants(num: string): string[] {
+  const digits = num.replace(/\D/g, '')
+  return Array.from(new Set([digits, digits.padStart(6, '0')]))
+}
+
 async function syncPjeForProfile(supabase: any, profile: Profile): Promise<SyncOutcome> {
   const hoje = new Date()
   const dataFim = hoje.toISOString().slice(0, 10)
   const dataInicio = (() => { const d = new Date(hoje); d.setDate(d.getDate() - DJEN_LOOKBACK_DAYS); return d.toISOString().slice(0, 10) })()
 
   const errors: string[] = []
-  const allItems: any[] = []
+  let allItems: any[] = []
 
-  for (let pagina = 1; pagina <= DJEN_MAX_PAGES; pagina++) {
-    const { items, error } = await fetchDjenPage(profile.oab_number, profile.oab_seccional, dataInicio, dataFim, pagina)
-    if (error) { errors.push(`PJe/DJEN: ${error}`); break }
-    if (items.length === 0) break
-    allItems.push(...items)
-    if (items.length < DJEN_ITEMS_PER_PAGE) break
-    await sleep(DJEN_PAGE_DELAY_MS)
+  for (const variant of pjeOabVariants(profile.oab_number)) {
+    const variantItems: any[] = []
+    for (let pagina = 1; pagina <= DJEN_MAX_PAGES; pagina++) {
+      const { items, error } = await fetchDjenPage(variant, profile.oab_seccional, dataInicio, dataFim, pagina)
+      if (error) { errors.push(`PJe/DJEN: ${error}`); break }
+      if (items.length === 0) break
+      variantItems.push(...items)
+      if (items.length < DJEN_ITEMS_PER_PAGE) break
+      await sleep(DJEN_PAGE_DELAY_MS)
+    }
+    if (variantItems.length > 0) { allItems = variantItems; break }
   }
 
   const now = new Date().toISOString()
