@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ChevronDown, Filter, Printer, CheckCircle2, ChevronLeft, ChevronRight,
-  ChevronsLeft, ChevronsRight, RefreshCw, AlertCircle, Download, Search, X, Clock,
+  ChevronDown, Filter, Printer, ChevronLeft, ChevronRight, ArrowUpDown,
+  RefreshCw, AlertCircle, Download, Search, X, Clock, CheckCircle2,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Spinner, Modal, Input, Select, Button } from '@/components/ui'
@@ -12,12 +12,20 @@ import { openExportWindow } from '@/lib/exportUtils'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
 import { computePrazo } from '@/lib/prazoUtils'
 import { toast } from '@/components/ui/Toast'
+import { IntimacaoListItem } from './IntimacaoListItem'
+import { IntimacaoReadingPanel } from './IntimacaoReadingPanel'
 
 interface CnjMovimento {
   codigo?: number
   nome?: string
   dataHora?: string
   complementosTabelados?: { codigo: number; nome: string; valor: string }[]
+  // Campos específicos de comunicações vindas do PJe/DJEN (sync-pje) — o CNJ/
+  // DataJud é mais estruturado e não traz um texto livre equivalente a `teor`.
+  teor?: string
+  orgao?: string
+  link?: string
+  fonte?: string
 }
 
 interface Intimacao {
@@ -26,16 +34,17 @@ interface Intimacao {
   numero_processo: string
   partes: string
   tribunal: string
+  orgao: string
   publicacao: string
   conteudo: string
+  /** Texto completo da comunicação quando disponível (fonte PJe/DJEN); senão repete `conteudo`. */
+  teor: string
+  temTeorCompleto: boolean
+  link: string | null
+  fonte: string | null
+  complementos: { codigo: number; nome: string; valor: string }[]
   responsavel: string
   situacao: 'Pendente' | 'Lida' | 'Cumprida'
-}
-
-const SITUACAO_STYLE: Record<string, string> = {
-  Pendente: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800',
-  Lida:     'bg-gray-100 text-gray-500 border-gray-200 dark:bg-dark-700 dark:text-gray-400 dark:border-dark-600',
-  Cumprida: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800',
 }
 
 const PAGE_SIZES = [10, 25, 50, 100]
@@ -78,7 +87,7 @@ export function PublicacoesPage() {
   const [responsavelFilter, setResponsavelFilter] = useState('')
   const [situacaoOpen, setSituacaoOpen] = useState(false)
   const [situacaoFilter, setSituacaoFilter] = useState<'' | 'Pendente' | 'Lida' | 'Cumprida'>('')
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(0)
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [statusMap, setStatusMap] = useState<Record<string, 'Lida' | 'Cumprida'>>(getStatusMap)
@@ -88,6 +97,7 @@ export function PublicacoesPage() {
   const [prazoDias, setPrazoDias] = useState(15)
   const [prazoUnidade, setPrazoUnidade] = useState<'uteis' | 'corridos'>('uteis')
   const [prazoSaving, setPrazoSaving] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const navigate = useNavigate()
 
   async function load() {
@@ -111,14 +121,21 @@ export function PublicacoesPage() {
 
         relevant.forEach((mov, idx) => {
           const intimId = `${proc.id}_mov_${idx}`
+          const teorCompleto = (mov.teor || '').trim()
           intimacoes.push({
             id: intimId,
             process_id: proc.id,
             numero_processo: proc.number || '—',
             partes: proc.client_name || proc.title || '—',
             tribunal: proc.court || '—',
+            orgao: mov.orgao || proc.court || '—',
             publicacao: mov.dataHora ? mov.dataHora.slice(0, 10) : (proc.cnj_synced_at?.slice(0, 10) || ''),
             conteudo: mov.nome || 'Intimação',
+            teor: teorCompleto || mov.nome || 'Intimação',
+            temTeorCompleto: teorCompleto.length > 0,
+            link: mov.link || null,
+            fonte: mov.fonte || null,
+            complementos: Array.isArray(mov.complementosTabelados) ? mov.complementosTabelados : [],
             responsavel: proc.assigned_lawyer || '',
             situacao: map[intimId] || 'Pendente',
           })
@@ -164,6 +181,7 @@ export function PublicacoesPage() {
         i.numero_processo?.toLowerCase().includes(q) ||
         i.partes?.toLowerCase().includes(q) ||
         i.conteudo?.toLowerCase().includes(q) ||
+        i.teor?.toLowerCase().includes(q) ||
         i.tribunal?.toLowerCase().includes(q) ||
         i.responsavel?.toLowerCase().includes(q)
       )
@@ -177,9 +195,25 @@ export function PublicacoesPage() {
   }, [items, periodo, responsavelFilter, situacaoFilter, sortDir, statusMap, search])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
-  const paginated = filtered.slice(page * pageSize, (page + 1) * pageSize)
+  const paginated = useMemo(
+    () => filtered.slice(page * pageSize, (page + 1) * pageSize),
+    [filtered, page, pageSize],
+  )
   const start = filtered.length === 0 ? 0 : page * pageSize + 1
   const end = Math.min((page + 1) * pageSize, filtered.length)
+
+  // Mantém uma intimação sempre selecionada (a primeira da página atual), a
+  // não ser que a seleção atual ainda esteja visível — evita perder a leitura
+  // em andamento ao só marcar como lida/cumprida (o que recalcula `filtered`).
+  useEffect(() => {
+    if (paginated.length === 0) { setSelectedId(null); return }
+    setSelectedId(prev => (prev && paginated.some(i => i.id === prev)) ? prev : paginated[0].id)
+  }, [paginated])
+
+  const selectedItem = useMemo(
+    () => paginated.find(i => i.id === selectedId) || null,
+    [paginated, selectedId],
+  )
 
   function markStatus(id: string, s: 'Lida' | 'Cumprida') {
     saveStatus(id, s)
@@ -390,6 +424,16 @@ export function PublicacoesPage() {
               </div>
             )}
           </div>
+
+          {/* Ordenação por data de publicação */}
+          <button
+            onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+            title={sortDir === 'desc' ? 'Mais recentes primeiro' : 'Mais antigas primeiro'}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors"
+          >
+            <ArrowUpDown className="w-4 h-4 text-gray-400" /> {sortDir === 'desc' ? 'Recentes' : 'Antigas'}
+          </button>
+
           <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
             <Printer className="w-4 h-4" /> Imprimir
           </button>
@@ -398,127 +442,79 @@ export function PublicacoesPage() {
           </button>
         </div>
 
-        {/* Table */}
-        <div className="bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-dark-700">
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Partes / Conteúdo</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                    <button className="flex items-center gap-1 hover:text-gray-700 dark:hover:text-gray-300"
-                      onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}>
-                      Publicação
-                      <svg className={cn('w-3 h-3 transition-transform', sortDir === 'asc' && 'rotate-180')} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
+        {/* Master-detail: lista à esquerda, leitura completa à direita.
+            Em telas estreitas (abaixo de lg), a lista ocupa a tela inteira e a
+            seleção de um item substitui a lista pelo painel de leitura (com
+            botão "Voltar"), em vez de dividir a tela em duas colunas apertadas. */}
+        <div className="flex flex-col lg:flex-row gap-4 lg:h-[70vh] lg:min-h-[480px] lg:max-h-[760px]">
+          {/* Lista */}
+          <div className={cn(
+            'lg:w-[380px] lg:flex-shrink-0 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl overflow-hidden flex flex-col',
+            selectedId && 'hidden lg:flex',
+          )}>
+            <div className="flex-1 overflow-y-auto">
+              {loading ? (
+                <div className="py-16 text-center"><Spinner className="w-6 h-6 mx-auto" /></div>
+              ) : !hasCnjData ? (
+                <div className="flex flex-col items-center gap-3 text-center px-8 py-12">
+                  <AlertCircle className="w-10 h-10 text-amber-400" />
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Nenhum processo CNJ sincronizado ainda</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Faça login novamente ou acesse Configurações → Sincronizar OAB para importar seus processos do DataJud.
+                  </p>
+                </div>
+              ) : paginated.length === 0 ? (
+                <p className="px-5 py-16 text-center text-sm text-gray-400">Nenhuma intimação encontrada para o período selecionado.</p>
+              ) : (
+                paginated.map(item => (
+                  <IntimacaoListItem
+                    key={item.id}
+                    item={item}
+                    active={item.id === selectedId}
+                    temPrazoCriado={!!prazoMap[item.id]}
+                    onSelect={() => setSelectedId(item.id)}
+                  />
+                ))
+              )}
+            </div>
+
+            {/* Paginação compacta */}
+            {filtered.length > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 border-t border-gray-100 dark:border-dark-700 text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }}
+                  className="border border-gray-200 dark:border-dark-600 rounded-lg px-1.5 py-1 bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-100">
+                  {PAGE_SIZES.map(s => <option key={s} value={s}>{s}/pág.</option>)}
+                </select>
+                <div className="flex items-center gap-2">
+                  <span>{start}-{end} de {filtered.length}</span>
+                  <div className="flex items-center gap-0.5">
+                    <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                      className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <ChevronLeft className="w-3.5 h-3.5" />
                     </button>
-                  </th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tribunal</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Responsável</th>
-                  <th className="px-5 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Situação</th>
-                  <th className="w-10 px-2 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr><td colSpan={7} className="py-16 text-center"><Spinner className="w-6 h-6 mx-auto" /></td></tr>
-                ) : !hasCnjData ? (
-                  <tr>
-                    <td colSpan={7} className="py-12">
-                      <div className="flex flex-col items-center gap-3 text-center px-8">
-                        <AlertCircle className="w-10 h-10 text-amber-400" />
-                        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Nenhum processo CNJ sincronizado ainda</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          Faça login novamente ou acesse Configurações → Sincronizar OAB para importar seus processos do DataJud.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : paginated.length === 0 ? (
-                  <tr><td colSpan={7} className="px-5 py-16 text-center text-sm text-gray-400">Nenhuma intimação encontrada para o período selecionado.</td></tr>
-                ) : (
-                  paginated.map((item, idx) => (
-                    <tr key={item.id}
-                      className={cn('border-b border-gray-50 dark:border-dark-700/50 hover:bg-gray-50/60 dark:hover:bg-dark-700/30 transition-colors group',
-                        idx % 2 === 1 && 'bg-gray-50/30 dark:bg-dark-700/10'
-                      )}
-                    >
-                      <td className="px-5 py-3.5 max-w-[280px]">
-                        <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug truncate">{item.partes}</p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 truncate">{item.conteudo}</p>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {item.publicacao ? formatDate(item.publicacao) : '—'}
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-600 dark:text-gray-300 font-medium whitespace-nowrap">
-                        {item.tribunal}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{item.numero_processo}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                        {item.responsavel || '—'}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span className={cn('inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold border', SITUACAO_STYLE[item.situacao])}>
-                          {item.situacao}
-                        </span>
-                      </td>
-                      <td className="px-2 py-3.5">
-                        <div className="flex items-center gap-1">
-                          {prazoMap[item.id] ? (
-                            <button onClick={() => navigate('/tarefas')}
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/30 whitespace-nowrap transition-colors"
-                              title={`Tarefa de prazo criada para ${formatDate(prazoMap[item.id])} — clique para ver em Atividades`}>
-                              <Clock className="w-3 h-3" /> {formatDate(prazoMap[item.id])}
-                            </button>
-                          ) : (
-                            <button onClick={() => openPrazoModal(item)}
-                              className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-amber-600 opacity-0 group-hover:opacity-100 transition-all" title="Criar tarefa de prazo">
-                              <Clock className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {item.situacao !== 'Lida' && (
-                              <button onClick={() => markStatus(item.id, 'Lida')}
-                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-emerald-600 transition-colors" title="Marcar como lida">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {item.situacao !== 'Cumprida' && (
-                              <button onClick={() => markStatus(item.id, 'Cumprida')}
-                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors" title="Marcar como cumprida">
-                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                    <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1}
+                      className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Pagination */}
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 dark:border-dark-700 bg-white dark:bg-dark-800">
-            <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
-              <span>Registros por página</span>
-              <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }}
-                className="border border-gray-200 dark:border-dark-600 rounded-lg px-2 py-1 text-sm bg-white dark:bg-dark-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-100">
-                {PAGE_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400">
-              <span>{start}-{end} de {filtered.length}</span>
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage(0)} disabled={page === 0} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronsLeft className="w-4 h-4" /></button>
-                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft className="w-4 h-4" /></button>
-                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight className="w-4 h-4" /></button>
-                <button onClick={() => setPage(totalPages - 1)} disabled={page >= totalPages - 1} className="p-1 rounded hover:bg-gray-100 dark:hover:bg-dark-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronsRight className="w-4 h-4" /></button>
-              </div>
-            </div>
+          {/* Painel de leitura */}
+          <div className={cn(
+            'flex-1 min-w-0 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-700 rounded-xl overflow-hidden',
+            !selectedId && 'hidden lg:block',
+          )}>
+            <IntimacaoReadingPanel
+              item={selectedItem}
+              prazoCriadoEm={selectedItem ? prazoMap[selectedItem.id] || null : null}
+              onBack={() => setSelectedId(null)}
+              onMarkStatus={s => selectedItem && markStatus(selectedItem.id, s)}
+              onCriarPrazo={() => selectedItem && openPrazoModal(selectedItem)}
+              onVerTarefa={() => navigate('/tarefas')}
+            />
           </div>
         </div>
 

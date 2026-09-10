@@ -8,6 +8,7 @@ type MockIntimacao = {
   tribunal: string
   publicacao: string
   conteudo: string
+  teor: string
   responsavel: string
   situacao: 'Pendente' | 'Lida' | 'Cumprida'
 }
@@ -49,6 +50,7 @@ function applyFilters(
       i.numero_processo?.toLowerCase().includes(q) ||
       i.partes?.toLowerCase().includes(q) ||
       i.conteudo?.toLowerCase().includes(q) ||
+      i.teor?.toLowerCase().includes(q) ||
       i.tribunal?.toLowerCase().includes(q) ||
       i.responsavel?.toLowerCase().includes(q)
     )
@@ -58,9 +60,9 @@ function applyFilters(
 
 // ─── Fixtures ──────────────────────────────────────────────────────────────────
 const ITEMS: MockIntimacao[] = [
-  { id: 'i1', numero_processo: '0001/2024', partes: 'João Silva', tribunal: 'TJSP', publicacao: '2026-07-20', conteudo: 'Intimação de audiência', responsavel: 'Ana', situacao: 'Pendente' },
-  { id: 'i2', numero_processo: '0002/2024', partes: 'Maria Souza', tribunal: 'TJRJ', publicacao: '2026-06-01', conteudo: 'Citação inicial', responsavel: 'Bruno', situacao: 'Lida' },
-  { id: 'i3', numero_processo: '0003/2024', partes: 'Carla Dias', tribunal: 'TJSP', publicacao: '2026-01-15', conteudo: 'Sentença proferida', responsavel: 'Ana', situacao: 'Cumprida' },
+  { id: 'i1', numero_processo: '0001/2024', partes: 'João Silva', tribunal: 'TJSP', publicacao: '2026-07-20', conteudo: 'Intimação de audiência', teor: 'Intimação de audiência', responsavel: 'Ana', situacao: 'Pendente' },
+  { id: 'i2', numero_processo: '0002/2024', partes: 'Maria Souza', tribunal: 'TJRJ', publicacao: '2026-06-01', conteudo: 'Citação inicial', teor: 'Fica a parte ré citada para comparecer em juízo no prazo de 15 dias.', responsavel: 'Bruno', situacao: 'Lida' },
+  { id: 'i3', numero_processo: '0003/2024', partes: 'Carla Dias', tribunal: 'TJSP', publicacao: '2026-01-15', conteudo: 'Sentença proferida', teor: 'Sentença proferida', responsavel: 'Ana', situacao: 'Cumprida' },
 ]
 
 describe('PublicacoesPage — isIntimacao()', () => {
@@ -132,6 +134,11 @@ describe('PublicacoesPage — filtro por busca textual', () => {
     const r = applyFilters(ITEMS, { search: 'sentença' })
     expect(r).toHaveLength(1)
     expect(r[0].id).toBe('i3')
+  })
+  it('busca pelo texto completo (teor), não só pelo rótulo curto (conteudo)', () => {
+    const r = applyFilters(ITEMS, { search: 'comparecer em juízo' })
+    expect(r).toHaveLength(1)
+    expect(r[0].id).toBe('i2')
   })
 })
 
