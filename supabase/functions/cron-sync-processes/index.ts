@@ -7,8 +7,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // ao fluxo manual do OabSyncModal. Isso garante isolamento entre escritórios:
 // nenhuma chamada nunca mistura dados de tenants diferentes.
 //
-// PJe fica de fora de propósito: exige CPF+senha a cada chamada e o sistema
-// nunca armazena essa senha (ver OabSyncModal.tsx). Continua só manual.
+// PJe (via DJEN/Comunica PJe, API pública gratuita do CNJ) roda aqui também —
+// diferente da versão antiga baseada em MNI, não exige CPF+senha do usuário,
+// só OAB+UF, então é seguro incluir no cron. Janela de busca curta (últimos 2
+// dias) porque o cron roda diariamente — não precisa reconsultar 90 dias toda
+// noite (isso fica só para a sincronização manual/inicial no OabSyncModal).
 //
 // Autenticação: segredo fixo no header (não é chamada de usuário, é pg_cron →
 // Edge Function server-to-server), mesmo padrão já usado neste projeto para o
@@ -304,6 +307,100 @@ async function syncJusbrasilForProfile(supabase: any, profile: Profile, token: s
   return { imported, updated, errors }
 }
 
+// ── PJe (DJEN/Comunica PJe) — mesma lógica do supabase/functions/sync-pje ──
+
+const DJEN_BASE = "https://comunicaapi.pje.jus.br/api/v1"
+const DJEN_ITEMS_PER_PAGE = 50
+const DJEN_MAX_PAGES = 10
+const DJEN_PAGE_DELAY_MS = 400
+const DJEN_LOOKBACK_DAYS = 2 // janela curta: cron roda diariamente
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function fetchDjenPage(oabNum: string, oabState: string, dataInicio: string, dataFim: string, pagina: number): Promise<{ items: any[]; error: string | null }> {
+  const url = new URL(`${DJEN_BASE}/comunicacao`)
+  url.searchParams.set('numeroOab', oabNum)
+  url.searchParams.set('ufOab', oabState)
+  url.searchParams.set('dataDisponibilizacaoInicio', dataInicio)
+  url.searchParams.set('dataDisponibilizacaoFim', dataFim)
+  url.searchParams.set('pagina', String(pagina))
+  url.searchParams.set('itensPorPagina', String(DJEN_ITEMS_PER_PAGE))
+
+  try {
+    const resp = await fetch(url.toString(), { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(20_000) })
+    if (resp.status === 429) return { items: [], error: 'rate limit DJEN' }
+    if (!resp.ok) return { items: [], error: `HTTP ${resp.status}` }
+    const data = await resp.json().catch(() => null)
+    if (!data || data.status === 'error') return { items: [], error: data?.message || 'resposta inválida' }
+    return { items: Array.isArray(data.items) ? data.items : [], error: null }
+  } catch (e: any) {
+    return { items: [], error: e?.message || 'erro de rede' }
+  }
+}
+
+async function syncPjeForProfile(supabase: any, profile: Profile): Promise<SyncOutcome> {
+  const hoje = new Date()
+  const dataFim = hoje.toISOString().slice(0, 10)
+  const dataInicio = (() => { const d = new Date(hoje); d.setDate(d.getDate() - DJEN_LOOKBACK_DAYS); return d.toISOString().slice(0, 10) })()
+
+  const errors: string[] = []
+  const allItems: any[] = []
+
+  for (let pagina = 1; pagina <= DJEN_MAX_PAGES; pagina++) {
+    const { items, error } = await fetchDjenPage(profile.oab_number, profile.oab_seccional, dataInicio, dataFim, pagina)
+    if (error) { errors.push(`PJe/DJEN: ${error}`); break }
+    if (items.length === 0) break
+    allItems.push(...items)
+    if (items.length < DJEN_ITEMS_PER_PAGE) break
+    await sleep(DJEN_PAGE_DELAY_MS)
+  }
+
+  const now = new Date().toISOString()
+  let imported = 0, updated = 0
+
+  for (const item of allItems) {
+    const num = (item.numero_processo || '').replace(/\D/g, '')
+    if (!num) continue
+
+    const movimento = {
+      fonte: 'pje',
+      idComunicacao: item.id ?? item.hash ?? null,
+      hash: item.hash ?? null,
+      nome: item.tipoComunicacao || item.tipoDocumento || 'Intimação',
+      dataHora: item.data_disponibilizacao || item.datadisponibilizacao || null,
+      orgao: item.nomeOrgao || null,
+      teor: item.texto || null,
+      link: item.link || null,
+    }
+
+    const { data: ex } = await supabase.from('processes').select('id, movimentos').eq('number', num).eq('tenant_id', profile.tenant_id).is('deleted_at', null).maybeSingle()
+
+    if (ex) {
+      const existing: any[] = Array.isArray(ex.movimentos) ? ex.movimentos : []
+      const already = existing.some((m: any) =>
+        (movimento.idComunicacao != null && m.idComunicacao === movimento.idComunicacao) ||
+        (movimento.hash != null && m.hash === movimento.hash))
+      if (!already) {
+        const { error } = await supabase.from('processes').update({ cnj_synced_at: now, movimentos: [...existing, movimento] }).eq('id', ex.id)
+        if (error) errors.push(`PJe update ${num}: ${error.message}`); else updated++
+      }
+    } else {
+      const parteNome = item.destinatarios?.[0]?.nome || null
+      const { error } = await supabase.from('processes').insert({
+        tenant_id: profile.tenant_id, number: num,
+        title: parteNome ? `${movimento.nome} - ${parteNome}` : movimento.nome,
+        client_name: parteNome, court: item.nomeOrgao || null, area: item.siglaTribunal || null,
+        status: 'active', priority: 'medium', cnj_source: true, cnj_synced_at: now, movimentos: [movimento],
+      })
+      if (error) errors.push(`PJe insert ${num}: ${error.message}`); else imported++
+    }
+  }
+
+  return { imported, updated, errors }
+}
+
 // ── Handler ──
 
 Deno.serve(async (req: Request) => {
@@ -339,6 +436,11 @@ Deno.serve(async (req: Request) => {
       const r = await syncCnjForProfile(supabase, profile, tribunais)
       imported += r.imported; updated += r.updated; errors.push(...r.errors)
     } catch (e: any) { errors.push(`CNJ: ${e.message}`) }
+
+    try {
+      const r = await syncPjeForProfile(supabase, profile)
+      imported += r.imported; updated += r.updated; errors.push(...r.errors)
+    } catch (e: any) { errors.push(`PJe: ${e.message}`) }
 
     if (escToken) {
       try {

@@ -1,6 +1,33 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
 
+// Sincronização via PJe usando o DJEN (Diário de Justiça Eletrônico Nacional) /
+// "Comunica PJe" — API pública do CNJ, sem autenticação, sem custo. Cobre
+// intimações/citações/avisos publicados por QUALQUER tribunal (estadual ou
+// federal) que publica no DJEN, filtrando só por número da OAB + UF — não
+// exige seleção manual de tribunal nem login/senha do usuário no PJe.
+//
+// Verificado manualmente em 2026-09-09 contra a API em produção
+// (https://comunicaapi.pje.jus.br/api/v1/comunicacao?numeroOab=...&ufOab=...):
+// resposta real tem o formato { status, message, count, items: [...] }, com
+// cada item trazendo id, data_disponibilizacao, siglaTribunal, tipoComunicacao,
+// nomeOrgao, texto, numero_processo, hash, destinatarioadvogados[], etc.
+// Não há Swagger/versionamento oficial estável publicado pelo CNJ — os nomes
+// de campo abaixo podem mudar sem aviso; por isso o parsing é defensivo
+// (aceita variações de nome de campo quando plausível).
+//
+// Limitação conhecida: o DJEN cobre publicações feitas via Diário de Justiça
+// Eletrônico Nacional. Na prática isso inclui a imensa maioria dos tribunais
+// (inclusive TJSP, que usa e-SAJ como sistema processual mas publica no DJEN
+// por força da Resolução CNJ 455/2022). Ainda assim, comunicações feitas por
+// outro meio que não o Diário (ex.: intimação pessoal, carta, publicação em
+// sistema próprio de tribunal fora do DJEN) NÃO aparecem aqui — não há
+// garantia de cobertura de 100% dos atos processuais de 100% dos tribunais.
+const DJEN_BASE = "https://comunicaapi.pje.jus.br/api/v1"
+const ITEMS_PER_PAGE = 50
+const MAX_PAGES = 20 // trava de segurança: até 1000 comunicações por sincronização
+const PAGE_DELAY_MS = 400 // espaçamento entre chamadas — API pública sem SLA, evita 429
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -9,9 +36,9 @@ const CORS = {
 
 // Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
 // janela de RATE_WINDOW_SECONDS, contra a tabela edge_function_rate_limits (só
-// acessível via service role). Essa função repassa CPF+senha do usuário ao
-// PJe a cada chamada — limitar a cadência reduz o risco de bloqueio da conta
-// no tribunal e de abuso de uma credencial comprometida como oráculo de senha.
+// acessível via service role). A API do DJEN é pública e compartilhada por
+// todo o país — limitar a cadência evita que o uso deste app gere rajadas
+// desnecessárias contra a infraestrutura do CNJ.
 const RATE_LIMIT = 10
 const RATE_WINDOW_SECONDS = 60 * 60
 
@@ -33,127 +60,100 @@ async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, ke
   return data === true
 }
 
-const MNI_HOSTS: Record<string, string> = {
-  tjac:'pje.tjac.jus.br', tjal:'pje.tjal.jus.br', tjam:'pje.tjam.jus.br',
-  tjap:'pje.tjap.jus.br', tjba:'pje.tjba.jus.br', tjce:'pje.tjce.jus.br',
-  tjdft:'pje.tjdft.jus.br', tjes:'pje.tjes.jus.br', tjgo:'pje.tjgo.jus.br',
-  tjma:'pje.tjma.jus.br', tjmg:'pje.tjmg.jus.br', tjms:'pje.tjms.jus.br',
-  tjmt:'pje.tjmt.jus.br', tjpa:'pje.tjpa.jus.br', tjpb:'pje.tjpb.jus.br',
-  tjpe:'pje.tjpe.jus.br', tjpi:'pje.tjpi.jus.br', tjpr:'pje.tjpr.jus.br',
-  tjrj:'tjrj.pje.jus.br', tjrn:'pje.tjrn.jus.br', tjro:'pje.tjro.jus.br',
-  tjrr:'pje.tjrr.jus.br', tjrs:'pje.tjrs.jus.br', tjsc:'pje.tjsc.jus.br',
-  tjse:'pje.tjse.jus.br', tjsp:'pje.tjsp.jus.br', tjto:'pje.tjto.jus.br',
-  trf1:'pje1g.trf1.jus.br', trf2:'pje.trf2.jus.br', trf3:'pje.trf3.jus.br',
-  trf4:'pje.trf4.jus.br', trf5:'pje.trf5.jus.br',
-  trt1:'pje.trt1.jus.br', trt2:'pje.trt2.jus.br', trt3:'pje.trt3.jus.br',
-  trt4:'pje.trt4.jus.br', trt5:'pje.trt5.jus.br', trt6:'pje.trt6.jus.br',
-  trt7:'pje.trt7.jus.br', trt8:'pje.trt8.jus.br', trt9:'pje.trt9.jus.br',
-  trt10:'pje.trt10.jus.br', trt11:'pje.trt11.jus.br', trt12:'pje.trt12.jus.br',
-  trt13:'pje.trt13.jus.br', trt14:'pje.trt14.jus.br', trt15:'pje.trt15.jus.br',
-  trt16:'pje.trt16.jus.br', trt17:'pje.trt17.jus.br', trt18:'pje.trt18.jus.br',
-  trt19:'pje.trt19.jus.br', trt20:'pje.trt20.jus.br', trt21:'pje.trt21.jus.br',
-  trt22:'pje.trt22.jus.br', trt23:'pje.trt23.jus.br', trt24:'pje.trt24.jus.br',
-  stj:'pje.stj.jus.br', tst:'pje.tst.jus.br',
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-const MNI_PATHS = ['/pjemni/intercomunicacao', '/pje/intercomunicacao', '/intercomunicacao']
-const MNI_NS = [
-  'http://www.cnj.jus.br/servico-intercomunicacao-2.2.2/',
-  'http://www.cnj.jus.br/servico-intercomunicacao-2.2.3/',
-  'http://intercomunicacao.ws.pje.cnj.jus.br/',
-]
-
-function escapeXml(s: string): string {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')
+interface DjenItem {
+  id?: number | string
+  hash?: string
+  data_disponibilizacao?: string
+  datadisponibilizacao?: string
+  siglaTribunal?: string
+  tipoComunicacao?: string
+  tipoDocumento?: string
+  nomeOrgao?: string
+  texto?: string
+  numero_processo?: string
+  numeroprocessocommascara?: string
+  link?: string
+  destinatarios?: { nome?: string }[]
 }
 
-function buildSoap(cpf: string, senha: string, ns: string): string {
-  return '<?xml version="1.0" encoding="UTF-8"?>' +
-    '<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns2="' + ns + '">' +
-    '<S:Body>' +
-    '<ns2:consultarAvisosPendentes>' +
-    '<idConsultante>' + escapeXml(cpf) + '</idConsultante>' +
-    '<senhaConsultante>' + escapeXml(senha) + '</senhaConsultante>' +
-    '</ns2:consultarAvisosPendentes>' +
-    '</S:Body>' +
-    '</S:Envelope>'
+interface DjenPageResult {
+  items: DjenItem[]
+  count: number
+  error: string | null
 }
 
-function xmlVal(xml: string, tag: string): string {
-  const m = xml.match(new RegExp('<(?:[\\w-]+:)?' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?' + tag + '>', 'i'))
-  if (!m) return ''
-  return m[1].replace(/<\!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim()
-}
+async function fetchDjenPage(oabNum: string, oabState: string, dataInicio: string, dataFim: string, pagina: number): Promise<DjenPageResult> {
+  const url = new URL(`${DJEN_BASE}/comunicacao`)
+  url.searchParams.set('numeroOab', oabNum)
+  url.searchParams.set('ufOab', oabState)
+  url.searchParams.set('dataDisponibilizacaoInicio', dataInicio)
+  url.searchParams.set('dataDisponibilizacaoFim', dataFim)
+  url.searchParams.set('pagina', String(pagina))
+  url.searchParams.set('itensPorPagina', String(ITEMS_PER_PAGE))
 
-function xmlAll(xml: string, tag: string): string[] {
-  const re = new RegExp('<(?:[\\w-]+:)?' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)</(?:[\\w-]+:)?' + tag + '>', 'gi')
-  const out: string[] = []
-  let m
-  while ((m = re.exec(xml)) !== null) {
-    out.push(m[1].replace(/<\!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').trim())
-  }
-  return out
-}
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const resp = await fetch(url.toString(), {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(20_000),
+      })
 
-interface Aviso {
-  idAviso: string; numeroProcesso: string; tipoAviso: string
-  dataHora: string; orgao: string; nomeOrgao: string
-  teor: string; parteAdversa: string; prazo: string
-}
-
-function parseAvisos(xml: string): Aviso[] {
-  const blocos = xmlAll(xml, 'aviso')
-  return blocos.map(b => ({
-    idAviso: xmlVal(b, 'idAviso'), numeroProcesso: xmlVal(b, 'numeroProcesso'),
-    tipoAviso: xmlVal(b, 'tipoAviso') || 'I',
-    dataHora: xmlVal(b, 'dataDisponibilizacao') || xmlVal(b, 'dataEnvio') || '',
-    orgao: xmlVal(b, 'siglaOrgaoJulgador'), nomeOrgao: xmlVal(b, 'nomeOrgaoJulgador') || xmlVal(b, 'orgaoJulgador'),
-    teor: xmlVal(b, 'teor'), parteAdversa: xmlVal(b, 'nomeParteAdversa') || xmlVal(b, 'parteAdversa'),
-    prazo: xmlVal(b, 'prazo'),
-  })).filter(a => a.numeroProcesso)
-}
-
-const TIPO_NOME: Record<string, string> = { I: 'Intimacao', C: 'Citacao', R: 'Remessa Eletronica', A: 'Aviso' }
-
-async function callMni(trib: string, cpf: string, senha: string): Promise<{ avisos: Aviso[]; endpoint: string; error: string | null }> {
-  const host = MNI_HOSTS[trib]
-  if (!host) return { avisos: [], endpoint: '', error: 'Host MNI nao mapeado para ' + trib }
-
-  for (const path of MNI_PATHS) {
-    for (const ns of MNI_NS) {
-      const endpoint = 'https://' + host + path
-      try {
-        const resp = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/xml; charset=UTF-8', 'SOAPAction': '"' + ns + 'consultarAvisosPendentes"' },
-          body: buildSoap(cpf, senha, ns),
-          signal: AbortSignal.timeout(20_000),
-        })
-        const xml = await resp.text()
-        if (xml.includes('Fault') || xml.includes('fault')) {
-          const msg = xmlVal(xml, 'faultstring') || xmlVal(xml, 'message') || 'SOAP Fault'
-          if (msg.toLowerCase().includes('credencial') || msg.toLowerCase().includes('autentica') || msg.toLowerCase().includes('senha')) {
-            return { avisos: [], endpoint, error: 'Credenciais invalidas para ' + trib + ': ' + msg }
-          }
-          continue
-        }
-        const sucesso = xmlVal(xml, 'sucesso')
-        if (sucesso === 'false') {
-          const msg = xmlVal(xml, 'mensagem') || 'Falha na consulta'
-          if (msg.toLowerCase().includes('credencial') || msg.toLowerCase().includes('senha')) {
-            return { avisos: [], endpoint, error: 'Credenciais invalidas para ' + trib }
-          }
-          continue
-        }
-        return { avisos: parseAvisos(xml), endpoint, error: null }
-      } catch (e: any) {
-        if (e?.name === 'TimeoutError') continue
-        continue
+      if (resp.status === 429) {
+        if (attempt === 0) { await sleep(2000); continue }
+        return { items: [], count: 0, error: 'Limite de requisições do DJEN atingido, tente novamente em instantes' }
       }
+      if (!resp.ok) {
+        return { items: [], count: 0, error: `DJEN HTTP ${resp.status}` }
+      }
+
+      const data = await resp.json().catch(() => null)
+      if (!data || data.status === 'error') {
+        return { items: [], count: 0, error: data?.message || 'Resposta inválida do DJEN' }
+      }
+
+      const items: DjenItem[] = Array.isArray(data.items) ? data.items : []
+      const count: number = typeof data.count === 'number' ? data.count : items.length
+      return { items, count, error: null }
+    } catch (e: any) {
+      if (e?.name === 'TimeoutError' && attempt === 0) continue
+      return { items: [], count: 0, error: e?.name === 'TimeoutError' ? 'Timeout ao consultar DJEN' : (e?.message || 'Erro de rede ao consultar DJEN') }
     }
   }
-  return { avisos: [], endpoint: '', error: 'MNI inacessivel em ' + trib }
+  return { items: [], count: 0, error: 'Falha ao consultar DJEN' }
 }
+
+// Busca todas as páginas para uma variante de número de OAB. Retorna cedo se
+// a primeira página já vier vazia (sem custo de tentar as demais páginas).
+async function fetchAllPages(oabNum: string, oabState: string, dataInicio: string, dataFim: string): Promise<{ items: DjenItem[]; errors: string[] }> {
+  const allItems: DjenItem[] = []
+  const errors: string[] = []
+
+  for (let pagina = 1; pagina <= MAX_PAGES; pagina++) {
+    const { items, error } = await fetchDjenPage(oabNum, oabState, dataInicio, dataFim, pagina)
+    if (error) { errors.push(error); break }
+    if (items.length === 0) break
+    allItems.push(...items)
+    if (items.length < ITEMS_PER_PAGE) break
+    await sleep(PAGE_DELAY_MS)
+  }
+
+  return { items: allItems, errors }
+}
+
+// OAB às vezes está cadastrada com zeros à esquerda em algum tribunal — se a
+// consulta com o número "cru" não achar nada, tenta uma variante com padding,
+// igual ao mesmo cuidado já tomado em sync-cnj para o DataJud.
+function oabVariants(num: string): string[] {
+  const digits = num.replace(/\D/g, '')
+  const variants = new Set([digits, digits.padStart(6, '0')])
+  return Array.from(variants)
+}
+
+const TIPO_FALLBACK = 'Intimação'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
@@ -161,60 +161,67 @@ Deno.serve(async (req: Request) => {
   try {
     const auth = req.headers.get('Authorization')
     if (!auth) {
-      return new Response(JSON.stringify({ error: 'Unauthorized', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 }), { headers: CORS })
+      return new Response(JSON.stringify({ error: 'Unauthorized', total: 0, imported: 0, updated: 0, errors: [] }), { headers: CORS })
     }
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const { data: { user }, error: authErr } = await supabase.auth.getUser(auth.replace('Bearer ', ''))
     if (authErr || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 }), { headers: CORS })
+      return new Response(JSON.stringify({ error: 'Unauthorized', total: 0, imported: 0, updated: 0, errors: [] }), { headers: CORS })
     }
 
-    const { data: profile } = await supabase.from('profiles').select('tenant_id, name').eq('user_id', user.id).single()
+    const { data: profile } = await supabase.from('profiles').select('tenant_id').eq('user_id', user.id).single()
     if (!profile?.tenant_id) {
-      return new Response(JSON.stringify({ error: 'Perfil nao encontrado', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 }), { headers: CORS })
+      return new Response(JSON.stringify({ error: 'Perfil nao encontrado', total: 0, imported: 0, updated: 0, errors: [] }), { headers: CORS })
     }
 
     const withinLimit = await checkRateLimit(supabase, `sync-pje:${user.id}`)
     if (!withinLimit) {
-      return new Response(JSON.stringify({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 }), { headers: CORS })
+      return new Response(JSON.stringify({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.', total: 0, imported: 0, updated: 0, errors: [] }), { headers: CORS })
     }
 
-    const body = await req.json()
-    const cpf: string = (body.cpf || '').trim().replace(/\D/g, '')
-    const senha: string = (body.senha || '').trim()
-    const tribunais: string[] = Array.isArray(body.tribunais) ? body.tribunais : []
+    const body = await req.json().catch(() => ({}))
+    const oabNumRaw: string = (body.oab_number || '').trim()
+    const oabState: string = (body.oab_seccional || '').trim().toUpperCase()
 
-    if (!cpf || !senha) {
-      return new Response(JSON.stringify({ error: 'CPF e senha PJe obrigatorios', total: 0, imported: 0, updated: 0, errors: ['CPF e senha PJe obrigatorios'], tribunais_pesquisados: 0 }), { headers: CORS })
+    if (!oabNumRaw || !oabState) {
+      return new Response(JSON.stringify({ error: 'OAB e seccional obrigatórias', total: 0, imported: 0, updated: 0, errors: [] }), { headers: CORS })
     }
 
-    const allAvisos: (Aviso & { tribunal: string })[] = []
+    // Janela padrão: últimos 90 dias (cobre a maioria dos prazos processuais em
+    // aberto). O cron noturno (cron-sync-processes) passa uma janela mais curta.
+    const hoje = new Date()
+    const dataFim: string = body.data_fim || hoje.toISOString().slice(0, 10)
+    const dataInicio: string = body.data_inicio || (() => {
+      const d = new Date(hoje); d.setDate(d.getDate() - 90); return d.toISOString().slice(0, 10)
+    })()
+
     const errors: string[] = []
-    const endpoints_used: Record<string, string> = {}
-    const now = new Date().toISOString()
+    let djenItems: DjenItem[] = []
 
-    const CHUNK = 5
-    for (let i = 0; i < tribunais.length; i += CHUNK) {
-      const chunk = tribunais.slice(i, i + CHUNK)
-      await Promise.all(chunk.map(async trib => {
-        const { avisos, endpoint, error } = await callMni(trib, cpf, senha)
-        if (error) errors.push(trib.toUpperCase() + ': ' + error)
-        else { endpoints_used[trib] = endpoint; for (const a of avisos) allAvisos.push({ ...a, tribunal: trib }) }
-      }))
+    for (const variant of oabVariants(oabNumRaw)) {
+      const { items, errors: pageErrors } = await fetchAllPages(variant, oabState, dataInicio, dataFim)
+      if (pageErrors.length) errors.push(...pageErrors.map(e => `PJe/DJEN: ${e}`))
+      if (items.length > 0) { djenItems = items; break }
     }
 
     let imported = 0, updated = 0
     const insert_errors: string[] = []
+    const now = new Date().toISOString()
 
-    for (const aviso of allAvisos) {
-      const num = aviso.numeroProcesso
+    for (const item of djenItems) {
+      const num = (item.numero_processo || '').replace(/\D/g, '')
       if (!num) continue
 
       const movimento = {
-        fonte: 'pje', idAviso: aviso.idAviso, nome: TIPO_NOME[aviso.tipoAviso] ?? 'Aviso',
-        dataHora: aviso.dataHora, orgao: aviso.orgao, teor: aviso.teor,
-        parteAdversa: aviso.parteAdversa, prazo: aviso.prazo,
+        fonte: 'pje',
+        idComunicacao: item.id ?? item.hash ?? null,
+        hash: item.hash ?? null,
+        nome: item.tipoComunicacao || item.tipoDocumento || TIPO_FALLBACK,
+        dataHora: item.data_disponibilizacao || item.datadisponibilizacao || null,
+        orgao: item.nomeOrgao || null,
+        teor: item.texto || null,
+        link: item.link || null,
       }
 
       const { data: ex } = await supabase.from('processes').select('id, movimentos')
@@ -222,30 +229,48 @@ Deno.serve(async (req: Request) => {
 
       if (ex) {
         const existing: any[] = Array.isArray(ex.movimentos) ? ex.movimentos : []
-        if (!existing.some((m: any) => m.idAviso === aviso.idAviso)) {
+        const already = existing.some((m: any) =>
+          (movimento.idComunicacao != null && m.idComunicacao === movimento.idComunicacao) ||
+          (movimento.hash != null && m.hash === movimento.hash))
+        if (!already) {
           const { error: upErr } = await supabase.from('processes').update({ cnj_synced_at: now, movimentos: [...existing, movimento] }).eq('id', ex.id)
-          if (upErr) insert_errors.push('update ' + num + ': ' + upErr.message)
+          if (upErr) insert_errors.push(`update ${num}: ${upErr.message}`)
           else updated++
         }
       } else {
+        const parteNome = item.destinatarios?.[0]?.nome || null
         const { error: insErr } = await supabase.from('processes').insert({
-          tenant_id: profile.tenant_id, number: num,
-          title: aviso.parteAdversa ? (TIPO_NOME[aviso.tipoAviso] ?? 'Aviso') + ' - ' + aviso.parteAdversa : (TIPO_NOME[aviso.tipoAviso] ?? 'Processo PJe'),
-          court: aviso.nomeOrgao || aviso.orgao || null, area: aviso.tribunal.toUpperCase(),
-          status: 'active', priority: 'medium', cnj_source: true, cnj_synced_at: now, movimentos: [movimento],
+          tenant_id: profile.tenant_id,
+          number: num,
+          title: parteNome ? `${movimento.nome} - ${parteNome}` : movimento.nome,
+          client_name: parteNome,
+          court: item.nomeOrgao || null,
+          area: item.siglaTribunal || null,
+          status: 'active',
+          priority: 'medium',
+          cnj_source: true,
+          cnj_synced_at: now,
+          movimentos: [movimento],
         })
-        if (insErr) insert_errors.push('insert ' + num + ': ' + insErr.message)
+        if (insErr) insert_errors.push(`insert ${num}: ${insErr.message}`)
         else imported++
       }
     }
 
     return new Response(
-      JSON.stringify({ total: allAvisos.length, imported, updated, errors: [...errors, ...insert_errors], tribunais_pesquisados: tribunais.length, endpoints_used }),
+      JSON.stringify({
+        total: djenItems.length,
+        imported,
+        updated,
+        errors: [...errors, ...insert_errors],
+        oab: `${oabNumRaw}/${oabState}`,
+        periodo: { inicio: dataInicio, fim: dataFim },
+      }),
       { headers: CORS },
     )
   } catch (e: any) {
     return new Response(
-      JSON.stringify({ error: e.message, total: 0, imported: 0, updated: 0, errors: [e.message], tribunais_pesquisados: 0 }),
+      JSON.stringify({ error: e.message, total: 0, imported: 0, updated: 0, errors: [e.message] }),
       { headers: CORS },
     )
   }
