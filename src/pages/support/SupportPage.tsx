@@ -301,8 +301,26 @@ export function SupportPage() {
       </div>
 
       {/* New ticket modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Abrir Ticket de Suporte" size="md">
-        <div className="space-y-4">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="" size="md">
+        <div className="-mx-6 -mt-6">
+          <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-5">
+            <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+            <div className="absolute right-4 top-4 opacity-20"><HelpCircle className="w-20 h-20" /></div>
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Suporte</p>
+                <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">Abrir Ticket de Suporte</h3>
+              </div>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+        <div className="px-6 pt-4 space-y-4">
           <div className="flex items-start gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
             <AlertCircle className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
             <p className="text-xs text-blue-700 dark:text-blue-400">Nossa equipe responde em até 24 horas úteis. Para urgências, mencione no assunto.</p>
@@ -310,11 +328,12 @@ export function SupportPage() {
           <Input label="Assunto *" value={subject} onChange={e => setSubject(e.target.value)} placeholder="Ex: Não consigo criar processos" />
           <Textarea label="Descrição detalhada *" value={message} onChange={e => setMessage(e.target.value)} rows={5} placeholder="Descreva o problema com o máximo de detalhes possível. Inclua os passos que levaram ao problema..." />
         </div>
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-end gap-3 mt-6 pt-4 px-6 border-t border-gray-100 dark:border-dark-700">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
           <Button onClick={createTicket} loading={saving} disabled={!subject.trim() || !message.trim()}>
             <Send className="w-4 h-4" /> Enviar Ticket
           </Button>
+        </div>
         </div>
       </Modal>
     </Layout>

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import {
   Plus, Search, Users, Mail, Trash2, Eye, EyeOff, Copy, Check, RefreshCw,
   Shield, Scale, BookOpen, DollarSign, Crown, UserCheck, UserX, Building2,
-  CreditCard, ChevronRight, Zap, Star, Infinity,
+  CreditCard, ChevronRight, Zap, Star, Infinity, X,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, EmptyState } from '@/components/ui'
@@ -595,9 +595,30 @@ export function UsersPage() {
       <Modal
         open={modalOpen}
         onClose={() => { setModalOpen(false); setCreatedCredentials(null) }}
-        title={createdCredentials ? 'Usuário criado' : editId ? 'Editar usuário' : 'Novo usuário'}
+        title=""
         size="md"
       >
+        <div className="-mx-6 -mt-6">
+          <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-5">
+            <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+            <div className="absolute right-4 top-4 opacity-20"><Users className="w-20 h-20" /></div>
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Usuário</p>
+                <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">
+                  {createdCredentials ? 'Usuário criado' : editId ? 'Editar usuário' : 'Novo usuário'}
+                </h3>
+              </div>
+              <button
+                onClick={() => { setModalOpen(false); setCreatedCredentials(null) }}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+        <div className="px-6 pt-4">
         {createdCredentials ? (
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
@@ -690,12 +711,14 @@ export function UsersPage() {
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">O usuário precisará dessa senha para o primeiro acesso.</p>
               </div>
             )}
-            <div className="flex justify-end gap-3 mt-6">
+            <div className="flex justify-end gap-3 mt-6 pt-4 -mx-6 px-6 border-t border-gray-100 dark:border-dark-700">
               <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
               <Button onClick={save} loading={saving}>{editId ? 'Salvar alterações' : 'Criar usuário'}</Button>
             </div>
           </div>
         )}
+        </div>
+        </div>
       </Modal>
     </Layout>
   )

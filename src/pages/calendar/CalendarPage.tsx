@@ -1045,8 +1045,26 @@ export function CalendarPage() {
       )}
 
       {/* ═══ FORM MODAL ═══ */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Editar Evento' : 'Novo Evento'} size="md">
-        <div className="space-y-4">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="" size="md">
+        <div className="-mx-6 -mt-6">
+          <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-5">
+            <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+            <div className="absolute right-4 top-4 opacity-20"><Calendar className="w-20 h-20" /></div>
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Evento</p>
+                <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">{editId ? 'Editar Evento' : 'Novo Evento'}</h3>
+              </div>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+        <div className="px-6 pt-4 space-y-4">
           {/* Type selector (visual pills) */}
           <div>
             <p className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Tipo de evento</p>
@@ -1125,11 +1143,12 @@ export function CalendarPage() {
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-end gap-3 mt-6 pt-4 px-6 border-t border-gray-100 dark:border-dark-700">
           <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
           <Button onClick={save} loading={saving} disabled={!form.title.trim() || !form.date}>
             {saving ? 'Salvando...' : editId ? 'Salvar alterações' : 'Criar evento'}
           </Button>
+        </div>
         </div>
       </Modal>
 
