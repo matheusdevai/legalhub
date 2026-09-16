@@ -22,15 +22,14 @@ const KIND_META = {
   event: {
     icon: Calendar,
     sectionTitle: 'Audiências e eventos',
-    accent: 'bg-blue-500',
-    iconBg: 'bg-blue-50 dark:bg-blue-900/30',
-    iconColor: 'text-blue-600 dark:text-blue-400',
-    cardBorder: 'hover:border-blue-200 dark:hover:border-blue-800',
-    pillBg: 'bg-blue-500/20',
-    pillText: 'text-blue-300',
+    accent: 'bg-slate-500 dark:bg-slate-400',
+    iconBg: 'bg-slate-100 dark:bg-slate-800/60',
+    iconColor: 'text-slate-600 dark:text-slate-300',
+    cardBorder: 'hover:border-slate-300 dark:hover:border-slate-700',
+    pillBg: 'bg-white/10 border-white/15',
+    pillText: 'text-white/90',
+    pillLabel: 'evento',
     notifType: 'hearing',
-    headerBg: 'bg-blue-500/15',
-    headerIcon: 'text-blue-300',
   },
   task: {
     icon: CheckSquare,
@@ -39,11 +38,10 @@ const KIND_META = {
     iconBg: 'bg-emerald-50 dark:bg-emerald-900/30',
     iconColor: 'text-emerald-600 dark:text-emerald-400',
     cardBorder: 'hover:border-emerald-200 dark:hover:border-emerald-800',
-    pillBg: 'bg-emerald-500/20',
-    pillText: 'text-emerald-300',
+    pillBg: 'bg-emerald-500/15 border-emerald-400/25',
+    pillText: 'text-emerald-200',
+    pillLabel: 'tarefa',
     notifType: 'task',
-    headerBg: 'bg-emerald-500/15',
-    headerIcon: 'text-emerald-300',
   },
   deadline: {
     icon: Scale,
@@ -52,11 +50,10 @@ const KIND_META = {
     iconBg: 'bg-rose-50 dark:bg-rose-900/30',
     iconColor: 'text-rose-600 dark:text-rose-400',
     cardBorder: 'hover:border-rose-200 dark:hover:border-rose-800',
-    pillBg: 'bg-rose-500/20',
-    pillText: 'text-rose-300',
+    pillBg: 'bg-rose-500/15 border-rose-400/25',
+    pillText: 'text-rose-200',
+    pillLabel: 'prazo',
     notifType: 'deadline',
-    headerBg: 'bg-rose-500/15',
-    headerIcon: 'text-rose-300',
   },
   financial: {
     icon: CreditCard,
@@ -65,11 +62,10 @@ const KIND_META = {
     iconBg: 'bg-amber-50 dark:bg-amber-900/30',
     iconColor: 'text-amber-600 dark:text-amber-400',
     cardBorder: 'hover:border-amber-200 dark:hover:border-amber-800',
-    pillBg: 'bg-amber-500/20',
-    pillText: 'text-amber-300',
+    pillBg: 'bg-amber-500/15 border-amber-400/25',
+    pillText: 'text-amber-200',
+    pillLabel: 'financeiro',
     notifType: 'payment',
-    headerBg: 'bg-amber-500/15',
-    headerIcon: 'text-amber-300',
   },
 } as const
 
@@ -226,18 +222,16 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
 
         {/* ── HEADER ───────────────────────────────────────────────────── */}
         <div className="relative overflow-hidden flex-shrink-0"
-          style={{ background: 'linear-gradient(145deg, #060c18 0%, #0a1628 55%, #0f1e36 100%)' }}>
+          style={{ background: 'linear-gradient(150deg, #191a1e 0%, #202226 55%, #292b30 100%)' }}>
 
-          {/* Decorative glows */}
-          <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full opacity-20"
-            style={{ background: 'radial-gradient(circle, #06b6d4 0%, transparent 70%)' }} />
-          <div className="absolute top-8 -left-6 w-32 h-32 rounded-full opacity-10"
-            style={{ background: 'radial-gradient(circle, #94a3b8 0%, transparent 70%)' }} />
-          <div className="absolute bottom-0 right-1/3 w-40 h-24 opacity-10"
-            style={{ background: 'radial-gradient(ellipse, #06b6d4 0%, transparent 70%)' }} />
+          {/* Decorative glow — único acento dourado sutil, sem azul */}
+          <div className="absolute -top-14 -right-14 w-56 h-56 rounded-full opacity-[0.12]"
+            style={{ background: 'radial-gradient(circle, #d4af6a 0%, transparent 70%)' }} />
+          <div className="absolute bottom-0 left-0 w-40 h-24 opacity-[0.05]"
+            style={{ background: 'radial-gradient(ellipse, #f4f4f5 0%, transparent 70%)' }} />
 
           {/* Grid pattern overlay */}
-          <div className="absolute inset-0 opacity-[0.04]"
+          <div className="absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           {/* Close button */}
@@ -252,7 +246,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
             {/* Top badge */}
             <div className="flex items-center gap-2 mb-5">
               <div className="flex items-center gap-1.5 bg-white/10 border border-white/10 backdrop-blur-sm px-3 py-1.5 rounded-full">
-                <Bell className="w-3 h-3 text-primary-300" />
+                <Bell className="w-3 h-3 text-amber-300/80" />
                 <span className="text-white/70 text-[11px] font-bold uppercase tracking-widest">Agenda do dia</span>
               </div>
             </div>
@@ -265,7 +259,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
                   <span className="text-white/50 text-sm">{greetingText},</span>
                 </div>
                 <h2 className="text-white text-3xl font-black tracking-tight leading-none"
-                  style={{ textShadow: '0 2px 20px rgba(59,130,246,0.4)' }}>
+                  style={{ textShadow: '0 2px 24px rgba(212,175,106,0.25)' }}>
                   {firstName}
                 </h2>
               </div>
@@ -276,37 +270,23 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
             {!loading && (
               <div className="flex items-center gap-2 flex-wrap">
                 {items.length === 0 ? (
-                  <div className="flex items-center gap-2 bg-emerald-500/20 border border-emerald-500/20 px-3 py-1.5 rounded-full">
+                  <div className="flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/25 px-3 py-1.5 rounded-full">
                     <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    <span className="text-emerald-300 text-xs font-semibold">Agenda livre hoje</span>
+                    <span className="text-emerald-200 text-xs font-semibold">Agenda livre hoje</span>
                   </div>
                 ) : (
-                  <>
-                    {eventItems.length > 0 && (
-                      <div className="flex items-center gap-1.5 bg-blue-500/20 border border-blue-500/20 px-3 py-1.5 rounded-full">
-                        <Calendar className="w-3 h-3 text-blue-300" />
-                        <span className="text-blue-200 text-xs font-bold">{eventItems.length} evento{eventItems.length !== 1 ? 's' : ''}</span>
+                  sections.map(section => {
+                    const meta = KIND_META[section.kind]
+                    return (
+                      <div key={section.kind}
+                        className={cn('flex items-center gap-1.5 border px-3 py-1.5 rounded-full', meta.pillBg)}>
+                        <meta.icon className={cn('w-3 h-3', meta.pillText)} />
+                        <span className={cn('text-xs font-bold', meta.pillText)}>
+                          {section.list.length} {meta.pillLabel}{section.list.length !== 1 ? 's' : ''}
+                        </span>
                       </div>
-                    )}
-                    {taskItems.length > 0 && (
-                      <div className="flex items-center gap-1.5 bg-emerald-500/20 border border-emerald-500/20 px-3 py-1.5 rounded-full">
-                        <CheckSquare className="w-3 h-3 text-emerald-300" />
-                        <span className="text-emerald-200 text-xs font-bold">{taskItems.length} tarefa{taskItems.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    )}
-                    {deadlineItems.length > 0 && (
-                      <div className="flex items-center gap-1.5 bg-rose-500/20 border border-rose-500/20 px-3 py-1.5 rounded-full">
-                        <Scale className="w-3 h-3 text-rose-300" />
-                        <span className="text-rose-200 text-xs font-bold">{deadlineItems.length} prazo{deadlineItems.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    )}
-                    {financialItems.length > 0 && (
-                      <div className="flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/20 px-3 py-1.5 rounded-full">
-                        <CreditCard className="w-3 h-3 text-amber-300" />
-                        <span className="text-amber-200 text-xs font-bold">{financialItems.length} financeiro{financialItems.length !== 1 ? 's' : ''}</span>
-                      </div>
-                    )}
-                  </>
+                    )
+                  })
                 )}
               </div>
             )}
@@ -319,7 +299,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
 
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <div className="w-8 h-8 border-2 border-primary-500/30 border-t-primary-500 rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-slate-300 dark:border-slate-700 border-t-slate-600 dark:border-t-slate-300 rounded-full animate-spin" />
               <p className="text-xs text-gray-400 dark:text-gray-600">Carregando sua agenda…</p>
             </div>
           ) : items.length === 0 ? (
@@ -405,7 +385,7 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
                               <p className="text-[10px] text-gray-400 mt-0.5">hoje</p>
                             </div>
                           ) : (
-                            <ArrowRight className="w-4 h-4 text-gray-200 dark:text-gray-700 group-hover:text-primary-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                            <ArrowRight className="w-4 h-4 text-gray-200 dark:text-gray-700 group-hover:text-slate-500 dark:group-hover:text-slate-300 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                           )}
                         </button>
                       ))}
@@ -430,8 +410,8 @@ export function DailyAgendaModal({ open, onClose }: { open: boolean; onClose: ()
             onClick={onClose}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold text-white transition-all"
             style={{
-              background: 'linear-gradient(135deg, #0a1628 0%, #0f172a 50%, #1e293b 100%)',
-              boxShadow: '0 4px 20px rgba(15,23,42,0.4), inset 0 1px 0 rgba(255,255,255,0.10)',
+              background: 'linear-gradient(135deg, #191a1e 0%, #212226 50%, #2c2d32 100%)',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
             }}
           >
             Começar o dia
