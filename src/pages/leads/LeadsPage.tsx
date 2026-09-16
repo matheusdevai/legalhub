@@ -1073,7 +1073,23 @@ export function LeadsPage() {
       )}
 
       {/* ════════════ MODAL: LEAD ════════════ */}
-      <Modal open={leadModal} onClose={() => setLeadModal(false)} title={editLeadId ? 'Editar Lead' : 'Novo Lead'} size="md">
+      <Modal open={leadModal} onClose={() => setLeadModal(false)} title="" size="md">
+        <div className="-mx-6 -mt-6 mb-6 relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-amber-600 via-orange-600 to-amber-500 text-white px-6 py-5">
+          <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute right-4 top-4 opacity-20"><Target className="w-20 h-20" /></div>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Lead</p>
+              <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">{editLeadId ? 'Editar lead' : 'Novo lead'}</h3>
+            </div>
+            <button
+              onClick={() => setLeadModal(false)}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
           <Input label="Nome *" value={leadForm.name} onChange={e => setLeadForm({ ...leadForm, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-4">

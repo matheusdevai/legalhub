@@ -2,7 +2,7 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
 import { Plus, Search, Trash2, Edit3, Eye, Copy, Image, Upload, Download, File, FileText, X } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
+import { Modal, Button, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn, sanitizeFileName } from '@/lib/utils'
@@ -530,9 +530,25 @@ export function DocumentsPage() {
       </div>
 
       {/* Create/Edit Modal */}
-      <Modal open={modalOpen} onClose={closeDocModal} title={
-        editingLibrary ? (editId ? 'Editar Modelo Público' : 'Novo Modelo Público') : (editId ? 'Editar Documento' : 'Novo Documento')
-      } size="lg">
+      <Modal open={modalOpen} onClose={closeDocModal} title="" size="lg">
+        <div className="-mx-6 -mt-6 mb-6 relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-600 via-primary-600 to-primary-500 text-white px-6 py-5">
+          <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute right-4 top-4 opacity-20"><FileText className="w-20 h-20" /></div>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Documento</p>
+              <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">
+                {editingLibrary ? (editId ? 'Editar modelo público' : 'Novo modelo público') : (editId ? 'Editar documento' : 'Novo documento')}
+              </h3>
+            </div>
+            <button
+              onClick={closeDocModal}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         <div className="space-y-4">
           <Input label="Título *" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Nome do documento" />
           <div className="grid grid-cols-2 gap-4">
@@ -546,11 +562,8 @@ export function DocumentsPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Área do Direito</label>
-              <input list="doc-area-options"
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="Selecione ou digite" value={form.area_direito}
-                onChange={e => setForm({ ...form, area_direito: e.target.value })} />
+              <Input label="Área do Direito" list="doc-area-options" placeholder="Selecione ou digite"
+                value={form.area_direito} onChange={e => setForm({ ...form, area_direito: e.target.value })} />
               <datalist id="doc-area-options">{AREA_DIREITO_OPTIONS.map(a => <option key={a} value={a} />)}</datalist>
             </div>
             <Select label="Gerar automaticamente como" value={form.auto_doc_kind} onChange={e => setForm({ ...form, auto_doc_kind: e.target.value })}>
@@ -614,14 +627,8 @@ export function DocumentsPage() {
           )}
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={closeDocModal}
-            className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-            Cancelar
-          </button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50">
-            {saving ? 'Salvando...' : 'Salvar'}
-          </button>
+          <Button variant="outline" onClick={closeDocModal}>Cancelar</Button>
+          <Button onClick={save} loading={saving}>Salvar</Button>
         </div>
       </Modal>
 
@@ -693,7 +700,23 @@ export function DocumentsPage() {
       )}
 
       {/* Upload Modal */}
-      <Modal open={uploadModalOpen} onClose={() => setUploadModalOpen(false)} title="Upload de arquivo" size="md">
+      <Modal open={uploadModalOpen} onClose={() => setUploadModalOpen(false)} title="" size="md">
+        <div className="-mx-6 -mt-6 mb-6 relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-600 via-primary-600 to-primary-500 text-white px-6 py-5">
+          <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute right-4 top-4 opacity-20"><Upload className="w-20 h-20" /></div>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Documento</p>
+              <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">Upload de arquivo</h3>
+            </div>
+            <button
+              onClick={() => setUploadModalOpen(false)}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         <div className="space-y-4">
           {/* Drag-and-drop / file picker zone */}
           <div
@@ -754,11 +777,8 @@ export function DocumentsPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Área do Direito</label>
-              <input list="upload-area-options"
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="Selecione ou digite" value={uploadForm.area_direito}
-                onChange={e => setUploadForm(v => ({ ...v, area_direito: e.target.value }))} />
+              <Input label="Área do Direito" list="upload-area-options" placeholder="Selecione ou digite"
+                value={uploadForm.area_direito} onChange={e => setUploadForm(v => ({ ...v, area_direito: e.target.value }))} />
               <datalist id="upload-area-options">{AREA_DIREITO_OPTIONS.map(a => <option key={a} value={a} />)}</datalist>
             </div>
             <Select label="Gerar automaticamente como" value={uploadForm.auto_doc_kind} onChange={e => setUploadForm(v => ({ ...v, auto_doc_kind: e.target.value }))}>
@@ -781,16 +801,10 @@ export function DocumentsPage() {
           )}
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={() => setUploadModalOpen(false)}
-            className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-            Cancelar
-          </button>
-          <button
-            onClick={uploadDocument}
-            disabled={!uploadFile || uploading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors disabled:opacity-50">
-            {uploading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Enviando...</> : <><Upload className="w-4 h-4" /> Fazer upload</>}
-          </button>
+          <Button variant="outline" onClick={() => setUploadModalOpen(false)}>Cancelar</Button>
+          <Button onClick={uploadDocument} disabled={!uploadFile} loading={uploading}>
+            <Upload className="w-4 h-4" /> Fazer upload
+          </Button>
         </div>
       </Modal>
     </Layout>

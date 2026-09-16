@@ -6,7 +6,7 @@ import {
   MessageCircle, Sparkles, Clock, CheckCircle2, X, UserCheck,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Modal, Input, Select, Textarea, Spinner, Badge, EmptyState } from '@/components/ui'
+import { Modal, Button, Input, Select, Textarea, Spinner, Badge, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador } from '@/types'
 import { cn, formatDate, formatCurrency, formatCPFCNPJ, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
@@ -875,7 +875,23 @@ export function CollaboratorsPage() {
       </div>
 
       {/* Form Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Editar Parceiro' : 'Novo Parceiro'} size="md">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="" size="md">
+        <div className="-mx-6 -mt-6 mb-6 relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-600 via-primary-600 to-primary-500 text-white px-6 py-5">
+          <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute right-4 top-4 opacity-20"><Users className="w-20 h-20" /></div>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Parceiro</p>
+              <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">{editId ? 'Editar parceiro' : 'Novo parceiro'}</h3>
+            </div>
+            <button
+              onClick={() => setModalOpen(false)}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
         <div className="space-y-4">
           <SectionLabel>Identificação</SectionLabel>
           <Input label="Nome *" value={form.nome} onChange={e => setForm({ ...form, nome: e.target.value })} placeholder="Nome completo" />
@@ -906,14 +922,8 @@ export function CollaboratorsPage() {
           <Textarea label="" value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Notas internas..." rows={3} />
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button onClick={() => setModalOpen(false)}
-            className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
-            Cancelar
-          </button>
-          <button onClick={save} disabled={saving}
-            className="px-4 py-2 text-sm font-semibold bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors disabled:opacity-50">
-            {saving ? 'Salvando...' : 'Salvar'}
-          </button>
+          <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+          <Button onClick={save} loading={saving}>Salvar</Button>
         </div>
       </Modal>
 
