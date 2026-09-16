@@ -93,7 +93,12 @@ function AppRoutes() {
       <Route path="/escritorio-digital" element={<PrivateRoute><EscritorioDigitalPage /></PrivateRoute>} />
       <Route path="/publicacoes" element={<PrivateRoute><PublicacoesPage /></PrivateRoute>} />
       <Route path="/ia-juridica" element={<PrivateRoute><AiJuridicaPage /></PrivateRoute>} />
-      <Route path="/assistente-ia" element={<PrivateRoute><AssistantPage /></PrivateRoute>} />
+      {/* Assistente IA (/assistente-ia): rota desativada temporariamente a pedido do usuário
+          (2026-09-16), para reconfigurar/reativar depois. Código de AssistantPage e da Edge
+          Function ai-assistant-chat continuam intactos — para reativar, só descomentar a linha
+          abaixo (e o item de menu em Sidebar.tsx). Sem a rota, "*" (catch-all) já redireciona
+          /assistente-ia para /dashboard.
+      <Route path="/assistente-ia" element={<PrivateRoute><AssistantPage /></PrivateRoute>} /> */}
       <Route path="/admin" element={<PrivateRoute><AdminRoute><AdminPage /></AdminRoute></PrivateRoute>} />
       <Route path="/portal" element={<ClientPortalRoute><ClientPortalPage /></ClientPortalRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

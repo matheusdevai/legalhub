@@ -15,7 +15,9 @@ const navGroups = [
     label: 'Principal',
     items: [
       { to: '/dashboard',     icon: LayoutDashboard, label: 'Dashboard' },
-      { to: '/assistente-ia', icon: Bot,             label: 'Assistente IA' },
+      // Assistente IA (/assistente-ia): item de menu desativado temporariamente a pedido do
+      // usuário (2026-09-16), para reconfigurar/reativar depois — código intacto, só reintroduzir
+      // esta linha (ver também a rota comentada em App.tsx) para reativar.
       { to: '/agenda',        icon: Calendar,         label: 'Agenda' },
       { to: '/tarefas',       icon: CheckSquare,       label: 'Atividades' },
     ],
