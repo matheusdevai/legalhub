@@ -17,33 +17,13 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
 import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
-import { markTaskDone, notifyTaskAssignment, displayTaskDescription } from '@/lib/taskActions'
+import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
 import { normalizeGrupoAcao } from '@/lib/areaUtils'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { ProcessFormFields, TIPOS_ACAO, FASES, CONTINGENCIAMENTOS, INSS_COUNTERPARTY } from '@/pages/processes/ProcessFormFields'
-
-type TaskForm = {
-  title: string; description: string; process_id: string; client_id: string;
-  assigned_name: string; assigned_to: string;
-  due_date: string; due_time: string; deadline_date: string;
-  priority: string; status: string; type: string;
-  location: string;
-  show_agenda: boolean; inform_end: boolean; all_day: boolean;
-  tag_importante: boolean; tag_urgente: boolean; tag_futura: boolean;
-  tag_recorrente: boolean; tag_privada: boolean; tag_retroativa: boolean;
-  recurrence_interval: 'weekly' | 'monthly' | 'yearly'; recurrence_end_date: string;
-}
-const EMPTY_FORM: TaskForm = {
-  title: '', description: '', process_id: '', client_id: '', assigned_name: '', assigned_to: '',
-  due_date: '', due_time: '', deadline_date: '', priority: 'medium', status: 'pending', type: 'custom',
-  location: '',
-  show_agenda: false, inform_end: false, all_day: false,
-  tag_importante: false, tag_urgente: false, tag_futura: false,
-  tag_recorrente: false, tag_privada: false, tag_retroativa: false,
-  recurrence_interval: 'monthly', recurrence_end_date: '',
-}
+import { TaskFormModal } from '@/components/tasks/TaskFormModal'
 
 type ProcessForm = {
   number: string; title: string; client_id: string; client_name: string; area: string;
@@ -325,9 +305,8 @@ export function TasksPage() {
   const [dragOverCol, setDragOverCol] = useState<string | null>(null)
 
   const [modalOpen, setModalOpen] = useState(false)
-  const [form, setForm] = useState<TaskForm>(EMPTY_FORM)
-  const [editId, setEditId] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [newTaskInitial, setNewTaskInitial] = useState<{ client_id?: string; assigned_to?: string; assigned_name?: string; description?: string } | null>(null)
 
   const [completionModal, setCompletionModal] = useState<{
     taskId: string; taskTitle: string; taskType: string; step: 'check' | 'ask' | 'process' | 'docgen' | 'portal'
@@ -648,69 +627,14 @@ export function TasksPage() {
 
   // ── Actions ──────────────────────────────────────────────────────────────
   function openNew() {
-    setEditId(null)
-    setForm({ ...EMPTY_FORM })
+    setEditingTask(null)
+    setNewTaskInitial(null)
     setModalOpen(true)
   }
 
   function openEdit(t: Task) {
-    setEditId(t.id)
-    setForm({
-      title: t.title, description: t.description || '', process_id: t.process_id || '', client_id: t.client_id || '',
-      assigned_name: t.assigned_name || '', assigned_to: t.assigned_to || '',
-      due_date: t.due_date?.slice(0, 10) || '', due_time: '', deadline_date: t.deadline_date?.slice(0, 10) || '',
-      priority: (t.priority as any) || 'medium', status: (t.status as any) || 'pending',
-      type: (t.type as any) || 'custom',
-      location: t.location || '', show_agenda: false, inform_end: false, all_day: !!t.all_day,
-      tag_importante: t.priority === 'high', tag_urgente: t.priority === 'urgent',
-      tag_futura: false, tag_recorrente: !!t.recurring, tag_privada: false, tag_retroativa: false,
-      recurrence_interval: t.recurrence_interval || 'monthly', recurrence_end_date: t.recurrence_end_date || '',
-    })
+    setEditingTask(t)
     setModalOpen(true)
-  }
-
-  async function save() {
-    if (!form.title.trim()) return
-    setSaving(true)
-    const derivedPriority = form.tag_urgente ? 'urgent' : form.tag_importante ? 'high' : form.priority
-    const dueDateFull = form.due_date
-      ? (form.due_time ? `${form.due_date}T${form.due_time}:00` : form.due_date)
-      : null
-    const derivedClientId = form.process_id
-      ? (processes.find(p => p.id === form.process_id)?.client_id || form.client_id || null)
-      : (form.client_id || null)
-    const { due_time: _due_time, show_agenda: _show_agenda, inform_end: _inform_end,
-      tag_importante: _tag_importante, tag_urgente: _tag_urgente, tag_futura: _tag_futura, tag_recorrente, tag_privada: _tag_privada, tag_retroativa: _tag_retroativa,
-      recurrence_interval, recurrence_end_date, client_id: _client_id,
-      ...rest } = form
-    const payload = {
-      ...rest, priority: derivedPriority,
-      process_id: form.process_id || null,
-      client_id: derivedClientId,
-      assigned_to: form.assigned_to || null,
-      assigned_name: form.assigned_name || null,
-      due_date: dueDateFull,
-      deadline_date: form.deadline_date || null,
-      recurring: tag_recorrente,
-      recurrence_interval: tag_recorrente ? recurrence_interval : null,
-      recurrence_end_date: tag_recorrente ? (recurrence_end_date || null) : null,
-    }
-    const previousAssignedTo = editId ? tasks.find(t => t.id === editId)?.assigned_to || null : null
-    let error: any = null
-    if (editId) {
-      const res = await supabase.from('tasks').update(payload).eq('id', editId)
-      error = res.error
-    } else {
-      const res = await supabase.from('tasks').insert({ ...payload, created_by: profile?.user_id || null })
-      error = res.error
-    }
-    setSaving(false)
-    if (error) { toast(`Erro ao salvar tarefa: ${error.message}`, 'error'); return }
-    if (payload.assigned_to && payload.assigned_to !== previousAssignedTo) {
-      await notifyTaskAssignment(payload.assigned_to, form.title)
-    }
-    setModalOpen(false)
-    load(true)
   }
 
   async function markDone(taskId: string) {
@@ -856,9 +780,8 @@ export function TasksPage() {
   async function completeAndCreateFollowupTask() {
     if (!completionModal) return
     await markDone(completionModal.taskId)
-    setEditId(null)
-    setForm({
-      ...EMPTY_FORM,
+    setEditingTask(null)
+    setNewTaskInitial({
       client_id: completionModal.clientId || '',
       assigned_to: completionModal.assignedTo || '',
       assigned_name: completionModal.assignedName || '',
@@ -1602,148 +1525,13 @@ export function TasksPage() {
       )}
 
       {/* ── Form Modal ── */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editId ? 'Editar Tarefa' : 'Criar nova tarefa'} size="lg">
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Processo ou caso</label>
-              <Select value={form.process_id} onChange={e => setForm({ ...form, process_id: e.target.value })}>
-                <option value="">Nome do cliente ou número do processo</option>
-                {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
-              <Select
-                value={form.client_id}
-                onChange={e => setForm({ ...form, client_id: e.target.value })}
-                disabled={!!form.process_id}
-              >
-                <option value="">{form.process_id ? 'Definido pelo processo' : 'Vincular a um cliente (opcional)'}</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Responsável <span className="text-red-500">*</span></label>
-            <Select
-              value={form.assigned_to}
-              onChange={e => {
-                const user = systemUsers.find(u => u.user_id === e.target.value)
-                setForm({ ...form, assigned_to: e.target.value, assigned_name: user ? (user.name || user.display_name || '') : '' })
-              }}
-            >
-              <option value="">Quem vai trabalhar nesta tarefa?</option>
-              {systemUsers.map(u => (
-                <option key={u.user_id} value={u.user_id}>
-                  {u.name || u.display_name} — {u.role === 'admin' ? 'Administrador' : u.role === 'lawyer' ? 'Advogado' : u.role === 'intern' ? 'Estagiário' : u.role === 'financial' ? 'Financeiro' : u.role}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tarefa <span className="text-red-500">*</span></label>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="O que essa pessoa irá fazer?" />
-              </div>
-              <Select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-44 flex-shrink-0">
-                <option value="custom">Geral</option>
-                <option value="deadline">Prazo</option>
-                <option value="hearing">Audiência</option>
-                <option value="document">Documento</option>
-                <option value="meeting">Reunião</option>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Data</label>
-              <Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Hora</label>
-              <Input type="time" value={form.due_time} onChange={e => setForm({ ...form, due_time: e.target.value })} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Prazo fatal</label>
-              <Input type="date" value={form.deadline_date} onChange={e => setForm({ ...form, deadline_date: e.target.value })} />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-5">
-            <label className="flex items-center gap-1.5 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={form.all_day}
-                onChange={e => setForm({ ...form, all_day: e.target.checked })}
-                className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-              />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Dia inteiro</span>
-            </label>
-          </div>
-
-          <div className="hidden">
-            <Select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-              <option value="pending">Pendente</option>
-              <option value="in_progress">Em andamento</option>
-              <option value="done">Concluída</option>
-              <option value="cancelled">Cancelada</option>
-            </Select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Local</label>
-            <Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="Local do evento" />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descrição</label>
-            <Textarea label="" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Adicione um comentário..." />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-4">
-            {[
-              { key: 'tag_importante', label: 'Importante' },
-              { key: 'tag_urgente', label: 'Urgente' },
-              { key: 'tag_recorrente', label: 'Recorrente' },
-              { key: 'tag_privada', label: 'Privada' },
-              { key: 'tag_retroativa', label: 'Retroativa' },
-            ].map(({ key, label }) => (
-              <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={(form as any)[key]}
-                  onChange={e => setForm({ ...form, [key]: e.target.checked })}
-                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
-              </label>
-            ))}
-          </div>
-
-          {form.tag_recorrente && (
-            <div className="grid grid-cols-2 gap-3 p-3 bg-primary-50/50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/30">
-              <Select label="Repetir a cada" value={form.recurrence_interval} onChange={e => setForm({ ...form, recurrence_interval: e.target.value as TaskForm['recurrence_interval'] })}>
-                <option value="weekly">Semana</option>
-                <option value="monthly">Mês</option>
-                <option value="yearly">Ano</option>
-              </Select>
-              <Input label="Repetir até (opcional)" type="date" value={form.recurrence_end_date} onChange={e => setForm({ ...form, recurrence_end_date: e.target.value })} />
-              <p className="col-span-2 text-[11px] text-gray-400 dark:text-gray-500">
-                Uma nova tarefa idêntica será criada automaticamente na data de vencimento, a partir da próxima geração diária (roda às 6h).
-              </p>
-            </div>
-          )}
-        </div>
-        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-dark-700">
-          <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
-          <Button onClick={save} loading={saving}>{editId ? 'Salvar' : 'Criar nova tarefa'}</Button>
-        </div>
-      </Modal>
+      <TaskFormModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        task={editingTask}
+        initialValues={newTaskInitial || undefined}
+        onSaved={() => load(true)}
+      />
 
       {/* ── Completion Modal — step ask ── */}
       {/* ── Completion Modal — step check (novo: está tudo certo?) ── */}

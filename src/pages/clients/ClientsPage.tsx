@@ -26,6 +26,7 @@ import { withErrorFeedback } from '@/lib/errorFeedback'
 import { useAuth } from '@/contexts/AuthContext'
 import { FinancialDrawer, DRAWER_EMPTY_FORM, type FinancialDrawerForm } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
+import { TaskFormModal } from '@/components/tasks/TaskFormModal'
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
@@ -229,6 +230,11 @@ export function ClientsPage() {
   const [cepLoading, setCepLoading] = useState(false)
   const [cepError, setCepError] = useState('')
   const [taskModalOpen, setTaskModalOpen] = useState(false)
+  // "Nova atividade" no card do cliente — reaproveita o mesmo modal de criação
+  // de tarefa de TasksPage.tsx (TaskFormModal), com o cliente já travado. Não
+  // confundir com taskModalOpen acima, que é o fluxo simplificado de sugestão
+  // automática ao cadastrar um cliente novo.
+  const [newActivityClient, setNewActivityClient] = useState<Client | null>(null)
   const [savedClientId, setSavedClientId] = useState<string | null>(null)
   const [savedClientName, setSavedClientName] = useState('')
   type TaskFormType = {
@@ -2765,6 +2771,10 @@ export function ClientsPage() {
                 ><CalendarPlus className="w-3.5 h-3.5" />Agendar reunião</Button>
                 <Button
                   variant="outline" size="sm"
+                  onClick={() => setNewActivityClient(viewClient)}
+                ><CheckSquare className="w-3.5 h-3.5" />Nova atividade</Button>
+                <Button
+                  variant="outline" size="sm"
                   onClick={() => navigate('/dashboard', {
                     state: {
                       openTab: 'ia',
@@ -2785,6 +2795,15 @@ export function ClientsPage() {
           )
         })()}
       </Modal>
+
+      {/* ══ MODAL: Nova atividade — mesmo TaskFormModal de TasksPage, cliente travado ══ */}
+      <TaskFormModal
+        open={!!newActivityClient}
+        onClose={() => setNewActivityClient(null)}
+        presetClientId={newActivityClient?.id}
+        presetClientName={newActivityClient?.name}
+        onSaved={() => toast('Atividade criada com sucesso.', 'success')}
+      />
 
       {/* ══ MODAL: preview de documento gerado na ficha do cliente ══ */}
       <Modal open={!!previewClientDoc} onClose={() => setPreviewClientDoc(null)} title={previewClientDoc?.title || ''} size="lg">
