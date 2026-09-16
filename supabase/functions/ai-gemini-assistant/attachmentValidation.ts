@@ -5,6 +5,12 @@
 
 export const ALLOWED_ATTACHMENT_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
+export const MAX_ATTACHMENT_COUNT = 5
+// Teto agregado pro conjunto de anexos de uma análise — mais baixo que
+// MAX_ATTACHMENT_COUNT * MAX_ATTACHMENT_BYTES (75MB) de propósito: são
+// "poucos documentos de análise" na mesma chamada ao Gemini, não uma
+// transferência em lote, e o payload já dobra de tamanho em base64.
+export const MAX_TOTAL_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 export interface AttachmentInput {
   mime_type?: string
@@ -35,6 +41,28 @@ export function validateAttachment(attachment: AttachmentInput | null | undefine
   }
   if (base64ByteLength(attachment.data_base64) > MAX_ATTACHMENT_BYTES) {
     return 'Arquivo muito grande (máx. 15MB).'
+  }
+  return null
+}
+
+/**
+ * Valida uma lista de anexos (múltiplos documentos por card, mesma análise) —
+ * checa a quantidade e revalida cada item com validateAttachment() acima.
+ * Nunca confia no que o cliente já validou.
+ */
+export function validateAttachments(attachments: (AttachmentInput | null | undefined)[] | null | undefined): string | null {
+  if (!attachments || attachments.length === 0) return null
+  if (attachments.length > MAX_ATTACHMENT_COUNT) {
+    return `Você pode anexar no máximo ${MAX_ATTACHMENT_COUNT} documentos por análise.`
+  }
+  let totalBytes = 0
+  for (const attachment of attachments) {
+    const error = validateAttachment(attachment)
+    if (error) return error
+    totalBytes += base64ByteLength(attachment?.data_base64 || '')
+  }
+  if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+    return `O total dos documentos anexados excede o limite de ${Math.floor(MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024))}MB por análise.`
   }
   return null
 }

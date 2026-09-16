@@ -4,7 +4,7 @@ import { Button, Select, Textarea, Input } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { runAiGeneration } from '@/lib/aiJuridica'
 import type { Process } from '@/types'
-import { AiAttachmentInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
+import { AiAttachmentsInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
 import type { AiAttachment } from './aiAttachment'
 
 interface Props {
@@ -22,7 +22,7 @@ export function AiAnaliseDocumento({ processo }: Props) {
   const [selectedDocumentoId, setSelectedDocumentoId] = useState('')
   const [documentoTitulo, setDocumentoTitulo] = useState('')
   const [documentoTexto, setDocumentoTexto] = useState('')
-  const [attachment, setAttachment] = useState<AiAttachment | null>(null)
+  const [attachments, setAttachments] = useState<AiAttachment[]>([])
   const [output, setOutput] = useState('')
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
@@ -33,7 +33,7 @@ export function AiAnaliseDocumento({ processo }: Props) {
     setSelectedDocumentoId('')
     setDocumentoTitulo('')
     setDocumentoTexto('')
-    setAttachment(null)
+    setAttachments([])
     setOutput('')
     setGeneratedAt(null)
     setError('')
@@ -73,7 +73,7 @@ export function AiAnaliseDocumento({ processo }: Props) {
           documento_titulo: documentoTitulo || null,
           documento_texto: documentoTexto,
         },
-        attachment: attachment ?? undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
       setOutput(result.output_text)
       setGeneratedAt(new Date())
@@ -119,9 +119,9 @@ export function AiAnaliseDocumento({ processo }: Props) {
         placeholder="Cole aqui o texto do documento a ser analisado."
       />
 
-      <AiAttachmentInput value={attachment} onChange={setAttachment} disabled={loading} />
+      <AiAttachmentsInput value={attachments} onChange={setAttachments} disabled={loading} />
 
-      <Button variant="primary" onClick={gerar} loading={loading} disabled={!documentoTexto.trim() && !attachment}>
+      <Button variant="primary" onClick={gerar} loading={loading} disabled={!documentoTexto.trim() && attachments.length === 0}>
         <Sparkles className="w-4 h-4" /> Analisar documento
       </Button>
 

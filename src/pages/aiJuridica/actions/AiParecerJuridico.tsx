@@ -3,7 +3,7 @@ import { Sparkles, Scale } from 'lucide-react'
 import { Button, Card, Input, Textarea } from '@/components/ui'
 import { runAiGeneration } from '@/lib/aiJuridica'
 import type { Process } from '@/types'
-import { AiAttachmentInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
+import { AiAttachmentsInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
 import type { AiAttachment } from './aiAttachment'
 
 interface Props {
@@ -15,13 +15,13 @@ export function AiParecerJuridico({ processo }: Props) {
   const [questaoJuridica, setQuestaoJuridica] = useState('')
   const [fatosRelevantes, setFatosRelevantes] = useState('')
   const [posicaoDesejada, setPosicaoDesejada] = useState('')
-  const [attachment, setAttachment] = useState<AiAttachment | null>(null)
+  const [attachments, setAttachments] = useState<AiAttachment[]>([])
   const [output, setOutput] = useState('')
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const podeGerar = questaoJuridica.trim().length > 0 || !!attachment
+  const podeGerar = questaoJuridica.trim().length > 0 || attachments.length > 0
 
   async function gerar() {
     setLoading(true)
@@ -42,7 +42,7 @@ export function AiParecerJuridico({ processo }: Props) {
           tipo_acao: processo?.type ?? null,
           descricao: processo?.description ?? null,
         },
-        attachment: attachment ?? undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
       setOutput(result.output_text)
       setGeneratedAt(new Date())
@@ -105,7 +105,7 @@ export function AiParecerJuridico({ processo }: Props) {
         />
       </fieldset>
 
-      <AiAttachmentInput value={attachment} onChange={setAttachment} disabled={loading} />
+      <AiAttachmentsInput value={attachments} onChange={setAttachments} disabled={loading} />
 
       <div className="flex items-center gap-3">
         <Button variant="primary" onClick={gerar} loading={loading} disabled={!podeGerar}>

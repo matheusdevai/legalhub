@@ -4,7 +4,7 @@ import { Button, Textarea, Input, Select } from '@/components/ui'
 import { runAiGeneration } from '@/lib/aiJuridica'
 import { useAuth } from '@/contexts/AuthContext'
 import type { Process } from '@/types'
-import { AiAttachmentInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
+import { AiAttachmentsInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
 import type { AiAttachment } from './aiAttachment'
 
 interface Props {
@@ -24,13 +24,13 @@ export function AiImpugnacaoRecurso({ processo }: Props) {
   const [dataCiencia, setDataCiencia] = useState('')
   const [razoes, setRazoes] = useState('')
   const [preparoInfo, setPreparoInfo] = useState('')
-  const [attachment, setAttachment] = useState<AiAttachment | null>(null)
+  const [attachments, setAttachments] = useState<AiAttachment[]>([])
   const [output, setOutput] = useState('')
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const podeGerar = decisaoTexto.trim().length > 0 || !!attachment
+  const podeGerar = decisaoTexto.trim().length > 0 || attachments.length > 0
 
   async function gerar() {
     setLoading(true)
@@ -49,7 +49,7 @@ export function AiImpugnacaoRecurso({ processo }: Props) {
           advogado_nome: profile?.display_name || profile?.name || null,
           advogado_oab: profile?.oab_number ? `${profile.oab_number}${profile.oab_seccional ? `/${profile.oab_seccional}` : ''}` : null,
         },
-        attachment: attachment ?? undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
       setOutput(result.output_text)
       setGeneratedAt(new Date())
@@ -106,7 +106,7 @@ export function AiImpugnacaoRecurso({ processo }: Props) {
         />
       </fieldset>
 
-      <AiAttachmentInput value={attachment} onChange={setAttachment} disabled={loading} />
+      <AiAttachmentsInput value={attachments} onChange={setAttachments} disabled={loading} />
 
       <div className="flex items-center gap-3">
         <Button variant="primary" onClick={gerar} loading={loading} disabled={!podeGerar}>

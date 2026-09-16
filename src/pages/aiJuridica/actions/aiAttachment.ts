@@ -10,6 +10,7 @@ export interface AiAttachment {
 
 export const AI_ATTACHMENT_ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const
 export const AI_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024
+export const AI_ATTACHMENT_MAX_COUNT = 5
 
 /** Validação client-side (UX). A Edge Function revalida tipo e tamanho no servidor. */
 export function validateAiAttachmentFile(file: { type: string; size: number }): string | null {

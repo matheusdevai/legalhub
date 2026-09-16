@@ -6,16 +6,17 @@ import { buildPeticaoInicialPrompt } from './prompts/peticaoInicial.ts'
 import { buildCumprimentoDespachoPrompt } from './prompts/cumprimentoDespacho.ts'
 import { buildImpugnacaoRecursoPrompt } from './prompts/impugnacaoRecurso.ts'
 import { buildParecerJuridicoPrompt } from './prompts/parecerJuridico.ts'
-import { validateAttachment, type AttachmentInput } from './attachmentValidation.ts'
+import { validateAttachments, type AttachmentInput } from './attachmentValidation.ts'
 
 // ============================================================================
 // ai-gemini-assistant — Edge Function compartilhada da "IA Jurídica" (fase 1/4)
 //
 // Contrato:
-//   POST { tipo, processo_id?, input_context, attachment? } -> { id, output_text, status }
-//   attachment (opcional): { mime_type, data_base64, filename } — PDF/JPEG/PNG,
-//   até 15MB, revalidado no servidor (attachmentValidation.ts) e passado como
-//   inlineData extra pro Gemini. Nunca salvo em bucket/tabela — efêmero à chamada.
+//   POST { tipo, processo_id?, input_context, attachments? } -> { id, output_text, status }
+//   attachments (opcional): [{ mime_type, data_base64, filename }] — PDF/JPEG/PNG,
+//   até 5 documentos, 15MB cada, revalidados no servidor (attachmentValidation.ts)
+//   e passados como inlineData parts extras pro Gemini (múltiplos anexos na
+//   mesma chamada). Nunca salvos em bucket/tabela — efêmeros à chamada.
 //
 // Esta função só cuida de auth/tenant/persistência/chamada à API do Gemini.
 // A engenharia de prompt por `tipo` é responsabilidade da fase 2 — ver
@@ -111,11 +112,14 @@ function buildPrompt(tipo: Tipo, context: Record<string, unknown>): string {
   }
 }
 
-async function callGemini(prompt: string, apiKey: string, attachment?: { mimeType: string; data: string }): Promise<string> {
-  // Gemini aceita PDF/imagem nativamente via inlineData como uma part extra —
-  // nenhuma extração de texto no servidor, o modelo lê o arquivo direto.
+async function callGemini(prompt: string, apiKey: string, attachments: { mimeType: string; data: string }[] = []): Promise<string> {
+  // Gemini aceita PDF/imagem nativamente via inlineData como parts extras —
+  // nenhuma extração de texto no servidor, o modelo lê os arquivos direto.
+  // Múltiplos documentos por card viram múltiplas parts na mesma chamada.
   const parts: Record<string, unknown>[] = [{ text: prompt }]
-  if (attachment) parts.push({ inlineData: { mimeType: attachment.mimeType, data: attachment.data } })
+  for (const attachment of attachments) {
+    parts.push({ inlineData: { mimeType: attachment.mimeType, data: attachment.data } })
+  }
 
   const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`, {
     method: 'POST',
@@ -183,7 +187,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // --- Payload ---
-    const body = await req.json().catch(() => null) as { tipo?: string; processo_id?: string; input_context?: Record<string, unknown>; attachment?: AttachmentInput } | null
+    const body = await req.json().catch(() => null) as { tipo?: string; processo_id?: string; input_context?: Record<string, unknown>; attachments?: AttachmentInput[] } | null
     const tipo = body?.tipo
     if (!tipo || !TIPOS_VALIDOS.includes(tipo as Tipo)) {
       return new Response(JSON.stringify({ error: `tipo inválido. Valores aceitos: ${TIPOS_VALIDOS.join(', ')}` }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
@@ -191,14 +195,14 @@ Deno.serve(async (req: Request) => {
     const processoId = body?.processo_id ?? null
     const inputContext = body?.input_context ?? {}
 
-    // Nunca confia na validação do cliente — tipo/tamanho revalidados aqui.
-    const attachmentError = validateAttachment(body?.attachment)
-    if (attachmentError) {
-      return new Response(JSON.stringify({ error: attachmentError }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    // Nunca confia na validação do cliente — quantidade/tipo/tamanho de cada anexo revalidados aqui.
+    const attachmentsError = validateAttachments(body?.attachments)
+    if (attachmentsError) {
+      return new Response(JSON.stringify({ error: attachmentsError }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
-    const attachment = body?.attachment
-      ? { mimeType: body.attachment.mime_type!, data: body.attachment.data_base64! }
-      : undefined
+    const attachments = (body?.attachments ?? [])
+      .filter((a): a is Required<AttachmentInput> => !!a?.mime_type && !!a?.data_base64)
+      .map(a => ({ mimeType: a.mime_type, data: a.data_base64 }))
 
     // Se um processo foi indicado, confirma que pertence ao tenant do chamador
     // antes de vincular (nunca confia no processo_id às cegas).
@@ -238,7 +242,7 @@ Deno.serve(async (req: Request) => {
 
     try {
       const prompt = buildPrompt(tipo as Tipo, inputContext)
-      const outputText = await callGemini(prompt, GEMINI_KEY, attachment)
+      const outputText = await callGemini(prompt, GEMINI_KEY, attachments)
 
       await supabaseAdmin.from('ai_generations').update({ status: 'completed', output_text: outputText }).eq('id', generation.id)
 

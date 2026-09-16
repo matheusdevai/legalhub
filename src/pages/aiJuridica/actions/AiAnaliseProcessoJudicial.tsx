@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { runAiGeneration } from '@/lib/aiJuridica'
 import { formatDate } from '@/lib/utils'
 import type { Process } from '@/types'
-import { AiAttachmentInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
+import { AiAttachmentsInput, AiErrorBox, AiResultOutput } from './aiSharedUi'
 import type { AiAttachment } from './aiAttachment'
 
 interface Props {
@@ -13,14 +13,14 @@ interface Props {
 }
 
 export function AiAnaliseProcessoJudicial({ processo }: Props) {
-  const [attachment, setAttachment] = useState<AiAttachment | null>(null)
+  const [attachments, setAttachments] = useState<AiAttachment[]>([])
   const [output, setOutput] = useState('')
   const [generatedAt, setGeneratedAt] = useState<Date | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    setAttachment(null)
+    setAttachments([])
     setOutput('')
     setGeneratedAt(null)
     setError('')
@@ -72,7 +72,7 @@ export function AiAnaliseProcessoJudicial({ processo }: Props) {
               })),
             }
           : {},
-        attachment: attachment ?? undefined,
+        attachments: attachments.length > 0 ? attachments : undefined,
       })
       setOutput(result.output_text)
       setGeneratedAt(new Date())
@@ -110,9 +110,9 @@ export function AiAnaliseProcessoJudicial({ processo }: Props) {
         recomendados e pontos de atenção.
       </p>
 
-      <AiAttachmentInput value={attachment} onChange={setAttachment} disabled={loading} />
+      <AiAttachmentsInput value={attachments} onChange={setAttachments} disabled={loading} />
 
-      <Button variant="primary" onClick={gerar} loading={loading} disabled={loading || (!processo && !attachment)}>
+      <Button variant="primary" onClick={gerar} loading={loading} disabled={loading || (!processo && attachments.length === 0)}>
         <Sparkles className="w-4 h-4" /> Analisar processo
       </Button>
 

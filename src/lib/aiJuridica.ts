@@ -22,10 +22,11 @@ export interface AiGenerationRequest {
   tipo: AiTipo
   processo_id?: string | null
   input_context: Record<string, unknown>
-  // Anexo (PDF/imagem) pra IA analisar direto — top-level, fora de input_context,
-  // porque a Edge Function trata isso de forma especial (revalidação de
-  // tipo/tamanho + inlineData na chamada ao Gemini), diferente do resto do contexto.
-  attachment?: { mime_type: string; data_base64: string; filename: string }
+  // Anexos (PDF/imagem, até AI_ATTACHMENT_MAX_COUNT) pra IA analisar direto —
+  // top-level, fora de input_context, porque a Edge Function trata isso de
+  // forma especial (revalidação de tipo/tamanho + inlineData por anexo na
+  // chamada ao Gemini, todos na mesma análise), diferente do resto do contexto.
+  attachments?: { mime_type: string; data_base64: string; filename: string }[]
 }
 
 export interface AiGenerationResult {

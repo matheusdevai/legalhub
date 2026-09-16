@@ -3,7 +3,7 @@ import { Copy, RefreshCw, AlertCircle, Paperclip, X } from 'lucide-react'
 import { Button, Textarea, Spinner } from '@/components/ui'
 import { toast } from '@/components/ui/Toast'
 import { cn, formatDate } from '@/lib/utils'
-import { fileToAiAttachment, validateAiAttachmentFile, type AiAttachment } from './aiAttachment'
+import { AI_ATTACHMENT_MAX_COUNT, fileToAiAttachment, validateAiAttachmentFile, type AiAttachment } from './aiAttachment'
 
 // UI compartilhada pelos 7 componentes de ação (loading/erro/resultado/anexo).
 
@@ -63,27 +63,41 @@ export function AiResultOutput({
   )
 }
 
-export function AiAttachmentInput({
+/** Anexa um ou mais documentos (PDF/imagem) a um card pra análise da IA — Gemini aceita várias inlineData parts na mesma chamada. */
+export function AiAttachmentsInput({
   value, onChange, disabled,
 }: {
-  value: AiAttachment | null
-  onChange: (attachment: AiAttachment | null) => void
+  value: AiAttachment[]
+  onChange: (attachments: AiAttachment[]) => void
   disabled?: boolean
 }) {
   const [error, setError] = useState('')
   const [reading, setReading] = useState(false)
 
-  async function handleFile(file: File | undefined) {
+  async function handleFiles(files: FileList | null) {
     setError('')
-    if (!file) return
-    const validationError = validateAiAttachmentFile(file)
-    if (validationError) {
-      setError(validationError)
+    if (!files || files.length === 0) return
+    const selected = Array.from(files)
+    const remainingSlots = AI_ATTACHMENT_MAX_COUNT - value.length
+    if (remainingSlots <= 0) {
+      setError(`Você já anexou o máximo de ${AI_ATTACHMENT_MAX_COUNT} documentos.`)
       return
+    }
+    const toProcess = selected.slice(0, remainingSlots)
+    if (selected.length > toProcess.length) {
+      setError(`Só é possível anexar até ${AI_ATTACHMENT_MAX_COUNT} documentos. Os demais arquivos selecionados foram ignorados.`)
+    }
+    for (const file of toProcess) {
+      const validationError = validateAiAttachmentFile(file)
+      if (validationError) {
+        setError(validationError)
+        return
+      }
     }
     setReading(true)
     try {
-      onChange(await fileToAiAttachment(file))
+      const converted = await Promise.all(toProcess.map(fileToAiAttachment))
+      onChange([...value, ...converted])
     } catch {
       setError('Não foi possível ler o arquivo.')
     } finally {
@@ -91,21 +105,35 @@ export function AiAttachmentInput({
     }
   }
 
+  function removeAt(index: number) {
+    onChange(value.filter((_, i) => i !== index))
+  }
+
+  const atLimit = value.length >= AI_ATTACHMENT_MAX_COUNT
+
   return (
     <div className="space-y-1.5">
       <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-        Anexar arquivo (opcional)
+        Anexar documentos (opcional)
       </label>
-      {value ? (
-        <div className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-dark-600 bg-slate-50 dark:bg-dark-700">
-          <Paperclip className="w-4 h-4 text-slate-400 flex-shrink-0" />
-          <span className="text-sm text-slate-600 dark:text-slate-300 truncate flex-1">{value.filename}</span>
-          <button type="button" onClick={() => onChange(null)} disabled={disabled}
-            className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 flex-shrink-0 disabled:opacity-50">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      ) : (
+
+      {value.length > 0 && (
+        <ul className="space-y-1.5">
+          {value.map((att, i) => (
+            <li key={`${att.filename}-${i}`} className="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 dark:border-dark-600 bg-slate-50 dark:bg-dark-700">
+              <Paperclip className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <span className="text-sm text-slate-600 dark:text-slate-300 truncate flex-1">{att.filename}</span>
+              <span className="text-[11px] text-slate-400 flex-shrink-0">{att.mime_type.split('/')[1]?.toUpperCase()}</span>
+              <button type="button" onClick={() => removeAt(i)} disabled={disabled}
+                className="p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500 flex-shrink-0 disabled:opacity-50">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {!atLimit && (
         <label className={cn(
           'flex items-center justify-center gap-2 p-3 rounded-xl border-2 border-dashed transition-colors text-sm',
           disabled || reading
@@ -114,9 +142,9 @@ export function AiAttachmentInput({
         )}>
           {reading
             ? <><Spinner className="w-3.5 h-3.5" /> Lendo arquivo…</>
-            : <><Paperclip className="w-3.5 h-3.5" /> Anexar PDF ou imagem (máx. 15MB)</>}
-          <input type="file" accept="application/pdf,image/jpeg,image/png" className="hidden" disabled={disabled || reading}
-            onChange={e => { const f = e.target.files?.[0]; handleFile(f); e.target.value = '' }} />
+            : <><Paperclip className="w-3.5 h-3.5" /> {value.length > 0 ? 'Anexar mais documentos' : 'Anexar PDF ou imagem'} (máx. {AI_ATTACHMENT_MAX_COUNT}, 15MB cada)</>}
+          <input type="file" accept="application/pdf,image/jpeg,image/png" multiple className="hidden" disabled={disabled || reading}
+            onChange={e => { handleFiles(e.target.files); e.target.value = '' }} />
         </label>
       )}
       {error && <p className="text-xs text-red-500">{error}</p>}
