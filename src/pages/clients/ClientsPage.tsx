@@ -10,7 +10,7 @@ import {
   Eye, EyeOff, Lock, Printer,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Textarea, EmptyState } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Client, Colaborador, Process, Profile, Financial } from '@/types'
 import { formatDate, formatPhone, formatCPFCNPJ, formatCurrency, GRUPOS_ACAO, AREA_PREVIDENCIARIO } from '@/lib/utils'
@@ -1923,202 +1923,205 @@ export function ClientsPage() {
 
       {/* ══ MODAL CADASTRO ══ */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="" size="lg">
-        {/* Step indicator — Etapa 1 de 2 */}
-        {!editId && (
-          <div className="-mx-6 -mt-6 px-6 py-3 bg-gradient-to-r from-primary-50/80 to-white dark:from-primary-900/10 dark:to-dark-800 border-b border-gray-100 dark:border-dark-700">
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <div className="w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-white">1</span>
-                </div>
-                <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">Dados do cliente</span>
-              </div>
-              <div className="flex-1 h-px bg-gray-200 dark:bg-dark-600" />
-              <svg className="w-2.5 h-2.5 text-gray-300 dark:text-dark-500 flex-shrink-0" fill="currentColor" viewBox="0 0 6 10"><path d="M0 0l6 5-6 5V0z"/></svg>
-              <div className="flex items-center gap-1.5 opacity-40">
-                <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-dark-600 flex items-center justify-center flex-shrink-0">
-                  <span className="text-[10px] font-bold text-gray-400">2</span>
-                </div>
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Nova tarefa</span>
-              </div>
-            </div>
-          </div>
-        )}
-        {/* Header strip */}
-        <div className={cn('-mx-6 px-6 pt-5 pb-4 border-b border-gray-100 dark:border-dark-700', editId && '-mt-6')}>
-          {/* Avatar upload */}
-          <div className="flex justify-center mb-4">
-            <div className="relative group">
-              <button
-                type="button"
-                onClick={() => avatarInputRef.current?.click()}
-                className="w-20 h-20 rounded-full bg-gray-200 dark:bg-dark-600 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 dark:border-dark-500 hover:border-primary-400 transition-colors"
-              >
-                {avatarPreview || form.avatar_url ? (
-                  <img src={avatarPreview || form.avatar_url} alt="Foto" className="w-full h-full object-cover" />
-                ) : (
-                  <svg className="w-12 h-12 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
-                  </svg>
-                )}
-                {uploadingAvatar && (
-                  <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  </div>
-                )}
-              </button>
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary-600 flex items-center justify-center shadow cursor-pointer"
-                onClick={() => avatarInputRef.current?.click()}>
-                <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-              </div>
-            </div>
-            <input
-              ref={avatarInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className="hidden"
-              onChange={handleAvatarChange}
-            />
-          </div>
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white text-center mb-4">
-            {editId ? 'Editar cliente' : 'Criar novo cliente'}
-          </h2>
-
-          {/* Top fields */}
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">CPF/CNPJ</label>
-              <div className="relative">
-                <input
-                  className={cn(
-                    'w-full px-3 py-2.5 pr-9 text-sm border rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 transition-colors',
-                    cpfError
-                      ? 'border-red-300 dark:border-red-600 focus:ring-red-100 focus:border-red-500'
-                      : cpfSuggestion
-                      ? 'border-amber-300 dark:border-amber-600 focus:ring-amber-100 focus:border-amber-500'
-                      : 'border-gray-200 dark:border-dark-600 focus:ring-primary-100 focus:border-primary-500'
-                  )}
-                  placeholder={form.type === 'pf' ? '999.999.999-99' : '99.999.999/0001-99'}
-                  value={form.cpf_cnpj}
-                  maxLength={18}
-                  onChange={e => lookupCpfCnpj(e.target.value)}
-                />
-                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
-                  {cpfLoading
-                    ? <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
-                    : cpfError
-                    ? <AlertCircle className="w-4 h-4 text-red-500" />
-                    : cpfSuggestion
-                    ? <AlertCircle className="w-4 h-4 text-amber-500" />
-                    : cpfNote
-                    ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                    : null}
-                </div>
-              </div>
-              {cpfError && <p className="text-xs text-red-500 mt-1">{cpfError}</p>}
-              {cpfNote && !cpfError && (
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
-                  <Info className="w-3 h-3 flex-shrink-0" />
-                  {cpfNote}
-                </p>
-              )}
-              {cpfSuggestion && (
-                <div className="mt-2 flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-xl">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 truncate">Cliente já cadastrado: {cpfSuggestion.label}</p>
-                    <p className="text-[11px] text-amber-700/80 dark:text-amber-500 mt-0.5">{cpfSuggestion.sub}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => { setForm(f => ({ ...f, ...cpfSuggestion.fields })); setCpfSuggestion(null) }}
-                    className="flex-shrink-0 px-2.5 py-1.5 text-[11px] font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
-                  >
-                    Usar dados
-                  </button>
-                </div>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Nome*</label>
-              <input
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="Nome completo"
-                value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                onBlur={() => checkContactDuplicate(form)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Origem da pessoa*</label>
-              <select
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                value={form.origem} onChange={e => setForm({ ...form, origem: e.target.value })}
-              >
-                <option value="">Selecione a origem</option>
-                <option value="indicacao">Indicação</option>
-                <option value="site">Site</option>
-                <option value="redes_sociais">Redes Sociais</option>
-                <option value="google">Google</option>
-                <option value="email">E-mail</option>
-                <option value="telefone">Telefone</option>
-                <option value="escritorio">Escritório</option>
-                <option value="outro">Outro</option>
-              </select>
-            </div>
-            {form.origem === 'indicacao' && (
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">
-                  Parceiro que indicou
-                </label>
-                <select
-                  className="w-full px-3 py-2.5 text-sm border border-amber-300 dark:border-amber-600 rounded-lg bg-amber-50 dark:bg-amber-900/10 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-500"
-                  value={form.colaborador_id}
-                  onChange={e => setForm({ ...form, colaborador_id: e.target.value })}
-                >
-                  <option value="">Selecione o parceiro</option>
-                  {colaboradores.map(col => (
-                    <option key={col.id} value={col.id}>
-                      {col.nome}{col.cargo ? ` — ${col.cargo === 'parceiro' ? 'Parceiro' : col.cargo === 'advogado' ? 'Advogado' : col.cargo}` : ''}
-                    </option>
-                  ))}
-                </select>
-                {!form.colaborador_id && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                    Selecione quem indicou para registrar a indicação no parceiro
-                  </p>
-                )}
-              </div>
-            )}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-sm text-gray-500 dark:text-gray-400">Anotações gerais</label>
+        <div className="-mx-6 -mt-6">
+          {/* Banner gradiente — mesmo tratamento visual do modal de Processo/ficha do cliente */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 pt-5 pb-5">
+            <div className="absolute -right-8 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl" />
+            <div className="absolute right-4 top-4 opacity-20"><Users className="w-16 h-16" /></div>
+            <button
+              type="button"
+              onClick={() => setModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-colors"
+              aria-label="Fechar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="relative flex flex-col items-center text-center">
+              {/* Avatar upload */}
+              <div className="relative group mb-3">
                 <button
                   type="button"
-                  onClick={() => setNotesExpanded(v => !v)}
-                  className="flex items-center gap-1 text-[11px] font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="w-20 h-20 rounded-full bg-white/15 flex items-center justify-center overflow-hidden border-2 border-dashed border-white/30 hover:border-white/60 transition-colors"
                 >
-                  <ChevronDown className={cn('w-3 h-3 transition-transform', notesExpanded && 'rotate-180')} />
-                  {notesExpanded ? 'Reduzir' : 'Expandir para adicionar mais informações'}
+                  {avatarPreview || form.avatar_url ? (
+                    <img src={avatarPreview || form.avatar_url} alt="Foto" className="w-full h-full object-cover" />
+                  ) : (
+                    <svg className="w-10 h-10 text-white/70" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+                    </svg>
+                  )}
+                  {uploadingAvatar && (
+                    <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </button>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-white flex items-center justify-center shadow cursor-pointer"
+                  onClick={() => avatarInputRef.current?.click()}>
+                  <svg className="w-3 h-3 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                </div>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+              </div>
+              <p className="text-xs text-white/80 font-medium uppercase tracking-wider mb-0.5">Cliente</p>
+              <h3 className="text-base font-bold leading-snug">{editId ? 'Editar cliente' : 'Criar novo cliente'}</h3>
+            </div>
+          </div>
+
+          {/* Step indicator — Etapa 1 de 2 */}
+          {!editId && (
+            <div className="px-6 py-3 bg-gradient-to-r from-primary-50/80 to-white dark:from-primary-900/10 dark:to-dark-800 border-b border-gray-100 dark:border-dark-700">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-5 h-5 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-white">1</span>
+                  </div>
+                  <span className="text-xs font-semibold text-primary-700 dark:text-primary-400">Dados do cliente</span>
+                </div>
+                <div className="flex-1 h-px bg-gray-200 dark:bg-dark-600" />
+                <svg className="w-2.5 h-2.5 text-gray-300 dark:text-dark-500 flex-shrink-0" fill="currentColor" viewBox="0 0 6 10"><path d="M0 0l6 5-6 5V0z"/></svg>
+                <div className="flex items-center gap-1.5 opacity-40">
+                  <div className="w-5 h-5 rounded-full border-2 border-gray-300 dark:border-dark-600 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-gray-400">2</span>
+                  </div>
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">Nova tarefa</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Top fields */}
+        <div className="space-y-3 pt-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">CPF/CNPJ</label>
+            <div className="relative">
+              <input
+                className={cn(
+                  'w-full px-3.5 py-2.5 pr-9 text-sm border rounded-xl outline-none transition-all',
+                  'bg-white dark:bg-dark-700 text-slate-900 dark:text-slate-100',
+                  cpfError
+                    ? 'border-red-400 focus:ring-2 focus:ring-red-100 focus:border-red-400'
+                    : cpfSuggestion
+                    ? 'border-amber-400 focus:ring-2 focus:ring-amber-100 focus:border-amber-400'
+                    : 'border-slate-200 dark:border-dark-600 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30 focus:border-primary-400'
+                )}
+                placeholder={form.type === 'pf' ? '999.999.999-99' : '99.999.999/0001-99'}
+                value={form.cpf_cnpj}
+                maxLength={18}
+                onChange={e => lookupCpfCnpj(e.target.value)}
+              />
+              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                {cpfLoading
+                  ? <div className="w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                  : cpfError
+                  ? <AlertCircle className="w-4 h-4 text-red-500" />
+                  : cpfSuggestion
+                  ? <AlertCircle className="w-4 h-4 text-amber-500" />
+                  : cpfNote
+                  ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  : null}
+              </div>
+            </div>
+            {cpfError && <p className="text-xs text-red-500 mt-1">{cpfError}</p>}
+            {cpfNote && !cpfError && (
+              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1">
+                <Info className="w-3 h-3 flex-shrink-0" />
+                {cpfNote}
+              </p>
+            )}
+            {cpfSuggestion && (
+              <div className="mt-2 flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-xl">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-amber-800 dark:text-amber-300 truncate">Cliente já cadastrado: {cpfSuggestion.label}</p>
+                  <p className="text-[11px] text-amber-700/80 dark:text-amber-500 mt-0.5">{cpfSuggestion.sub}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setForm(f => ({ ...f, ...cpfSuggestion.fields })); setCpfSuggestion(null) }}
+                  className="flex-shrink-0 px-2.5 py-1.5 text-[11px] font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors"
+                >
+                  Usar dados
                 </button>
               </div>
-              {notesExpanded ? (
-                <Textarea
-                  className="w-full text-sm bg-gray-50 dark:bg-dark-800"
-                  placeholder="Anotações, senhas e outros"
-                  rows={12}
-                  value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-                />
-              ) : (
-                <input
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Anotações, senhas e outros"
-                  value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
-                  onFocus={() => { if (form.notes.length > 60) setNotesExpanded(true) }}
-                />
+            )}
+          </div>
+          <Input
+            label="Nome*"
+            placeholder="Nome completo"
+            value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
+            onBlur={() => checkContactDuplicate(form)}
+          />
+          <Select
+            label="Origem da pessoa*"
+            value={form.origem} onChange={e => setForm({ ...form, origem: e.target.value })}
+          >
+            <option value="">Selecione a origem</option>
+            <option value="indicacao">Indicação</option>
+            <option value="site">Site</option>
+            <option value="redes_sociais">Redes Sociais</option>
+            <option value="google">Google</option>
+            <option value="email">E-mail</option>
+            <option value="telefone">Telefone</option>
+            <option value="escritorio">Escritório</option>
+            <option value="outro">Outro</option>
+          </Select>
+          {form.origem === 'indicacao' && (
+            <div>
+              <Select
+                label="Parceiro que indicou"
+                value={form.colaborador_id}
+                onChange={e => setForm({ ...form, colaborador_id: e.target.value })}
+                className={!form.colaborador_id ? 'border-amber-300 dark:border-amber-600' : undefined}
+              >
+                <option value="">Selecione o parceiro</option>
+                {colaboradores.map(col => (
+                  <option key={col.id} value={col.id}>
+                    {col.nome}{col.cargo ? ` — ${col.cargo === 'parceiro' ? 'Parceiro' : col.cargo === 'advogado' ? 'Advogado' : col.cargo}` : ''}
+                  </option>
+                ))}
+              </Select>
+              {!form.colaborador_id && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                  Selecione quem indicou para registrar a indicação no parceiro
+                </p>
               )}
             </div>
+          )}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Anotações gerais</label>
+              <button
+                type="button"
+                onClick={() => setNotesExpanded(v => !v)}
+                className="flex items-center gap-1 text-[11px] font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+              >
+                <ChevronDown className={cn('w-3 h-3 transition-transform', notesExpanded && 'rotate-180')} />
+                {notesExpanded ? 'Reduzir' : 'Expandir para adicionar mais informações'}
+              </button>
+            </div>
+            {notesExpanded ? (
+              <Textarea
+                placeholder="Anotações, senhas e outros"
+                rows={12}
+                value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+              />
+            ) : (
+              <Input
+                placeholder="Anotações, senhas e outros"
+                value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })}
+                onFocus={() => { if (form.notes.length > 60) setNotesExpanded(true) }}
+              />
+            )}
           </div>
         </div>
 
@@ -2142,15 +2145,15 @@ export function ClientsPage() {
         <div className="space-y-3 pb-2">
           {/* País */}
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">País</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">País</label>
             <div className="relative">
               <input
-                className="w-full px-3 py-2.5 pr-8 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                className="w-full px-3.5 py-2.5 pr-9 text-sm border rounded-xl outline-none transition-all border-slate-200 bg-white text-slate-900 dark:border-dark-600 dark:bg-dark-700 dark:text-slate-100 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30"
                 value={form.pais} onChange={e => setForm({ ...form, pais: e.target.value })}
               />
               {form.pais && (
                 <button onClick={() => setForm({ ...form, pais: '' })}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -2159,88 +2162,59 @@ export function ClientsPage() {
 
           {form.type === 'pf' && (
             <>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">RG</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Número" value={form.rg} onChange={e => setForm({ ...form, rg: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Data de nascimento</label>
-                <input type="date"
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  value={form.birth_date} onChange={e => setForm({ ...form, birth_date: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Estado civil</label>
-                <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  value={form.marital_status} onChange={e => setForm({ ...form, marital_status: e.target.value })}>
-                  <option value="">Selecione o estado civil</option>
-                  <option value="solteiro">Solteiro(a)</option>
-                  <option value="casado">Casado(a)</option>
-                  <option value="divorciado">Divorciado(a)</option>
-                  <option value="viuvo">Viúvo(a)</option>
-                  <option value="uniao_estavel">União Estável</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Profissão</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Atividade da pessoa" value={form.profession} onChange={e => setForm({ ...form, profession: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Sexo</label>
-                <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}>
-                  <option value="">Selecione o gênero</option>
-                  <option value="masculino">Masculino</option>
-                  <option value="feminino">Feminino</option>
-                  <option value="outro">Outro</option>
-                  <option value="nao_informado">Prefiro não informar</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Nacionalidade</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Nacionalidade da pessoa" value={form.nationality} onChange={e => setForm({ ...form, nationality: e.target.value })} />
-              </div>
+              <Input label="RG" placeholder="Número" value={form.rg} onChange={e => setForm({ ...form, rg: e.target.value })} />
+              <Input label="Data de nascimento" type="date" value={form.birth_date} onChange={e => setForm({ ...form, birth_date: e.target.value })} />
+              <Select label="Estado civil" value={form.marital_status} onChange={e => setForm({ ...form, marital_status: e.target.value })}>
+                <option value="">Selecione o estado civil</option>
+                <option value="solteiro">Solteiro(a)</option>
+                <option value="casado">Casado(a)</option>
+                <option value="divorciado">Divorciado(a)</option>
+                <option value="viuvo">Viúvo(a)</option>
+                <option value="uniao_estavel">União Estável</option>
+              </Select>
+              <Input label="Profissão" placeholder="Atividade da pessoa" value={form.profession} onChange={e => setForm({ ...form, profession: e.target.value })} />
+              <Select label="Sexo" value={form.gender} onChange={e => setForm({ ...form, gender: e.target.value })}>
+                <option value="">Selecione o gênero</option>
+                <option value="masculino">Masculino</option>
+                <option value="feminino">Feminino</option>
+                <option value="outro">Outro</option>
+                <option value="nao_informado">Prefiro não informar</option>
+              </Select>
+              <Input label="Nacionalidade" placeholder="Nacionalidade da pessoa" value={form.nationality} onChange={e => setForm({ ...form, nationality: e.target.value })} />
             </>
           )}
 
           {/* Cliente */}
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Celular</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">Celular</label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+              <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input className="w-full pl-10 pr-3.5 py-2.5 text-sm border rounded-xl outline-none transition-all border-slate-200 bg-white text-slate-900 placeholder-slate-400 dark:border-dark-600 dark:bg-dark-700 dark:text-slate-100 dark:placeholder-slate-500 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30"
                 placeholder="(99) 99999-9999" value={form.celular} onChange={e => setForm({ ...form, celular: e.target.value })}
                 onBlur={() => checkContactDuplicate(form)} />
             </div>
           </div>
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Telefone</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">Telefone</label>
             <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input className="w-full pl-9 pr-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+              <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input className="w-full pl-10 pr-3.5 py-2.5 text-sm border rounded-xl outline-none transition-all border-slate-200 bg-white text-slate-900 placeholder-slate-400 dark:border-dark-600 dark:bg-dark-700 dark:text-slate-100 dark:placeholder-slate-500 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30"
                 placeholder="(99) 99999-9999" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })}
                 onBlur={() => checkContactDuplicate(form)} />
             </div>
           </div>
-          <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">E-mail</label>
-            <input type="email" className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              placeholder="exemplo@email.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-          </div>
+          <Input label="E-mail" type="email" placeholder="exemplo@email.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
 
           {/* Endereço */}
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">CEP</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">CEP</label>
             <div className="relative">
               <input
                 className={cn(
-                  'w-full px-3 py-2.5 pr-9 text-sm border rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 transition-colors',
+                  'w-full px-3.5 py-2.5 pr-9 text-sm border rounded-xl outline-none transition-all bg-white dark:bg-dark-700 text-slate-900 dark:text-slate-100',
                   cepError
-                    ? 'border-red-300 dark:border-red-600 focus:ring-red-100 focus:border-red-500'
-                    : 'border-gray-200 dark:border-dark-600 focus:ring-primary-100 focus:border-primary-500'
+                    ? 'border-red-400 focus:ring-2 focus:ring-red-100 focus:border-red-400'
+                    : 'border-slate-200 dark:border-dark-600 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30 focus:border-primary-400'
                 )}
                 placeholder="99999-999"
                 value={form.cep}
@@ -2259,21 +2233,16 @@ export function ClientsPage() {
             </div>
             {cepError && <p className="text-xs text-red-500 mt-1">{cepError}</p>}
           </div>
+          <Select label="Estado" value={form.state} onChange={e => setForm({ ...form, state: e.target.value, cidade: '' })}>
+            <option value="">Selecione o estado</option>
+            {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </Select>
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Estado</label>
-            <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              value={form.state} onChange={e => setForm({ ...form, state: e.target.value, cidade: '' })}>
-              <option value="">Selecione o estado</option>
-              {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Cidade</label>
             {form.state && !stateCitiesError ? (
-              <select
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 disabled:opacity-60"
+              <Select
+                label="Cidade"
                 value={form.cidade}
                 disabled={stateCitiesLoading}
                 onChange={e => setForm({ ...form, cidade: e.target.value })}
@@ -2283,49 +2252,30 @@ export function ClientsPage() {
                   <option value={form.cidade}>{form.cidade}</option>
                 )}
                 {stateCities.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              </Select>
             ) : (
               <>
-                <input list="city-options"
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                <Input
+                  label="Cidade"
+                  list="city-options"
                   placeholder="Selecione o estado para listar as cidades" value={form.cidade} onChange={e => setForm({ ...form, cidade: e.target.value })} />
                 <datalist id="city-options">{cityOptions.map(c => <option key={c} value={c} />)}</datalist>
               </>
             )}
           </div>
-          <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Endereço</label>
-            <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              placeholder="Rua Exemplo, 123" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Bairro</label>
-            <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              placeholder="Bairro do endereço" value={form.bairro} onChange={e => setForm({ ...form, bairro: e.target.value })} />
-          </div>
+          <Input label="Endereço" placeholder="Rua Exemplo, 123" value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+          <Input label="Bairro" placeholder="Bairro do endereço" value={form.bairro} onChange={e => setForm({ ...form, bairro: e.target.value })} />
 
           {form.type === 'pf' && (
             <>
+              <Input label="PIS/PASEP" placeholder="999.9999.999-9" value={form.pis_pasep} onChange={e => setForm({ ...form, pis_pasep: e.target.value })} />
+              <Input label="CTPS" placeholder="Número da carteira de trabalho digital" value={form.ctps} onChange={e => setForm({ ...form, ctps: e.target.value })} />
               <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">PIS/PASEP</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="999.9999.999-9" value={form.pis_pasep} onChange={e => setForm({ ...form, pis_pasep: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">CTPS</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Número da carteira de trabalho digital" value={form.ctps} onChange={e => setForm({ ...form, ctps: e.target.value })} />
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">CID</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">CID</label>
+                <input className="w-full px-3.5 py-2.5 text-sm border rounded-xl outline-none transition-all border-slate-200 bg-white text-slate-900 placeholder-slate-400 dark:border-dark-600 dark:bg-dark-700 dark:text-slate-100 dark:placeholder-slate-500 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30"
                   placeholder="Número do CID" value={form.cid} onChange={e => setForm({ ...form, cid: e.target.value })} />
               </div>
-              <div>
-                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Nome da mãe</label>
-                <input className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Nome completo da mãe" value={form.nome_mae} onChange={e => setForm({ ...form, nome_mae: e.target.value })} />
-              </div>
+              <Input label="Nome da mãe" placeholder="Nome completo da mãe" value={form.nome_mae} onChange={e => setForm({ ...form, nome_mae: e.target.value })} />
 
               {/* Card destacado — credencial sensível do cliente, nunca entra em exportações/relatórios */}
               <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-900/10 p-3.5">
@@ -2336,7 +2286,7 @@ export function ClientsPage() {
                   <input
                     type={showSenhaGov ? 'text' : 'password'}
                     autoComplete="new-password"
-                    className="w-full px-3 py-2.5 pr-10 text-sm border border-amber-200 dark:border-amber-800/50 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-amber-100 dark:focus:ring-amber-900/30 focus:border-amber-400"
+                    className="w-full px-3.5 py-2.5 pr-10 text-sm border border-amber-200 dark:border-amber-800/50 rounded-xl bg-white dark:bg-dark-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-100 dark:focus:ring-amber-900/30 focus:border-amber-400"
                     placeholder="Senha de acesso ao gov.br do cliente"
                     value={form.senha_gov}
                     onChange={e => setForm({ ...form, senha_gov: e.target.value })}
@@ -2359,9 +2309,8 @@ export function ClientsPage() {
 
           {/* Campos jurídicos */}
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Área do Direito</label>
-            <select
-              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">Área do Direito</label>
+            <Select
               value={form.area_direito} onChange={e => setForm({ ...form, area_direito: e.target.value })}>
               <option value="">Selecione</option>
               {GRUPOS_ACAO.map(a => <option key={a} value={a}>{a}</option>)}
@@ -2371,67 +2320,61 @@ export function ClientsPage() {
               {form.area_direito && !GRUPOS_ACAO.includes(form.area_direito) && (
                 <option value={form.area_direito}>{form.area_direito} (valor antigo)</option>
               )}
-            </select>
+            </Select>
           </div>
           {form.area_direito === AREA_PREVIDENCIARIO && (
-            <div>
-              <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Benefício Previdenciário</label>
-              <input list="beneficio-options"
-                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                placeholder="Selecione ou digite" value={form.beneficio_previdenciario}
-                onChange={e => setForm({ ...form, beneficio_previdenciario: e.target.value })} />
-              <datalist id="beneficio-options">
-                {BENEFICIO_PREVIDENCIARIO_OPTIONS.map(b => <option key={b} value={b} />)}
-              </datalist>
-            </div>
+            <Input
+              label="Benefício Previdenciário"
+              list="beneficio-options"
+              placeholder="Selecione ou digite" value={form.beneficio_previdenciario}
+              onChange={e => setForm({ ...form, beneficio_previdenciario: e.target.value })}
+            />
           )}
+          {form.area_direito === AREA_PREVIDENCIARIO && (
+            <datalist id="beneficio-options">
+              {BENEFICIO_PREVIDENCIARIO_OPTIONS.map(b => <option key={b} value={b} />)}
+            </datalist>
+          )}
+          <Select label="Modalidade" value={form.modalidade} onChange={e => setForm({ ...form, modalidade: e.target.value })}>
+            <option value="">Selecione</option>
+            <option value="judicial">Judicial</option>
+            <option value="administrativo">Administrativo</option>
+          </Select>
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Modalidade</label>
-            <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              value={form.modalidade} onChange={e => setForm({ ...form, modalidade: e.target.value })}>
-              <option value="">Selecione</option>
-              <option value="judicial">Judicial</option>
-              <option value="administrativo">Administrativo</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Data de Entrada</label>
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 block">Data de Entrada</label>
             <div className="relative">
               <input type="date"
-                className="w-full px-3 py-2.5 pr-8 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+                className="w-full px-3.5 py-2.5 pr-9 text-sm border rounded-xl outline-none transition-all border-slate-200 bg-white text-slate-900 dark:border-dark-600 dark:bg-dark-700 dark:text-slate-100 focus:border-primary-400 focus:ring-2 focus:ring-primary-100 dark:focus:ring-primary-900/30"
                 value={form.entry_date} onChange={e => setForm({ ...form, entry_date: e.target.value })} />
               {form.entry_date && (
                 <button type="button" onClick={() => setForm({ ...form, entry_date: '' })}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
             <p className="text-xs text-gray-400 mt-1">Deixe em branco se não souber a data</p>
           </div>
-          <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Advogado Responsável</label>
-            <select className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-              value={form.assigned_lawyer_uid}
-              onChange={e => {
-                const user = systemUsers.find(u => u.user_id === e.target.value)
-                setForm({ ...form, assigned_lawyer_uid: e.target.value, assigned_lawyer: user ? (user.name || user.display_name || '') : '' })
-              }}>
-              <option value="">Sem responsável</option>
-              {systemUsers.map(u => (
-                <option key={u.user_id} value={u.user_id}>
-                  {u.name || u.display_name} — {u.role === 'admin' ? 'Administrador' : u.role === 'lawyer' ? 'Advogado' : u.role === 'intern' ? 'Estagiário' : u.role === 'financial' ? 'Financeiro' : u.role}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Advogado Responsável"
+            value={form.assigned_lawyer_uid}
+            onChange={e => {
+              const user = systemUsers.find(u => u.user_id === e.target.value)
+              setForm({ ...form, assigned_lawyer_uid: e.target.value, assigned_lawyer: user ? (user.name || user.display_name || '') : '' })
+            }}>
+            <option value="">Sem responsável</option>
+            {systemUsers.map(u => (
+              <option key={u.user_id} value={u.user_id}>
+                {u.name || u.display_name} — {u.role === 'admin' ? 'Administrador' : u.role === 'lawyer' ? 'Advogado' : u.role === 'intern' ? 'Estagiário' : u.role === 'financial' ? 'Financeiro' : u.role}
+              </option>
+            ))}
+          </Select>
 
           <div>
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5" /> Tags
             </label>
-            <input
-              className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
+            <Input
               placeholder="VIP, aniversariante, inadimplente..."
               value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })}
             />
@@ -2525,18 +2468,15 @@ export function ClientsPage() {
               </label>
               {form.processo_pago && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-dark-600 space-y-3">
-                  <div>
-                    <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Categoria</label>
-                    <select
-                      className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                      value={form.processo_categoria}
-                      onChange={e => setForm({ ...form, processo_categoria: e.target.value })}
-                    >
-                      <option value="fees">Honorários</option>
-                      <option value="costs">Custas</option>
-                      <option value="other">Outros</option>
-                    </select>
-                  </div>
+                  <Select
+                    label="Categoria"
+                    value={form.processo_categoria}
+                    onChange={e => setForm({ ...form, processo_categoria: e.target.value })}
+                  >
+                    <option value="fees">Honorários</option>
+                    <option value="costs">Custas</option>
+                    <option value="other">Outros</option>
+                  </Select>
                   <div className="grid grid-cols-2 gap-3">
                     <Input label="Valor (R$)" type="number" step="0.01" min="0" placeholder="0,00"
                       value={form.processo_pago_valor}
@@ -2551,14 +2491,12 @@ export function ClientsPage() {
           )}
         </div>
 
-        <div className="mt-4 -mx-6 px-6 pt-4 border-t border-gray-100 dark:border-dark-700">
-          <button
-            onClick={save}
-            disabled={saving || !form.name.trim()}
-            className="w-full py-3 rounded-xl bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white font-semibold text-sm transition-colors"
-          >
-            {saving ? 'Salvando...' : editId ? 'Salvar alterações' : 'Salvar e continuar →'}
-          </button>
+        {/* Rodapé — Cancelar / Salvar, mesmo padrão de TaskFormModal */}
+        <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-dark-700">
+          <Button variant="outline" onClick={() => setModalOpen(false)}>Cancelar</Button>
+          <Button onClick={save} loading={saving} disabled={!form.name.trim()}>
+            {editId ? 'Salvar alterações' : 'Salvar e continuar'}
+          </Button>
         </div>
       </Modal>
 
