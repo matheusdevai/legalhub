@@ -30,7 +30,10 @@ const TABS: { id: DashTab; label: string; icon: React.ElementType }[] = [
   { id: 'lista',         label: 'Lista',         icon: List },
   { id: 'quadro',        label: 'Quadro',        icon: LayoutGrid },
   { id: 'desempenho',    label: 'Desempenho',    icon: Activity },
-  { id: 'ia',            label: 'Inteligência Artificial', icon: Sparkles },
+  // Aba "Inteligência Artificial" (AiCopilotoTab) desativada temporariamente a pedido do
+  // usuário (2026-09-16), para reconfigurar/reativar depois. Import e componente intactos —
+  // para reativar, só descomentar a linha abaixo.
+  // { id: 'ia',            label: 'Inteligência Artificial', icon: Sparkles },
   { id: 'configuracoes', label: 'Configurações', icon: Settings },
 ]
 

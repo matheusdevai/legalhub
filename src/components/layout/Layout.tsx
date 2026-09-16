@@ -576,8 +576,10 @@ export function Layout({ children }: LayoutProps) {
       {/* Support chat widget */}
       <SupportChatWidget />
 
-      {/* AI assistant widget */}
-      <AiAssistantWidget />
+      {/* AI assistant widget — desativado temporariamente a pedido do usuário (2026-09-16),
+          para reconfigurar/reativar depois. Componente e import intactos — para reativar,
+          só descomentar a linha abaixo. */}
+      {/* <AiAssistantWidget /> */}
     </div>
   )
 }
