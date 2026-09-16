@@ -589,7 +589,7 @@ export function ClientsPage() {
     const [{ data: c }, { data: col }, { data: proc }, { data: usr }, { data: autoDocs }, { data: tenantRow }] = await Promise.all([
       supabase.from('clients').select('*').is('deleted_at', null).order('created_at', { ascending: false }),
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
-      supabase.from('processes').select('id,client_id,client_name,number,title,status,modalidade,counterparty,data_protocolo,created_at').is('deleted_at', null),
+      supabase.from('processes').select('id,client_id,client_name,number,title,status,modalidade,counterparty,data_protocolo,created_at,valor_honorarios,percentual_honorarios,valor_causa').is('deleted_at', null),
       supabase.from('profiles').select('id,user_id,name,display_name,role').order('name'),
       supabase.from('documents').select('id,title,content,auto_doc_kind,area_direito,file_url,file_name,file_mime,file_size').is('deleted_at', null).not('auto_doc_kind', 'is', null),
       profile?.tenant_id ? supabase.from('tenants').select('name').eq('id', profile.tenant_id).single() : Promise.resolve({ data: null }),
@@ -613,7 +613,7 @@ export function ClientsPage() {
       }
       if (targetId) {
         if (!procMap[targetId]) procMap[targetId] = []
-        procMap[targetId].push(p as Process)
+        procMap[targetId].push(p as unknown as Process)
       }
     }
     setClientProcesses(procMap)
@@ -1269,6 +1269,33 @@ export function ClientsPage() {
     'name-asc': 'Nome A→Z', 'name-desc': 'Nome Z→A',
     'cidade-asc': 'Cidade A→Z', 'cidade-desc': 'Cidade Z→A',
   }
+
+  // ─── Sugestão de comissão do colaborador ─────────────────────────────────────
+  // Campos ADVBOX (valor_honorarios/percentual_honorarios/valor_causa) existem na
+  // tabela `processes` mas ainda não entraram no tipo `Process` compartilhado —
+  // só o form de ProcessesPage os grava hoje.
+  const colaboradorComissaoSuggestion = useMemo(() => {
+    if (!form.colaborador_id || !editId) return null
+    const col = colaboradores.find(c => c.id === form.colaborador_id)
+    if (!col?.comissao_percent) return null
+    const procs = (clientProcesses[editId] || []) as unknown as (Process & {
+      valor_honorarios: number | null; percentual_honorarios: number | null; valor_causa: number | null
+    })[]
+    const withHonorarios = procs
+      .map(p => {
+        const honorarios = p.valor_honorarios && p.valor_honorarios > 0
+          ? p.valor_honorarios
+          : (p.percentual_honorarios && p.percentual_honorarios > 0 && p.valor_causa && p.valor_causa > 0
+            ? p.valor_causa * p.percentual_honorarios / 100
+            : null)
+        return { p, honorarios }
+      })
+      .filter((x): x is { p: typeof procs[number]; honorarios: number } => x.honorarios != null)
+      .sort((a, b) => (b.p.created_at || '').localeCompare(a.p.created_at || ''))
+    if (withHonorarios.length === 0) return null
+    const { p, honorarios } = withHonorarios[0]
+    return { valor: honorarios * col.comissao_percent / 100, honorarios, percent: col.comissao_percent, processNumber: p.number }
+  }, [form.colaborador_id, editId, colaboradores, clientProcesses])
 
   return (
     <Layout>
@@ -2441,7 +2468,14 @@ export function ClientsPage() {
             <div className="rounded-xl border border-gray-200 dark:border-dark-600 p-4 bg-gray-50 dark:bg-dark-700/30">
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <div
-                  onClick={() => setForm(f => ({ ...f, colaborador_pago: !f.colaborador_pago }))}
+                  onClick={() => setForm(f => {
+                    const turningOn = !f.colaborador_pago
+                    const prefill = turningOn && !f.colaborador_pago_valor && colaboradorComissaoSuggestion
+                    return {
+                      ...f, colaborador_pago: turningOn,
+                      colaborador_pago_valor: prefill ? colaboradorComissaoSuggestion.valor.toFixed(2) : f.colaborador_pago_valor,
+                    }
+                  })}
                   className={cn('relative w-11 h-6 rounded-full transition-colors flex-shrink-0', form.colaborador_pago ? 'bg-green-500' : 'bg-gray-300 dark:bg-dark-500')}
                 >
                   <span className={cn('absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform', form.colaborador_pago && 'translate-x-5')} />
@@ -2453,7 +2487,20 @@ export function ClientsPage() {
               {form.colaborador_pago && (
                 <div className="mt-3 pt-3 border-t border-gray-200 dark:border-dark-600 grid grid-cols-2 gap-3">
                   <Input label="Data do Pagamento" type="date" value={form.colaborador_pago_data} onChange={e => setForm({ ...form, colaborador_pago_data: e.target.value })} />
-                  <Input label="Valor (R$)" type="number" step="0.01" min="0" placeholder="0,00" value={form.colaborador_pago_valor} onChange={e => setForm({ ...form, colaborador_pago_valor: e.target.value })} />
+                  <div>
+                    <Input label="Valor (R$)" type="number" step="0.01" min="0" placeholder="0,00" value={form.colaborador_pago_valor} onChange={e => setForm({ ...form, colaborador_pago_valor: e.target.value })} />
+                    {colaboradorComissaoSuggestion && (
+                      <p className="text-[11px] text-primary-600 dark:text-primary-400 mt-1 leading-snug">
+                        Sugestão: {formatCurrency(colaboradorComissaoSuggestion.valor)} ({colaboradorComissaoSuggestion.percent}% de {formatCurrency(colaboradorComissaoSuggestion.honorarios)} em honorários do processo {colaboradorComissaoSuggestion.processNumber})
+                        {' — '}
+                        <button
+                          type="button"
+                          className="underline font-semibold hover:no-underline"
+                          onClick={() => setForm(f => ({ ...f, colaborador_pago_valor: colaboradorComissaoSuggestion.valor.toFixed(2) }))}
+                        >usar</button>
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
