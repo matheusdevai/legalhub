@@ -9,6 +9,8 @@ import { cn, sanitizeFileName } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { openDocumentPrintWindow } from '@/lib/exportUtils'
+import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
+import type { Client } from '@/types'
 
 interface Document {
   id: string
@@ -48,6 +50,11 @@ const FILTER_OPTIONS = [
   { id: 'petition',  label: 'Petições' },
   { id: 'other',     label: 'Outros' },
 ]
+
+// Campos suficientes pra alimentar mergeTemplateVariables() — mesmo mecanismo usado em
+// ClientsPage (Procuração/Contrato de Honorários) e TasksPage (Petição Inicial automática).
+type MergeClient = Pick<Client, 'id' | 'name' | 'cpf_cnpj' | 'email' | 'phone' | 'celular' | 'address' | 'cidade' | 'state' | 'bairro' | 'cep' | 'area_direito' | 'nationality' | 'marital_status' | 'profession' | 'rg'>
+type MergeProcess = { id: string; number: string; title: string; client_id: string | null }
 
 interface LibraryTemplate {
   id: string
@@ -128,9 +135,12 @@ export function DocumentsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [previewDoc, setPreviewDoc] = useState<any | null>(null)
   const [saving, setSaving] = useState(false)
-  const [form, setForm] = useState({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
+  const [form, setForm] = useState({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '', client_id: '', process_id: '' })
   const [editId, setEditId] = useState<string | null>(null)
   const [editingLibrary, setEditingLibrary] = useState(false)
+  const [clients, setClients] = useState<MergeClient[]>([])
+  const [processesList, setProcessesList] = useState<MergeProcess[]>([])
+  const [tenantName, setTenantName] = useState('')
 
   const [uploadModalOpen, setUploadModalOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -141,12 +151,18 @@ export function DocumentsPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data }, { data: libData }] = await Promise.all([
+    const [{ data }, { data: libData }, { data: clientData }, { data: processData }, { data: tenantRow }] = await Promise.all([
       supabase.from('documents').select('*').is('deleted_at', null).order('updated_at', { ascending: false }),
       supabase.from('document_library_templates').select('*').is('deleted_at', null).order('title'),
+      supabase.from('clients').select('id,name,cpf_cnpj,email,phone,celular,address,cidade,state,bairro,cep,area_direito,nationality,marital_status,profession,rg').is('deleted_at', null).order('name'),
+      supabase.from('processes').select('id,number,title,client_id').is('deleted_at', null).order('number'),
+      profile?.tenant_id ? supabase.from('tenants').select('name').eq('id', profile.tenant_id).single() : Promise.resolve({ data: null as { name: string } | null }),
     ])
     setDocuments((data || []) as Document[])
     setLibraryTemplates((libData || []).map((t: any) => ({ ...t, is_library_public: true as const })))
+    setClients((clientData || []) as MergeClient[])
+    setProcessesList((processData || []) as MergeProcess[])
+    setTenantName(tenantRow?.name || '')
     setLoading(false)
   }
 
@@ -166,12 +182,22 @@ export function DocumentsPage() {
         : await withErrorFeedback(supabase.from('document_library_templates').insert(payload), 'Erro ao criar modelo')
       error = res.error
     } else {
+      // Documento avulso vinculado a cliente/processo: mescla as variáveis ([NOME_CLIENTE], [CPF_CNPJ]...)
+      // igual já acontece na Procuração/Contrato de Honorários (ClientsPage) e na Petição Inicial automática
+      // (TasksPage) — só na criação, nunca reaplicado numa edição posterior (o texto já foi gerado).
+      const selectedClient = form.client_id ? clients.find(c => c.id === form.client_id) : null
+      const selectedProcess = form.process_id ? processesList.find(p => p.id === form.process_id) : null
+      const content = (!editId && selectedClient)
+        ? mergeTemplateVariables(form.content, { client: selectedClient, tenant: { name: tenantName }, profile, processNumber: selectedProcess?.number || null })
+        : form.content
       const payload = {
         title: form.title, type: form.type,
-        category: form.category || null, content: form.content,
+        category: form.category || null, content,
         is_template: form.type === 'template',
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         area_direito: form.area_direito || null, auto_doc_kind: form.auto_doc_kind || null,
+        client_id: form.client_id || null,
+        process_id: form.process_id || null,
       }
       const res = editId
         ? await withErrorFeedback(supabase.from('documents').update(payload).eq('id', editId), 'Erro ao atualizar documento')
@@ -181,7 +207,7 @@ export function DocumentsPage() {
     setSaving(false)
     if (error) return
     setModalOpen(false)
-    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '', client_id: '', process_id: '' })
     setEditId(null); setEditingLibrary(false); load()
   }
 
@@ -202,14 +228,14 @@ export function DocumentsPage() {
   function openNew(prefill?: Partial<typeof form>) {
     setEditId(null)
     setEditingLibrary(false)
-    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '', ...prefill })
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '', client_id: '', process_id: '', ...prefill })
     setModalOpen(true)
   }
 
   function openNewLibraryTemplate() {
     setEditId(null)
     setEditingLibrary(true)
-    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '' })
+    setForm({ title: '', type: 'template', category: '', content: '', tags: '', area_direito: '', auto_doc_kind: '', client_id: '', process_id: '' })
     setModalOpen(true)
   }
 
@@ -218,7 +244,7 @@ export function DocumentsPage() {
     setEditingLibrary(true)
     setForm({
       title: tpl.title, type: tpl.type, category: tpl.category || '', content: tpl.content, tags: '',
-      area_direito: tpl.area_direito || '', auto_doc_kind: tpl.auto_doc_kind || '',
+      area_direito: tpl.area_direito || '', auto_doc_kind: tpl.auto_doc_kind || '', client_id: '', process_id: '',
     })
     setModalOpen(true)
   }
@@ -266,6 +292,7 @@ export function DocumentsPage() {
       title: doc.title, type: doc.type, category: doc.category || '',
       content: doc.content || '', tags: (doc.tags || []).join(', '),
       area_direito: doc.area_direito || '', auto_doc_kind: doc.auto_doc_kind || '',
+      client_id: doc.client_id || '', process_id: doc.process_id || '',
     })
     setModalOpen(true)
   }
@@ -538,6 +565,41 @@ export function DocumentsPage() {
               {form.auto_doc_kind === 'peticao_inicial'
                 ? <>Ao concluir a tarefa "Protocolar processo" de um cliente na área "{form.area_direito || '— defina a área do direito acima —'}" e criar o processo, o sistema vai sugerir gerar esta petição automaticamente já preenchida com os dados do cliente e o número do processo.</>
                 : <>Ao cadastrar um novo cliente na área "{form.area_direito || '— defina a área do direito acima —'}", o sistema vai sugerir gerar este documento automaticamente já preenchido com os dados do cliente.</>}
+            </p>
+          )}
+          {!editingLibrary && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Processo</label>
+                <Select
+                  value={form.process_id}
+                  onChange={e => {
+                    const proc = processesList.find(p => p.id === e.target.value)
+                    setForm(f => ({ ...f, process_id: e.target.value, client_id: proc?.client_id || f.client_id }))
+                  }}
+                >
+                  <option value="">Nenhum (documento sem processo vinculado)</option>
+                  {processesList.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
+                </Select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">Cliente</label>
+                {form.process_id ? (
+                  <div className="h-10 px-3 flex items-center text-sm rounded-xl border border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-700 text-gray-500 dark:text-gray-400 truncate">
+                    {clients.find(c => c.id === form.client_id)?.name || 'Definido pelo processo'}
+                  </div>
+                ) : (
+                  <Select value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })}>
+                    <option value="">Vincular a um cliente (opcional)</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </Select>
+                )}
+              </div>
+            </div>
+          )}
+          {!editId && form.client_id && (
+            <p className="text-xs text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800 rounded-xl px-3 py-2">
+              Ao salvar, as variáveis do conteúdo abaixo (ex: [NOME_CLIENTE], [CPF_CNPJ], [ENDERECO]) serão preenchidas automaticamente com os dados de {clients.find(c => c.id === form.client_id)?.name || 'do cliente selecionado'}.
             </p>
           )}
           <Textarea label="Conteúdo" value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} rows={10}
