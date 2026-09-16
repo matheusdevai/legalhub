@@ -1010,6 +1010,9 @@ export function FinancialsPage() {
           {/* Header */}
           <div className="px-5 py-3 border-b border-slate-100 dark:border-dark-700/50 flex items-center justify-between">
             <h2 className="text-sm font-bold text-slate-800 dark:text-white">Lançamentos</h2>
+            {/* Botão "Perguntar ao Copiloto" desativado temporariamente a pedido do usuário
+                (2026-09-16), junto com o Assistente IA. Para reativar, descomentar o button
+                abaixo.
             <button
               onClick={() => navigate('/dashboard', {
                 state: { openTab: 'ia', prefillQuestion: 'Como está a saúde financeira do escritório este mês? Aponte riscos e o que precisa de atenção.' },
@@ -1017,7 +1020,7 @@ export function FinancialsPage() {
               className="flex items-center gap-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline"
             >
               <Sparkles className="w-3.5 h-3.5" /> Perguntar ao Copiloto
-            </button>
+            </button> */}
           </div>
 
           {/* Toolbar */}

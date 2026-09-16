@@ -2760,6 +2760,9 @@ export function ClientsPage() {
                   variant="outline" size="sm"
                   onClick={() => setNewActivityClient(viewClient)}
                 ><CheckSquare className="w-3.5 h-3.5" />Nova atividade</Button>
+                {/* Botão "Perguntar ao Copiloto" desativado temporariamente a pedido do usuário
+                    (2026-09-16), junto com o Assistente IA. Para reativar, descomentar o Button
+                    abaixo.
                 <Button
                   variant="outline" size="sm"
                   onClick={() => navigate('/dashboard', {
@@ -2768,7 +2771,7 @@ export function ClientsPage() {
                       prefillQuestion: `Me dê um resumo sobre o cliente ${viewClient.name}: processos, pendências financeiras e tarefas relacionadas.`,
                     },
                   })}
-                ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button>
+                ><Sparkles className="w-3.5 h-3.5" />Perguntar ao Copiloto</Button> */}
                 <Button variant="outline" size="sm" onClick={() => { const vc = viewClient; setViewClient(null); openEdit(vc) }}><Edit3 className="w-3.5 h-3.5" />Editar</Button>
                 <Button variant="outline" size="sm" onClick={() => { setPortalAccessClient(viewClient); setPortalEmail(viewClient.email || ''); setPortalPassword(''); setPortalCredentials(null) }}>
                   <KeyRound className="w-3.5 h-3.5" />Portal do Cliente

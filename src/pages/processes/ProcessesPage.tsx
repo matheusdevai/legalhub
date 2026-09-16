@@ -1701,13 +1701,16 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
                 className="p-1.5 rounded-lg text-gray-400 hover:text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
               ><MessageCircle className="w-4 h-4" /></a>
             )}
+            {/* Botão "Perguntar ao Copiloto" desativado temporariamente a pedido do usuário
+                (2026-09-16), junto com o Assistente IA. Para reativar, descomentar o button
+                abaixo.
             <button
               title="Perguntar ao Copiloto"
               onClick={() => navigate('/dashboard', {
                 state: { openTab: 'ia', prefillQuestion: `Me dê um resumo sobre o processo ${p.number || p.title}: andamento, financeiro e tarefas pendentes.` },
               })}
               className="p-1.5 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
-            ><Sparkles className="w-4 h-4" /></button>
+            ><Sparkles className="w-4 h-4" /></button> */}
           </div>
         </div>
       </div>

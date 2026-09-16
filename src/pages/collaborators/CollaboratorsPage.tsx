@@ -1033,9 +1033,12 @@ function PartnerDetailPanel({ partner, clients, paidValue, pendingValue, onClose
               <button onClick={onGoToProcessos} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                 <Briefcase className="w-3.5 h-3.5" />Ver processos
               </button>
+              {/* Botão "Copiloto" desativado temporariamente a pedido do usuário (2026-09-16),
+                  junto com o Assistente IA. onAskCopiloto/askCopiloto mantidos intactos — para
+                  reativar, descomentar o button abaixo.
               <button onClick={onAskCopiloto} className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg border border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                 <Sparkles className="w-3.5 h-3.5" />Copiloto
-              </button>
+              </button> */}
               <button onClick={onEdit} className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors">
                 <Edit3 className="w-3.5 h-3.5" />Editar
               </button>
