@@ -27,6 +27,10 @@ export const TIPOS_ACAO: Record<string, string[]> = {
 export const FASES = ['NEGOCIAÇÃO', 'CONHECIMENTO', 'RECURSAL', 'EXECUÇÃO', 'ENCERRADO']
 export const CONTINGENCIAMENTOS = ['Remoto', 'Possível', 'Provável', 'Quase certo']
 
+// Parte contrária padrão para ações do grupo Previdenciário — pré-preenchida mas
+// sempre editável, já que a esmagadora maioria dessas ações é contra o INSS.
+export const INSS_COUNTERPARTY = 'INSTITUTO NACIONAL DE SEGURIDADE SOCIAL - INSS'
+
 export interface ProcessFormFieldsValues {
   client_id: string
   client_name: string
@@ -154,7 +158,16 @@ export function ProcessFormFields({ values, onChange, clients, colaboradores, af
         <div className="relative">
           <select
             value={values.type}
-            onChange={e => onChange({ type: e.target.value })}
+            onChange={e => {
+              const type = e.target.value
+              const patch: Partial<ProcessFormFieldsValues> = { type }
+              // Ação previdenciária quase sempre é contra o INSS — pré-preenche mas
+              // nunca sobrescreve se o usuário já tiver preenchido outra parte contrária.
+              if (type && values.grupo_acao === 'Previdenciário' && !values.counterparty.trim()) {
+                patch.counterparty = INSS_COUNTERPARTY
+              }
+              onChange(patch)
+            }}
             className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
           >
             <option value="">Selecione o tipo de ação</option>

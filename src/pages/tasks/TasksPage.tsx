@@ -22,7 +22,7 @@ import { normalizeGrupoAcao } from '@/lib/areaUtils'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
-import { ProcessFormFields, TIPOS_ACAO, FASES, CONTINGENCIAMENTOS } from '@/pages/processes/ProcessFormFields'
+import { ProcessFormFields, TIPOS_ACAO, FASES, CONTINGENCIAMENTOS, INSS_COUNTERPARTY } from '@/pages/processes/ProcessFormFields'
 
 type TaskForm = {
   title: string; description: string; process_id: string; client_id: string;
@@ -815,6 +815,9 @@ export function TasksPage() {
       colaborador_id: client?.colaborador_id || '',
       grupo_acao: grupoAcao,
       type: tipoAcao,
+      // Ação previdenciária quase sempre é contra o INSS — mesmo default aplicado
+      // ao selecionar manualmente o tipo de ação em ProcessFormFields.
+      counterparty: grupoAcao === 'Previdenciário' ? INSS_COUNTERPARTY : '',
       modalidade: (client as any)?.modalidade || '',
       description: notasExtras.join('\n'),
       data_protocolo: new Date().toISOString().slice(0, 10),
