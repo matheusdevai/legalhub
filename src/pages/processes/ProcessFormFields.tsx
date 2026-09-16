@@ -1,6 +1,7 @@
 import { ReactNode } from 'react'
 import { ChevronDown, X } from 'lucide-react'
 import { GRUPOS_ACAO } from '@/lib/utils'
+import { inferGrupoETipoAcao } from '@/lib/areaUtils'
 
 // Campos comuns ao modal de "Criar novo processo" (ProcessesPage) e ao passo
 // "Novo processo" da conclusão de atividade (TasksPage) — extraído pra manter
@@ -57,7 +58,7 @@ export interface ProcessFormFieldsValues {
 interface ProcessFormFieldsProps {
   values: ProcessFormFieldsValues
   onChange: (patch: Partial<ProcessFormFieldsValues>) => void
-  clients: { id: string; name: string; colaborador_id?: string | null; area_direito?: string | null }[]
+  clients: { id: string; name: string; colaborador_id?: string | null; area_direito?: string | null; beneficio_previdenciario?: string | null; modalidade?: string | null }[]
   colaboradores: { id: string; nome: string }[]
   /** Campos extras exclusivos de um dos fluxos, renderizados logo após "Data do requerimento" e antes de "Valor da causa" */
   afterDataRequerimento?: ReactNode
@@ -78,11 +79,18 @@ export function ProcessFormFields({ values, onChange, clients, colaboradores, af
             onChange={e => {
               const clientId = e.target.value
               const selected = clients.find(c => c.id === clientId)
+              // Mesma herança do cadastro do cliente aplicada ao concluir a tarefa
+              // "Protocolar processo" (requestComplete em TasksPage) — mantém o prefill
+              // igual nos dois fluxos de criação de processo.
+              const { grupoAcao, tipoAcao } = inferGrupoETipoAcao(selected, GRUPOS_ACAO, TIPOS_ACAO)
               onChange({
                 client_id: clientId,
                 client_name: selected?.name || '',
                 colaborador_id: selected?.colaborador_id || values.colaborador_id || '',
                 area: selected?.area_direito || values.area,
+                grupo_acao: grupoAcao || values.grupo_acao,
+                type: grupoAcao ? tipoAcao : values.type,
+                modalidade: selected?.modalidade || values.modalidade,
               })
             }}
             className="w-full pl-10 pr-9 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"

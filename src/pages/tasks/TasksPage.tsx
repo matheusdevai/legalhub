@@ -18,7 +18,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
 import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
 import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
-import { normalizeGrupoAcao } from '@/lib/areaUtils'
+import { inferGrupoETipoAcao } from '@/lib/areaUtils'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
@@ -703,28 +703,14 @@ export function TasksPage() {
     const preClient = match ? clients.find(c => c.id === match[1]) : null
     const clientId = t.client_id || preClient?.id || null
     const client = clientId ? clients.find(c => c.id === clientId) : preClient
-    const normalize = (v: string) => v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()
-    const matchOption = (value: string | null | undefined, options: string[]) => {
-      const v = value?.trim()
-      return (v && options.find(o => normalize(o) === normalize(v))) || ''
-    }
     // area_direito/beneficio_previdenciario do cliente são texto livre (datalist, não
-    // select fechado) — se não baterem com nenhuma opção fixa, mantém o texto digitado
-    // no cadastro em vez de deixar o campo em branco no processo.
-    const rawArea = (client as any)?.area_direito?.trim() || ''
-    const grupoAcao = rawArea ? normalizeGrupoAcao(rawArea, GRUPOS_ACAO) : ''
-    const rawTipo = (client as any)?.beneficio_previdenciario?.trim() || ''
-    const tipoMatch = grupoAcao ? matchOption(rawTipo, TIPOS_ACAO[grupoAcao] || []) : ''
-    const tipoAcao = grupoAcao
-      ? (tipoMatch || (TIPOS_ACAO[grupoAcao] ? '' : rawTipo))
-      : ''
-    // Se o benefício digitado no cadastro não bateu com nenhuma opção fixa do grupo
-    // (ex: grupo válido "Previdenciário" mas texto livre diferente), não descarta a
-    // informação — só não força a seleção, pra não marcar um tipo de ação errado.
+    // select fechado) — inferGrupoETipoAcao mantém o texto digitado no cadastro em vez
+    // de deixar o campo em branco no processo quando não bater com nenhuma opção fixa.
+    const { grupoAcao, tipoAcao, tipoInformadoSemMatch } = inferGrupoETipoAcao(client as any, GRUPOS_ACAO, TIPOS_ACAO)
     const notasExtras: string[] = []
     if (client?.notes?.trim()) notasExtras.push(client.notes.trim())
-    if (rawTipo && grupoAcao && TIPOS_ACAO[grupoAcao] && !tipoMatch) {
-      notasExtras.push(`Benefício informado no cadastro do cliente: ${rawTipo}`)
+    if (tipoInformadoSemMatch) {
+      notasExtras.push(`Benefício informado no cadastro do cliente: ${tipoInformadoSemMatch}`)
     }
     setPendenciaNote('')
     setShowPendenciaInput(false)
