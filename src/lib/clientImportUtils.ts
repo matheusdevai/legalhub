@@ -6,6 +6,8 @@ export interface ClientImportPreviewRow {
   email: string
   cidade: string
   area_direito: string
+  modalidade: 'judicial' | 'administrativo' | ''
+  beneficio_previdenciario: string
   status: 'active' | 'inactive' | 'prospect'
   duplicate: boolean
 }
@@ -35,6 +37,10 @@ export function buildClientImportPreview(
       email: row.email || '',
       cidade: row.cidade || '',
       area_direito: row.area_direito || row['área do direito'] || '',
+      modalidade: ['judicial', 'administrativo'].includes((row.modalidade || '').toLowerCase())
+        ? (row.modalidade.toLowerCase() as 'judicial' | 'administrativo')
+        : '',
+      beneficio_previdenciario: row.beneficio_previdenciario || row['benefício previdenciário'] || '',
       status: ['active', 'inactive', 'prospect'].includes((row.status || '').toLowerCase())
         ? (row.status.toLowerCase() as 'active' | 'inactive' | 'prospect')
         : 'prospect',

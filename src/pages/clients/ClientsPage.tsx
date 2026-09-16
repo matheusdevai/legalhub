@@ -1228,8 +1228,8 @@ export function ClientsPage() {
   }
 
   function downloadImportTemplate() {
-    const csv = 'nome,tipo,cpf_cnpj,telefone,email,cidade,area_direito,status\n' +
-      'Maria da Silva,pf,123.456.789-00,(83) 99999-0000,maria@email.com,João Pessoa,Previdenciário,prospect\n'
+    const csv = 'nome,tipo,cpf_cnpj,telefone,email,cidade,area_direito,modalidade,beneficio_previdenciario,status\n' +
+      'Maria da Silva,pf,123.456.789-00,(83) 99999-0000,maria@email.com,João Pessoa,Previdenciário,administrativo,Aposentadoria por Idade,prospect\n'
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1248,6 +1248,8 @@ export function ClientsPage() {
     const { error } = await supabase.from('clients').insert(toInsert.map(r => ({
       type: r.type, name: r.name, cpf_cnpj: r.cpf_cnpj || null, phone: r.phone || null,
       email: r.email || null, cidade: r.cidade || null, area_direito: r.area_direito || null,
+      modalidade: r.modalidade || null,
+      beneficio_previdenciario: r.area_direito === AREA_PREVIDENCIARIO ? (r.beneficio_previdenciario || null) : null,
       status: r.status, origem: 'outro',
     })))
     setImporting(false)
@@ -3159,6 +3161,8 @@ export function ClientsPage() {
                       <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Telefone</th>
                       <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Email</th>
                       <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Cidade</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Modalidade</th>
+                      <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Benefício Previd.</th>
                       <th className="px-3 py-2 text-left font-semibold text-gray-500 dark:text-gray-400">Status</th>
                     </tr>
                   </thead>
@@ -3169,6 +3173,8 @@ export function ClientsPage() {
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.phone || '—'}</td>
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.email || '—'}</td>
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.cidade || '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.modalidade === 'judicial' ? 'Judicial' : r.modalidade === 'administrativo' ? 'Administrativo' : '—'}</td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{r.area_direito === AREA_PREVIDENCIARIO ? (r.beneficio_previdenciario || '—') : '—'}</td>
                         <td className="px-3 py-2">
                           {r.duplicate
                             ? <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Duplicado</Badge>

@@ -55,4 +55,30 @@ describe('buildClientImportPreview', () => {
     expect(preview[0].status).toBe('prospect')
     expect(preview[1].status).toBe('active')
   })
+
+  it('normaliza modalidade válida (case-insensitive) e descarta valor desconhecido', () => {
+    const rows: Record<string, string>[] = [
+      { nome: 'A', modalidade: 'JUDICIAL' },
+      { nome: 'B', modalidade: 'administrativo' },
+      { nome: 'C', modalidade: 'outra-coisa' },
+      { nome: 'D' },
+    ]
+    const preview = buildClientImportPreview(rows, [])
+    expect(preview[0].modalidade).toBe('judicial')
+    expect(preview[1].modalidade).toBe('administrativo')
+    expect(preview[2].modalidade).toBe('')
+    expect(preview[3].modalidade).toBe('')
+  })
+
+  it('lê benefício previdenciário como texto livre, aceitando a variação de cabeçalho', () => {
+    const rows: Record<string, string>[] = [
+      { nome: 'A', beneficio_previdenciario: 'Aposentadoria por Idade' },
+      { nome: 'B', 'benefício previdenciário': 'Auxílio-Doença' },
+      { nome: 'C' },
+    ]
+    const preview = buildClientImportPreview(rows, [])
+    expect(preview[0].beneficio_previdenciario).toBe('Aposentadoria por Idade')
+    expect(preview[1].beneficio_previdenciario).toBe('Auxílio-Doença')
+    expect(preview[2].beneficio_previdenciario).toBe('')
+  })
 })
