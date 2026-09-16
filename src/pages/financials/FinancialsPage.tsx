@@ -165,7 +165,7 @@ export function FinancialsPage() {
     const promises: any[] = [
       supabase.from('financials').select('*').is('deleted_at', null).order('due_date', { ascending: false }),
       supabase.from('clients').select('id,name,phone,colaborador_id,colaborador_pago,colaborador_pago_data,colaborador_pago_valor,total_billed').is('deleted_at', null).order('name'),
-      supabase.from('processes').select('id,number,title').is('deleted_at', null).order('number'),
+      supabase.from('processes').select('id,number,title,client_id').is('deleted_at', null).order('number'),
       supabase.from('colaboradores').select('*').eq('ativo', true).order('nome'),
       supabase.from('financial_accounts').select('*').order('created_at'),
     ]
@@ -1745,7 +1745,7 @@ export function FinancialsPage() {
         initial={drawerInitial}
         editId={editId}
         clients={clients.map(c => ({ id: c.id, name: (c as any).name }))}
-        processes={processes.map(p => ({ id: p.id, number: p.number, title: p.title }))}
+        processes={processes.map(p => ({ id: p.id, number: p.number, title: p.title, client_id: p.client_id }))}
         accounts={accounts.map(a => ({ id: a.id, name: a.name }))}
         saving={saving}
         pendingExpensesByClient={pendingExpensesByClient}

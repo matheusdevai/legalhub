@@ -80,7 +80,7 @@ const CATEGORIES = [
 ]
 
 type Client = { id: string; name: string }
-type Process = { id: string; number: string; title: string }
+type Process = { id: string; number: string; title: string; client_id?: string | null }
 type Account = { id: string; name: string }
 
 type Props = {
@@ -558,25 +558,32 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             </div>
           )}
 
-          {/* Cliente */}
+          {/* Cliente — travado e preenchido automaticamente quando um Processo já foi selecionado
+              abaixo (mesmo processo já tem um cliente dono), igual ao padrão de TaskFormModal. */}
           {clients.length > 0 && (
             <div>
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
                 <User className="w-3.5 h-3.5" /> Cliente
               </label>
-              <select
-                data-testid="field-client"
-                value={form.client_id}
-                onChange={e => {
-                  const c = clients.find(x => x.id === e.target.value)
-                  set('client_id', e.target.value)
-                  set('client_name', c?.name ?? '')
-                }}
-                className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
-              >
-                <option value="">Selecione um cliente</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              {form.process_id ? (
+                <div className="h-[42px] px-3 flex items-center text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-slate-50 dark:bg-dark-800 text-slate-500 dark:text-slate-400 truncate">
+                  {form.client_name || 'Definido pelo processo'}
+                </div>
+              ) : (
+                <select
+                  data-testid="field-client"
+                  value={form.client_id}
+                  onChange={e => {
+                    const c = clients.find(x => x.id === e.target.value)
+                    set('client_id', e.target.value)
+                    set('client_name', c?.name ?? '')
+                  }}
+                  className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
+                >
+                  <option value="">Selecione um cliente</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              )}
             </div>
           )}
 
@@ -593,6 +600,11 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
                   const p = processes.find(x => x.id === e.target.value)
                   set('process_id', e.target.value)
                   set('process_number', p?.number ?? '')
+                  if (p?.client_id) {
+                    const c = clients.find(x => x.id === p.client_id)
+                    set('client_id', p.client_id)
+                    set('client_name', c?.name ?? '')
+                  }
                 }}
                 className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-dark-600 bg-white dark:bg-dark-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-100 transition"
               >
