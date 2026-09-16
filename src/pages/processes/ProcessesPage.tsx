@@ -1319,17 +1319,9 @@ export function ProcessesPage() {
             </div>
 
             {/* Footer */}
-            <div className="px-5 py-4 border-t border-gray-100 dark:border-dark-700 flex-shrink-0">
-              <button
-                onClick={save}
-                disabled={saving}
-                className="w-full flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3.5 rounded-xl text-sm transition-all disabled:opacity-50 active:scale-[0.98]"
-              >
-                {saving
-                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : (editId ? 'Salvar alterações' : 'Criar novo processo')
-                }
-              </button>
+            <div className="px-5 py-4 border-t border-gray-100 dark:border-dark-700 flex-shrink-0 flex justify-end gap-3">
+              <Button variant="outline" onClick={() => { setModalOpen(false); setCpfSearch('') }}>Cancelar</Button>
+              <Button onClick={save} loading={saving}>{editId ? 'Salvar alterações' : 'Criar novo processo'}</Button>
             </div>
           </div>
         </div>

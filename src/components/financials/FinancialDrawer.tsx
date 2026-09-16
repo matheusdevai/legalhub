@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, ArrowUpRight, ArrowDownRight, DollarSign, CalendarDays, FileText, User, Briefcase, Tag, CheckCircle2, Clock, Landmark, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui'
 
 export type InstallmentPlanForm = {
   enabled: boolean
@@ -152,9 +153,6 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
   const headerBg = isReceita
     ? 'from-emerald-500 to-emerald-600'
     : 'from-rose-500 to-rose-600'
-  const accentBtn = isReceita
-    ? 'bg-emerald-500 hover:bg-emerald-600 focus:ring-emerald-300'
-    : 'bg-rose-500 hover:bg-rose-600 focus:ring-rose-300'
   const TypeIcon = isReceita ? ArrowUpRight : ArrowDownRight
 
   async function handleSave() {
@@ -650,28 +648,11 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
         </div>
 
         {/* ── Footer ── */}
-        <div className="flex-shrink-0 p-4 border-t border-slate-100 dark:border-dark-700 bg-white dark:bg-dark-900 space-y-2">
-          <button
-            type="button"
-            data-testid="btn-save"
-            onClick={handleSave}
-            disabled={!isValid || saving}
-            className={cn(
-              'w-full py-3 rounded-xl text-white text-sm font-bold transition-all focus:outline-none focus:ring-2 focus:ring-offset-2',
-              accentBtn,
-              (!isValid || saving) && 'opacity-50 cursor-not-allowed'
-            )}
-          >
+        <div className="flex-shrink-0 p-4 border-t border-slate-100 dark:border-dark-700 bg-white dark:bg-dark-900 flex justify-end gap-3">
+          <Button type="button" variant="outline" data-testid="btn-cancel" onClick={onClose}>Cancelar</Button>
+          <Button type="button" data-testid="btn-save" onClick={handleSave} disabled={!isValid} loading={saving}>
             {saving ? 'Salvando...' : canInstallment && plan.enabled ? 'Salvar parcelamento' : 'Salvar dados'}
-          </button>
-          <button
-            type="button"
-            data-testid="btn-cancel"
-            onClick={onClose}
-            className="w-full py-2.5 rounded-xl text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-dark-800 transition-colors"
-          >
-            Cancelar
-          </button>
+          </Button>
         </div>
       </aside>
     </>
