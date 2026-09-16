@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CheckSquare, X } from 'lucide-react'
 import { Modal, Button, Input, Select, Textarea } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -138,152 +139,171 @@ export function TaskFormModal({ open, onClose, task, presetClientId, presetClien
     : null
 
   return (
-    <Modal open={open} onClose={onClose} title={task ? 'Editar Tarefa' : 'Criar nova tarefa'} size="lg">
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Processo ou caso</label>
-            <Select value={form.process_id} onChange={e => setForm({ ...form, process_id: e.target.value })}>
-              <option value="">Nome do cliente ou número do processo</option>
-              {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
-            </Select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
-            {lockedClientName ? (
-              <div className="h-10 px-3 flex items-center text-sm rounded-xl border border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-700 text-gray-600 dark:text-gray-300 truncate">
-                {lockedClientName}
-              </div>
-            ) : (
-              <Select
-                value={form.client_id}
-                onChange={e => setForm({ ...form, client_id: e.target.value })}
-                disabled={!!form.process_id}
-              >
-                <option value="">{form.process_id ? 'Definido pelo processo' : 'Vincular a um cliente (opcional)'}</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </Select>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Responsável <span className="text-red-500">*</span></label>
-          <Select
-            value={form.assigned_to}
-            onChange={e => {
-              const user = systemUsers.find(u => u.user_id === e.target.value)
-              setForm({ ...form, assigned_to: e.target.value, assigned_name: user ? (user.name || user.display_name || '') : '' })
-            }}
-          >
-            <option value="">Quem vai trabalhar nesta tarefa?</option>
-            {systemUsers.map(u => (
-              <option key={u.user_id} value={u.user_id}>
-                {u.name || u.display_name} — {u.role === 'admin' ? 'Administrador' : u.role === 'lawyer' ? 'Advogado' : u.role === 'intern' ? 'Estagiário' : u.role === 'financial' ? 'Financeiro' : u.role}
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tarefa <span className="text-red-500">*</span></label>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="O que essa pessoa irá fazer?" />
+    <Modal open={open} onClose={onClose} title="" size="lg">
+      <div className="-mx-6 -mt-6">
+        <div className="relative overflow-hidden rounded-t-2xl bg-gradient-to-br from-primary-700 via-primary-600 to-primary-500 text-white px-6 py-5">
+          <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl" />
+          <div className="absolute right-4 top-4 opacity-20"><CheckSquare className="w-20 h-20" /></div>
+          <div className="relative flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-white/80 font-medium mb-0.5 uppercase tracking-wider">Tarefa</p>
+              <h3 className="text-lg font-bold leading-tight pr-6 line-clamp-2">{task ? 'Editar Tarefa' : 'Criar nova tarefa'}</h3>
             </div>
-            <Select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-44 flex-shrink-0">
-              <option value="custom">Geral</option>
-              <option value="deadline">Prazo</option>
-              <option value="hearing">Audiência</option>
-              <option value="document">Documento</option>
-              <option value="meeting">Reunião</option>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors flex-shrink-0 mt-0.5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        <div className="px-6 pt-4 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Processo ou caso</label>
+              <Select value={form.process_id} onChange={e => setForm({ ...form, process_id: e.target.value })}>
+                <option value="">Nome do cliente ou número do processo</option>
+                {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.title}</option>)}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cliente</label>
+              {lockedClientName ? (
+                <div className="h-10 px-3 flex items-center text-sm rounded-xl border border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-700 text-gray-600 dark:text-gray-300 truncate">
+                  {lockedClientName}
+                </div>
+              ) : (
+                <Select
+                  value={form.client_id}
+                  onChange={e => setForm({ ...form, client_id: e.target.value })}
+                  disabled={!!form.process_id}
+                >
+                  <option value="">{form.process_id ? 'Definido pelo processo' : 'Vincular a um cliente (opcional)'}</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Responsável <span className="text-red-500">*</span></label>
+            <Select
+              value={form.assigned_to}
+              onChange={e => {
+                const user = systemUsers.find(u => u.user_id === e.target.value)
+                setForm({ ...form, assigned_to: e.target.value, assigned_name: user ? (user.name || user.display_name || '') : '' })
+              }}
+            >
+              <option value="">Quem vai trabalhar nesta tarefa?</option>
+              {systemUsers.map(u => (
+                <option key={u.user_id} value={u.user_id}>
+                  {u.name || u.display_name} — {u.role === 'admin' ? 'Administrador' : u.role === 'lawyer' ? 'Advogado' : u.role === 'intern' ? 'Estagiário' : u.role === 'financial' ? 'Financeiro' : u.role}
+                </option>
+              ))}
             </Select>
           </div>
-        </div>
 
-        <div className="grid grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Data</label>
-            <Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tarefa <span className="text-red-500">*</span></label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="O que essa pessoa irá fazer?" />
+              </div>
+              <Select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })} className="w-44 flex-shrink-0">
+                <option value="custom">Geral</option>
+                <option value="deadline">Prazo</option>
+                <option value="hearing">Audiência</option>
+                <option value="document">Documento</option>
+                <option value="meeting">Reunião</option>
+              </Select>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Hora</label>
-            <Input type="time" value={form.due_time} onChange={e => setForm({ ...form, due_time: e.target.value })} />
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Data</label>
+              <Input type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Hora</label>
+              <Input type="time" value={form.due_time} onChange={e => setForm({ ...form, due_time: e.target.value })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Prazo fatal</label>
+              <Input type="date" value={form.deadline_date} onChange={e => setForm({ ...form, deadline_date: e.target.value })} />
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Prazo fatal</label>
-            <Input type="date" value={form.deadline_date} onChange={e => setForm({ ...form, deadline_date: e.target.value })} />
-          </div>
-        </div>
 
-        <div className="flex items-center gap-5">
-          <label className="flex items-center gap-1.5 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={form.all_day}
-              onChange={e => setForm({ ...form, all_day: e.target.checked })}
-              className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
-            <span className="text-xs text-gray-600 dark:text-gray-400">Dia inteiro</span>
-          </label>
-        </div>
-
-        <div className="hidden">
-          <Select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-            <option value="pending">Pendente</option>
-            <option value="in_progress">Em andamento</option>
-            <option value="done">Concluída</option>
-            <option value="cancelled">Cancelada</option>
-          </Select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Local</label>
-          <Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="Local do evento" />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descrição</label>
-          <Textarea label="" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Adicione um comentário..." />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-4">
-          {[
-            { key: 'tag_importante', label: 'Importante' },
-            { key: 'tag_urgente', label: 'Urgente' },
-            { key: 'tag_recorrente', label: 'Recorrente' },
-            { key: 'tag_privada', label: 'Privada' },
-            { key: 'tag_retroativa', label: 'Retroativa' },
-          ].map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+          <div className="flex items-center gap-5">
+            <label className="flex items-center gap-1.5 cursor-pointer select-none">
               <input
                 type="checkbox"
-                checked={(form as any)[key]}
-                onChange={e => setForm({ ...form, [key]: e.target.checked })}
+                checked={form.all_day}
+                onChange={e => setForm({ ...form, all_day: e.target.checked })}
                 className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
-              <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Dia inteiro</span>
             </label>
-          ))}
-        </div>
-
-        {form.tag_recorrente && (
-          <div className="grid grid-cols-2 gap-3 p-3 bg-primary-50/50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/30">
-            <Select label="Repetir a cada" value={form.recurrence_interval} onChange={e => setForm({ ...form, recurrence_interval: e.target.value as TaskForm['recurrence_interval'] })}>
-              <option value="weekly">Semana</option>
-              <option value="monthly">Mês</option>
-              <option value="yearly">Ano</option>
-            </Select>
-            <Input label="Repetir até (opcional)" type="date" value={form.recurrence_end_date} onChange={e => setForm({ ...form, recurrence_end_date: e.target.value })} />
-            <p className="col-span-2 text-[11px] text-gray-400 dark:text-gray-500">
-              Uma nova tarefa idêntica será criada automaticamente na data de vencimento, a partir da próxima geração diária (roda às 6h).
-            </p>
           </div>
-        )}
-      </div>
-      <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-100 dark:border-dark-700">
-        <Button variant="outline" onClick={onClose}>Cancelar</Button>
-        <Button onClick={save} loading={saving}>{task ? 'Salvar' : 'Criar nova tarefa'}</Button>
+
+          <div className="hidden">
+            <Select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+              <option value="pending">Pendente</option>
+              <option value="in_progress">Em andamento</option>
+              <option value="done">Concluída</option>
+              <option value="cancelled">Cancelada</option>
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Local</label>
+            <Input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="Local do evento" />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Descrição</label>
+            <Textarea label="" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3} placeholder="Adicione um comentário..." />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            {[
+              { key: 'tag_importante', label: 'Importante' },
+              { key: 'tag_urgente', label: 'Urgente' },
+              { key: 'tag_recorrente', label: 'Recorrente' },
+              { key: 'tag_privada', label: 'Privada' },
+              { key: 'tag_retroativa', label: 'Retroativa' },
+            ].map(({ key, label }) => (
+              <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={(form as any)[key]}
+                  onChange={e => setForm({ ...form, [key]: e.target.checked })}
+                  className="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
+              </label>
+            ))}
+          </div>
+
+          {form.tag_recorrente && (
+            <div className="grid grid-cols-2 gap-3 p-3 bg-primary-50/50 dark:bg-primary-900/10 rounded-xl border border-primary-100 dark:border-primary-900/30">
+              <Select label="Repetir a cada" value={form.recurrence_interval} onChange={e => setForm({ ...form, recurrence_interval: e.target.value as TaskForm['recurrence_interval'] })}>
+                <option value="weekly">Semana</option>
+                <option value="monthly">Mês</option>
+                <option value="yearly">Ano</option>
+              </Select>
+              <Input label="Repetir até (opcional)" type="date" value={form.recurrence_end_date} onChange={e => setForm({ ...form, recurrence_end_date: e.target.value })} />
+              <p className="col-span-2 text-[11px] text-gray-400 dark:text-gray-500">
+                Uma nova tarefa idêntica será criada automaticamente na data de vencimento, a partir da próxima geração diária (roda às 6h).
+              </p>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end gap-3 mt-6 pt-4 px-6 border-t border-gray-100 dark:border-dark-700">
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
+          <Button onClick={save} loading={saving}>{task ? 'Salvar' : 'Criar nova tarefa'}</Button>
+        </div>
       </div>
     </Modal>
   )
