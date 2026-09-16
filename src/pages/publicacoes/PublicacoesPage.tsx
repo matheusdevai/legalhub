@@ -31,6 +31,7 @@ interface CnjMovimento {
 interface Intimacao {
   id: string
   process_id: string
+  client_id: string | null
   numero_processo: string
   partes: string
   tribunal: string
@@ -104,7 +105,7 @@ export function PublicacoesPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('processes')
-      .select('id, number, title, client_name, court, area, assigned_lawyer, movimentos, cnj_synced_at')
+      .select('id, number, title, client_id, client_name, court, area, assigned_lawyer, movimentos, cnj_synced_at')
       .is('deleted_at', null)
       .eq('cnj_source', true)
       .not('movimentos', 'is', null)
@@ -125,6 +126,7 @@ export function PublicacoesPage() {
           intimacoes.push({
             id: intimId,
             process_id: proc.id,
+            client_id: proc.client_id || null,
             numero_processo: proc.number || '—',
             partes: proc.client_name || proc.title || '—',
             tribunal: proc.court || '—',
@@ -238,6 +240,7 @@ export function PublicacoesPage() {
       title: `Prazo: ${prazoItem.conteudo || 'Intimação'} — ${prazoItem.numero_processo}`,
       description: `Gerado a partir da intimação de ${prazoItem.tribunal} publicada em ${formatDate(prazoItem.publicacao)}. Prazo calculado: ${prazoDias} dias ${prazoUnidade === 'uteis' ? 'úteis' : 'corridos'} (não considera feriados — confirme antes de protocolar).`,
       process_id: prazoItem.process_id || null,
+      client_id: prazoItem.client_id || null,
       due_date: dueDateStr,
       priority: 'high',
       status: 'pending',
