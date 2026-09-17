@@ -131,47 +131,6 @@ function DetailField({ icon: Icon, label, value }: { icon: React.ElementType; la
   )
 }
 
-function VerticalBarChart({ title, data }: { title: string; data: { label: string; value: number }[] }) {
-  const max = Math.max(...data.map(d => d.value), 1)
-  const ticks = [0, Math.round(max * 0.25), Math.round(max * 0.5), Math.round(max * 0.75), max]
-  return (
-    <Card className="p-4 flex flex-col">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-sm font-semibold text-gray-800 dark:text-white">{title}</p>
-        <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-        </button>
-      </div>
-      {data.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center py-8 text-gray-300 dark:text-gray-600">
-          <div className="w-px h-16 bg-current" />
-        </div>
-      ) : (
-        <div className="flex gap-3 items-end h-36">
-          {/* Y-axis ticks */}
-          <div className="flex flex-col justify-between h-full text-right pr-1 flex-shrink-0">
-            {[...ticks].reverse().map(t => (
-              <span key={t} className="text-[10px] text-gray-400 leading-none">{t}</span>
-            ))}
-          </div>
-          {/* Bars */}
-          <div className="flex-1 flex items-end gap-2 h-full">
-            {data.slice(0, 5).map(item => (
-              <div key={item.label} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                <div
-                  className="w-full bg-primary-500 dark:bg-primary-600 rounded-sm transition-all duration-500 min-h-[2px]"
-                  style={{ height: `${Math.max((item.value / max) * 100, 2)}%` }}
-                />
-                <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate w-full text-center">{item.label.length > 10 ? item.label.slice(0, 8) + '…' : item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </Card>
-  )
-}
-
 export function ClientsPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
@@ -635,45 +594,6 @@ export function ClientsPage() {
     const withoutProcesses = total - withProcesses
     return { total, thisMonth, prevMonth, withProcesses, withoutProcesses }
   }, [clients, clientProcesses])
-
-  const charts = useMemo(() => {
-    const ORIGEM_LABELS: Record<string, string> = {
-      indicacao: 'Indicação', site: 'Site', redes_sociais: 'Redes Sociais',
-      google: 'Google', email: 'E-mail', telefone: 'Telefone',
-      escritorio: 'Escritório', outro: 'Outro',
-    }
-    const origenCount: Record<string, number> = {}
-    for (const c of clients) {
-      const key = (c.origem && ORIGEM_LABELS[c.origem]) || c.origem || 'Não informado'
-      origenCount[key] = (origenCount[key] || 0) + 1
-    }
-    const topOrigens = Object.entries(origenCount)
-      .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value)
-
-    const faixaCount: Record<string, number> = {}
-    for (const c of clients) {
-      const bd = c.birth_date
-      if (bd) {
-        const age = new Date().getFullYear() - new Date(bd).getFullYear()
-        const key = age < 18 ? '< 18' : age < 30 ? '18-29' : age < 45 ? '30-44' : age < 60 ? '45-59' : '60+'
-        faixaCount[key] = (faixaCount[key] || 0) + 1
-      }
-    }
-    const faixaEtaria = ['< 18', '18-29', '30-44', '45-59', '60+']
-      .map(label => ({ label, value: faixaCount[label] || 0 }))
-
-    const profCount: Record<string, number> = {}
-    for (const c of clients) {
-      const key = c.profession
-      if (key) profCount[key] = (profCount[key] || 0) + 1
-    }
-    const topProfissoes = Object.entries(profCount)
-      .map(([label, value]) => ({ label, value }))
-      .sort((a, b) => b.value - a.value)
-
-    return { topOrigens, faixaEtaria, topProfissoes }
-  }, [clients])
 
   const [typeFilter, setTypeFilter] = useState('')
   const [areaFilter, setAreaFilter] = useState('')
@@ -1340,13 +1260,6 @@ export function ClientsPage() {
           <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.withoutProcesses}</p>
           <span className="mt-1 text-xs text-primary-600 dark:text-primary-400">Mostrar clientes</span>
         </Card>
-      </div>
-
-      {/* ── Charts row ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-        <VerticalBarChart title="Top Origens" data={charts.topOrigens} />
-        <VerticalBarChart title="Faixa etária" data={charts.faixaEtaria} />
-        <VerticalBarChart title="Top Profissões" data={charts.topProfissoes} />
       </div>
 
       {/* ── Table section ── */}
