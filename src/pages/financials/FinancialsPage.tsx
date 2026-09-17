@@ -59,6 +59,17 @@ function waLink(phone: string): string | null {
   return `https://wa.me/${digits.length <= 11 ? '55' + digits : digits}`
 }
 
+/** due_date/paid_date são strings 'YYYY-MM-DD' (sem hora) — `new Date(str)` as
+ *  interpreta como UTC meia-noite, que em fusos negativos (ex. Brasil, UTC-3)
+ *  vira o dia anterior ao ler de volta com getMonth()/getFullYear() (locais),
+ *  fazendo o lançamento "vazar" pro mês errado quando due_date cai no dia 1º.
+ *  created_at já vem como timestamp completo (com hora/offset) e não sofre
+ *  desse problema — só as datas "puras" (10 caracteres) precisam do T00:00:00. */
+function parseFinancialDate(f: Pick<Financial, 'due_date' | 'paid_date' | 'created_at'>): Date {
+  const raw = f.due_date || f.paid_date || f.created_at || ''
+  return raw.length === 10 ? new Date(`${raw}T00:00:00`) : new Date(raw)
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   fees: 'Honorários', costs: 'Custas', salary: 'Salário', rent: 'Aluguel',
   subscription: 'Assinatura', tax: 'Impostos', comissao: 'Comissão', other: 'Outros',
@@ -229,7 +240,7 @@ export function FinancialsPage() {
     return financials.filter(f => {
       const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
       if (!dateStr) return false
-      const d = new Date(dateStr)
+      const d = new Date(`${dateStr}T00:00:00`)
       return d.getMonth() === lancMonth && d.getFullYear() === lancYear
     })
   }, [financials, lancMonth, lancYear, lancDateFilter, onlyOverdue])
@@ -288,7 +299,7 @@ export function FinancialsPage() {
 
   // Current month stats
   const monthFinancials = financials.filter(f => {
-    const d = new Date(f.due_date || f.paid_date || f.created_at || '')
+    const d = parseFinancialDate(f)
     return d.getMonth() === currentMonth && d.getFullYear() === currentYear
   })
   const receitaMensalPrevista = monthFinancials.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0)
@@ -309,15 +320,15 @@ export function FinancialsPage() {
   const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1
   const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear
   const prevMonthReceitas = financials.filter(f => {
-    const d = new Date(f.due_date || f.paid_date || f.created_at || '')
+    const d = parseFinancialDate(f)
     return f.type === 'receivable' && d.getMonth() === prevMonth && d.getFullYear() === prevYear
   }).reduce((s, f) => s + Number(f.amount), 0)
   const prevMonthDespesas = financials.filter(f => {
-    const d = new Date(f.due_date || f.paid_date || f.created_at || '')
+    const d = parseFinancialDate(f)
     return f.type === 'payable' && d.getMonth() === prevMonth && d.getFullYear() === prevYear
   }).reduce((s, f) => s + Number(f.amount), 0)
   const prevMonthSaldoRealizado = financials.filter(f => {
-    const d = new Date(f.due_date || f.paid_date || f.created_at || '')
+    const d = parseFinancialDate(f)
     return f.status === 'paid' && d.getMonth() === prevMonth && d.getFullYear() === prevYear
   }).reduce((s, f) => s + (f.type === 'receivable' ? Number(f.amount) : -Number(f.amount)), 0)
   const saldoMensalRealizado = receitaMensalRealizada - despesaMensalRealizada
@@ -332,7 +343,7 @@ export function FinancialsPage() {
       const m = d.getMonth()
       const y = d.getFullYear()
       const items = financials.filter(f => {
-        const fd = new Date(f.due_date || f.paid_date || f.created_at || '')
+        const fd = parseFinancialDate(f)
         return fd.getMonth() === m && fd.getFullYear() === y
       })
       return {
@@ -351,11 +362,11 @@ export function FinancialsPage() {
 
   // Annual data
   const yearFinancials = financials.filter(f => {
-    const d = new Date(f.due_date || f.paid_date || f.created_at || '')
+    const d = parseFinancialDate(f)
     return d.getFullYear() === selectedYear
   })
   const monthlyData = MONTHS_SHORT.map((month, i) => {
-    const items = yearFinancials.filter(f => new Date(f.due_date || f.paid_date || f.created_at || '').getMonth() === i)
+    const items = yearFinancials.filter(f => parseFinancialDate(f).getMonth() === i)
     const receitas = items.filter(f => f.type === 'receivable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
     const despesas = items.filter(f => f.type === 'payable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
     return { month, receitas, despesas, saldo: receitas - despesas, total: items.length }
@@ -364,7 +375,7 @@ export function FinancialsPage() {
   const yearTotalDespesas = monthlyData.reduce((s, m) => s + m.despesas, 0)
   const yearSaldo = yearTotalReceitas - yearTotalDespesas
 
-  const years = Array.from(new Set(financials.map(f => new Date(f.due_date || f.paid_date || f.created_at || '').getFullYear()))).sort((a, b) => b - a)
+  const years = Array.from(new Set(financials.map(f => parseFinancialDate(f).getFullYear()))).sort((a, b) => b - a)
   if (!years.includes(selectedYear)) years.unshift(selectedYear)
 
   // Expense computed
@@ -696,7 +707,7 @@ export function FinancialsPage() {
     const dateFiltered = financials.filter(f => {
       const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
       if (!dateStr) return false
-      const d = new Date(dateStr)
+      const d = new Date(`${dateStr}T00:00:00`)
       if (mode === 'year') return d.getFullYear() === year
       return d.getMonth() === month && d.getFullYear() === year
     })
@@ -1225,7 +1236,7 @@ export function FinancialsPage() {
                   {lancPageItems.map(f => {
                     const isReceita = f.type === 'receivable'
                     const catLabel = CATEGORY_LABELS[f.category || ''] || f.category || '—'
-                    const competencia = f.due_date ? `${MONTHS_SHORT[new Date(f.due_date).getMonth()]}/${new Date(f.due_date).getFullYear()}` : '—'
+                    const competencia = f.due_date ? `${MONTHS_SHORT[new Date(`${f.due_date}T00:00:00`).getMonth()]}/${new Date(`${f.due_date}T00:00:00`).getFullYear()}` : '—'
                     const linkedClient = clients.find(c => c.id === f.client_id)
                     const wa = linkedClient?.phone ? waLink(linkedClient.phone) : null
                     return (

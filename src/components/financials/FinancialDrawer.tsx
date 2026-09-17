@@ -112,10 +112,16 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
   // Reset form when drawer opens/initial changes
   useEffect(() => {
     if (open) {
-      setForm({ ...DRAWER_EMPTY_FORM, ...initial })
+      // Vencimento não tem valor óbvio a pré-preencher no cliente (varia por caso),
+      // mas precisa vir com ALGUMA data: sem ela o lançamento é gravado com sucesso
+      // porém some da lista (que é sempre filtrada por mês/ano de vencimento) sem
+      // nenhum aviso — por isso o campo aqui já nasce com a data de hoje ao criar
+      // um lançamento novo, e é obrigatório (ver baseValid) para não voltar a ficar em branco.
+      const todayStr = new Date().toISOString().slice(0, 10)
+      setForm({ ...DRAWER_EMPTY_FORM, due_date: editId ? '' : todayStr, ...initial })
       setTimeout(() => firstInput.current?.focus(), 100)
     }
-  }, [open, initial])
+  }, [open, initial, editId])
 
   // Close on Escape
   useEffect(() => {
@@ -145,6 +151,7 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
     : []
 
   const baseValid = form.description.trim() !== '' && form.amount !== '' && parseFloat(form.amount) > 0
+    && (canInstallment && plan.enabled ? true : form.due_date !== '')
   const planValid = !canInstallment || !plan.enabled || (
     installmentsCount > 0 && plan.firstDueDate !== '' && downPayment < totalAmount
   )
@@ -497,7 +504,7 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="drawer-due" className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                  <CalendarDays className="w-3.5 h-3.5" /> Vencimento
+                  <CalendarDays className="w-3.5 h-3.5" /> Vencimento <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="drawer-due"
