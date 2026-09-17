@@ -56,19 +56,19 @@ export function OnboardingModal({ onComplete }: { onComplete: () => void }) {
     setError('')
     setSearching(true)
     try {
-      // Try CNA OAB public API
-      const resp = await fetch(
-        `https://cna.oab.org.br/api/find_advogado?q=${oab.trim()}&uf=${seccional}`,
-        { headers: { 'Accept': 'application/json' } }
-      )
-      if (resp.ok) {
-        const data = await resp.json()
+      // Consulta a API pública da OAB via Edge Function (cna.oab.org.br não
+      // libera CORS pra chamada direta do navegador em produção)
+      const { data, error: fnErr } = await supabase.functions.invoke('oab-lookup', {
+        body: { q: oab.trim(), uf: seccional },
+      })
+      if (!fnErr && data) {
         const items = Array.isArray(data) ? data : data?.Data || data?.data || []
         const match = items.find((i: { InscricaoOAB?: string; Nome?: string }) =>
           i.InscricaoOAB?.replace(/\D/g, '') === oab.trim().replace(/\D/g, '')
         )
         if (match?.Nome) {
           setFoundName(`${oab.trim()}/${seccional} - ${match.Nome}`)
+          setSearching(false)
           setStep('found')
           return
         }
@@ -76,11 +76,13 @@ export function OnboardingModal({ onComplete }: { onComplete: () => void }) {
     } catch { /* fallback */ }
     // Fallback: accept without validation
     setFoundName(`${oab.trim()}/${seccional}`)
+    setSearching(false)
     setStep('found')
   }
 
   async function handleContinue() {
     setSaving(true)
+    setError('')
     const { error: err } = await supabase
       .from('profiles')
       .update({
@@ -89,11 +91,12 @@ export function OnboardingModal({ onComplete }: { onComplete: () => void }) {
         onboarding_completed: true,
       })
       .eq('user_id', user!.id)
+    setSaving(false)
     if (err) {
-      // If column doesn't exist yet, just mark complete via localStorage and move on
+      setError('Não foi possível salvar sua OAB agora. Tente novamente em instantes.')
+      return
     }
     await refreshProfile()
-    setSaving(false)
     onComplete()
   }
 
@@ -215,6 +218,8 @@ export function OnboardingModal({ onComplete }: { onComplete: () => void }) {
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
                 Para uma melhor experiência no LegalHub, vamos baixar alguns processos ligados à sua OAB.
               </p>
+
+              {error && <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-100 rounded-xl px-3 py-2 mb-4">{error}</p>}
 
               <button
                 onClick={handleContinue}
