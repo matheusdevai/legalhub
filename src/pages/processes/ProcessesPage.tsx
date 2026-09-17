@@ -4,14 +4,14 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   Plus, Search, Briefcase, Trash2, Download, ChevronDown,
   Edit3, FileText,
-  User, Hash, CheckCircle2, TrendingUp, X,
+  User, Hash, CheckCircle2, X,
   FolderOpen, Globe, DollarSign, RotateCcw, Upload, CheckSquare,
   MessageCircle, Sparkles, Zap, SlidersHorizontal, ArrowUpDown,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Modal, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, Tenant } from '@/types'
+import { Process, Client, Colaborador, Task, Financial, ProcessUpdate } from '@/types'
 import { formatDate, formatCurrency, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName, GRUPOS_ACAO } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
@@ -102,11 +102,9 @@ type ViewMode = 'table' | 'byColaborador'
 const PAGE_SIZE = 15
 
 export function ProcessesPage() {
-  const { profile } = useAuth()
   const [processes, setProcesses] = useState<Process[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
-  const [tenant, setTenant] = useState<Tenant | null>(null)
   const [loading, setLoading] = usePageLoadingState()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -135,9 +133,6 @@ export function ProcessesPage() {
   const [oabSyncOpen, setOabSyncOpen] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkWorking, setBulkWorking] = useState(false)
-  const [editingMeta, setEditingMeta] = useState(false)
-  const [metaInput, setMetaInput] = useState('')
-  const [savingMeta, setSavingMeta] = useState(false)
   const exportRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -175,12 +170,6 @@ export function ProcessesPage() {
 
   useEffect(() => { load() }, [])
   useEffect(() => { setTablePage(0) }, [search, statusFilter, modalidadeFilter, areaFilter, colaboradorFilter, viewMode])
-
-  useEffect(() => {
-    if (!profile?.tenant_id) return
-    supabase.from('tenants').select('*').eq('id', profile.tenant_id).single()
-      .then(({ data }) => setTenant(data as Tenant))
-  }, [profile?.tenant_id])
 
   const location = useLocation()
   useEffect(() => {
@@ -248,24 +237,6 @@ export function ProcessesPage() {
     const arquivadosThisMonth = processes.filter(p => (p.updated_at ?? '') >= monthStart && p.status === 'archived').length
     const arquivadosPrevMonth = processes.filter(p => (p.updated_at ?? '') >= prevMonthStart && (p.updated_at ?? '') < monthStart && p.status === 'archived').length
     return { total, active, protocolados, encerrados, judicial, admin, comPrazo, taxa, won, lost, returned, fechamentosThisMonth, fechamentosPrevMonth, arquivadosThisMonth, arquivadosPrevMonth }
-  }, [processes])
-
-  // Chart data: volume por fase — categorias fixas ADVBOX
-  const CHART_CATS = ['Marketing', 'Negociação', 'Consultoria', 'Administrativo', 'Judicial', 'Recursal', 'Execução']
-  const volumePorFase = useMemo(() => {
-    const count: Record<string, number> = {}
-    for (const cat of CHART_CATS) count[cat] = 0
-    for (const p of processes) {
-      const area = (p.area || p.modalidade || '').toLowerCase()
-      if (area.includes('market')) count['Marketing'] = (count['Marketing'] || 0) + 1
-      else if (area.includes('negoc') || area.includes('acordo')) count['Negociação'] = (count['Negociação'] || 0) + 1
-      else if (area.includes('consul')) count['Consultoria'] = (count['Consultoria'] || 0) + 1
-      else if (area.includes('admin')) count['Administrativo'] = (count['Administrativo'] || 0) + 1
-      else if (area.includes('recurs')) count['Recursal'] = (count['Recursal'] || 0) + 1
-      else if (area.includes('execu') || area.includes('cobran')) count['Execução'] = (count['Execução'] || 0) + 1
-      else count['Judicial'] = (count['Judicial'] || 0) + 1
-    }
-    return CHART_CATS.map(label => ({ label, value: count[label] || 0 }))
   }, [processes])
 
   // Status counts for tabs
@@ -336,15 +307,6 @@ export function ProcessesPage() {
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
-  }
-
-  async function saveMeta() {
-    const value = parseInt(metaInput, 10)
-    if (!tenant || !value || value <= 0) return
-    setSavingMeta(true)
-    const { error } = await withErrorFeedback(supabase.from('tenants').update({ meta_fechamentos_mensal: value }).eq('id', tenant.id), 'Erro ao salvar meta')
-    setSavingMeta(false)
-    if (!error) { setTenant({ ...tenant, meta_fechamentos_mensal: value }); setEditingMeta(false) }
   }
 
   function openNew() { setEditId(null); setForm(EMPTY_FORM); setCpfSearch(''); setModalOpen(true) }
@@ -626,102 +588,6 @@ export function ProcessesPage() {
             </span>
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">vs mês anterior: {stats.arquivadosPrevMonth}</p>
-        </Card>
-      </div>
-
-      {/* ── CHART + META ROW ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 mb-5">
-        {/* Volume por fase */}
-        <Card className="p-4">
-          <p className="text-sm font-semibold text-gray-800 dark:text-white mb-4">Volume por fase</p>
-          {volumePorFase.length === 0 ? (
-            <div className="flex items-center justify-center h-40 text-gray-300 dark:text-gray-600 text-xs">Sem dados</div>
-          ) : (() => {
-            const max = Math.max(...volumePorFase.map(d => d.value), 1)
-            const ticks = [0, Math.ceil(max * 0.25), Math.ceil(max * 0.5), Math.ceil(max * 0.75), max]
-            return (
-              <div className="flex gap-3 items-end h-52">
-                <div className="flex flex-col justify-between h-full text-right pr-1 flex-shrink-0 pb-5">
-                  {[...ticks].reverse().map(t => (
-                    <span key={t} className="text-[10px] text-gray-400 leading-none">{t}</span>
-                  ))}
-                </div>
-                <div className="flex-1 flex items-end gap-3 h-full">
-                  {volumePorFase.map(item => (
-                    <div key={item.label} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                      <div
-                        className="w-full bg-primary-500 dark:bg-primary-600 rounded-sm transition-all duration-500 min-h-[2px]"
-                        style={{ height: `${Math.max((item.value / max) * 100, 2)}%` }}
-                      />
-                      <span className="text-[10px] text-gray-500 dark:text-gray-400 truncate w-full text-center pb-1">
-                        {item.label.length > 12 ? item.label.slice(0, 10) + '…' : item.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )
-          })()}
-        </Card>
-
-        {/* Meta de fechamentos */}
-        <Card className="p-4 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm font-semibold text-gray-800 dark:text-white">Meta de fechamentos</p>
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-gray-400" />
-              {tenant?.meta_fechamentos_mensal && !editingMeta && (
-                <button
-                  onClick={() => { setMetaInput(String(tenant.meta_fechamentos_mensal)); setEditingMeta(true) }}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  title="Editar meta"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex-1 flex items-center justify-center">
-            {editingMeta ? (
-              <div className="w-full space-y-3">
-                <label className="block text-xs text-gray-500 dark:text-gray-400">Quantos fechamentos (ganhos + perdidos) por mês é a meta do escritório?</label>
-                <input
-                  type="number" min={1} value={metaInput} onChange={e => setMetaInput(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500"
-                  placeholder="Ex: 10" autoFocus
-                />
-                <div className="flex gap-2">
-                  <button onClick={saveMeta} disabled={savingMeta || !metaInput} className="flex-1 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
-                    {savingMeta ? 'Salvando...' : 'Salvar meta'}
-                  </button>
-                  <button onClick={() => setEditingMeta(false)} className="px-3 py-2 rounded-lg border border-gray-200 dark:border-dark-600 text-xs text-gray-500 hover:bg-gray-50 dark:hover:bg-dark-700">Cancelar</button>
-                </div>
-              </div>
-            ) : tenant?.meta_fechamentos_mensal ? (() => {
-              const meta = tenant.meta_fechamentos_mensal
-              const pct = Math.min(Math.round((stats.fechamentosThisMonth / meta) * 100), 100)
-              return (
-                <div className="w-full">
-                  <div className="flex items-end justify-between mb-2">
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.fechamentosThisMonth}<span className="text-sm font-medium text-gray-400"> / {meta}</span></p>
-                    <span className={cn('text-xs font-semibold', pct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : 'text-primary-600 dark:text-primary-400')}>{pct}%</span>
-                  </div>
-                  <div className="w-full h-2.5 rounded-full bg-gray-100 dark:bg-dark-700 overflow-hidden">
-                    <div className={cn('h-full rounded-full transition-all', pct >= 100 ? 'bg-emerald-500' : 'bg-primary-500')} style={{ width: `${pct}%` }} />
-                  </div>
-                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Fechamentos deste mês vs. meta mensal</p>
-                </div>
-              )
-            })() : (
-              <div className="bg-gray-50 dark:bg-dark-700/50 rounded-xl p-5 text-center">
-                <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
-                  Você ainda não configurou as metas do seu escritório.{' '}
-                  <button onClick={() => { setMetaInput(''); setEditingMeta(true) }} className="text-primary-600 dark:text-primary-400 hover:underline font-medium">Clique aqui</button>{' '}
-                  para configurar.
-                </p>
-              </div>
-            )}
-          </div>
         </Card>
       </div>
 
