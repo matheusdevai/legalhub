@@ -245,7 +245,6 @@ Deno.serve(async (req: Request) => {
           title: parteNome ? `${movimento.nome} - ${parteNome}` : movimento.nome,
           client_name: parteNome,
           court: item.nomeOrgao || null,
-          area: item.siglaTribunal || null,
           status: 'active',
           priority: 'medium',
           cnj_source: true,

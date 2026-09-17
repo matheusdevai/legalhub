@@ -402,7 +402,7 @@ async function syncPjeForProfile(supabase: any, profile: Profile): Promise<SyncO
       const { error } = await supabase.from('processes').insert({
         tenant_id: profile.tenant_id, number: num,
         title: parteNome ? `${movimento.nome} - ${parteNome}` : movimento.nome,
-        client_name: parteNome, court: item.nomeOrgao || null, area: item.siglaTribunal || null,
+        client_name: parteNome, court: item.nomeOrgao || null,
         status: 'active', priority: 'medium', cnj_source: true, cnj_synced_at: now, movimentos: [movimento],
       })
       if (error) errors.push(`PJe insert ${num}: ${error.message}`); else imported++
