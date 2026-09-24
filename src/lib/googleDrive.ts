@@ -120,7 +120,20 @@ export async function connectDrive(uid: string, opts?: { silent?: boolean }): Pr
   })
 }
 
+/**
+ * Revoga a concessão OAuth do lado do Google (best-effort — se a lib GIS não
+ * estiver carregada ou a chamada falhar, ainda assim limpa o token local, pra
+ * "Desconectar" nunca travar por causa de um problema de rede/terceiro) e
+ * depois limpa o token local.
+ */
 export function disconnectDrive(uid: string) {
+  const token = getStoredToken(uid)
+  if (token) {
+    try {
+      const g = (window as any).google
+      g?.accounts?.oauth2?.revoke(token, () => {})
+    } catch { /* best-effort — segue pra limpar o storage local mesmo assim */ }
+  }
   clearToken(uid)
 }
 
