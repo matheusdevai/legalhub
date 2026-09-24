@@ -36,6 +36,35 @@ export function isDriveFolder(item: DriveItem) {
   return item.mimeType === FOLDER_MIME
 }
 
+/**
+ * Ids de todas as subpastas (recursivo) de `folderId`, a partir de uma lista
+ * flat de pastas (cada uma com `parents`). Usado pra bloquear ciclos no
+ * "mover pasta": não dá pra mover uma pasta pra dentro dela mesma nem de uma
+ * das suas próprias descendentes.
+ */
+export function getDescendantFolderIds(folders: DriveItem[], folderId: string): Set<string> {
+  const childrenByParent = new Map<string, string[]>()
+  for (const f of folders) {
+    for (const parentId of f.parents || []) {
+      const siblings = childrenByParent.get(parentId) || []
+      siblings.push(f.id)
+      childrenByParent.set(parentId, siblings)
+    }
+  }
+  const descendants = new Set<string>()
+  const queue = [folderId]
+  while (queue.length) {
+    const current = queue.shift()!
+    for (const childId of childrenByParent.get(current) || []) {
+      if (!descendants.has(childId)) {
+        descendants.add(childId)
+        queue.push(childId)
+      }
+    }
+  }
+  return descendants
+}
+
 export class DriveApiError extends Error {
   status: number
   constructor(message: string, status: number) {

@@ -10,10 +10,11 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn, sanitizeFileName } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
+import { toast } from '@/components/ui/Toast'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { getTenantStorageQuotaBytes } from '@/lib/storageUtils'
 import {
-  DriveItem, isDriveFolder, DriveApiError,
+  DriveItem, isDriveFolder, DriveApiError, getDescendantFolderIds,
   getStoredToken as getStoredDriveToken, getStoredEmail as getStoredDriveEmail, wasConnected as wasDriveConnected,
   connectDrive, disconnectDrive, ensureRootFolder, listChildren as listDriveChildren, listAllFolders,
   createFolder as createDriveFolderApi, renameItem as renameDriveItemApi, moveItem as moveDriveItemApi,
@@ -163,9 +164,12 @@ export function EscritorioDigitalPage() {
   useEffect(() => {
     if (!uid || driveToken) return
     if (!wasDriveConnected(uid)) return
+    let cancelled = false
     connectDrive(uid, { silent: true }).then(({ token, email }) => {
+      if (cancelled) return
       setDriveToken(token); setDriveEmail(email)
     }).catch(() => { /* silencioso: usuário precisa clicar "Conectar" de novo */ })
+    return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid])
 
@@ -188,10 +192,11 @@ export function EscritorioDigitalPage() {
       disconnectDrive(uid)
       setDriveToken(null); setDriveEmail(null); setDriveRootId(null)
       setDriveError('Sua conexão com o Google Drive expirou. Reconecte para continuar.')
+      toast('Sua conexão com o Google Drive expirou. Reconecte para continuar.', 'error')
       return
     }
     const message = err instanceof Error ? err.message : 'Erro desconhecido'
-    setDriveError(`${prefix}: ${message}`)
+    toast(`${prefix}: ${message}`, 'error')
   }
 
   // Ao conectar (ou restaurar token), garante a pasta raiz e carrega o conteúdo
@@ -226,7 +231,8 @@ export function EscritorioDigitalPage() {
       const { token, email } = await connectDrive(uid)
       setDriveToken(token); setDriveEmail(email)
     } catch (err) {
-      setDriveError(err instanceof Error ? err.message : 'Erro ao conectar com o Google Drive')
+      const message = err instanceof Error ? err.message : 'Erro ao conectar com o Google Drive'
+      toast(`Erro ao conectar com o Google Drive: ${message}`, 'error')
     } finally {
       setDriveConnecting(false)
     }
@@ -302,7 +308,13 @@ export function EscritorioDigitalPage() {
     if (!driveToken) return
     try {
       const folders = await listAllFolders(driveToken)
-      setMoveFolders(folders.filter(f => f.id !== item.id))
+      // Bloqueia a própria pasta e qualquer descendente dela como destino —
+      // mover pra dentro de si mesma ou de uma subpasta criaria um ciclo.
+      const blocked = new Set<string>([item.id])
+      if (isDriveFolder(item)) {
+        for (const id of getDescendantFolderIds(folders, item.id)) blocked.add(id)
+      }
+      setMoveFolders(folders.filter(f => !blocked.has(f.id)))
     } catch (err) {
       handleDriveError(err, 'Erro ao listar pastas do Google Drive')
     }
