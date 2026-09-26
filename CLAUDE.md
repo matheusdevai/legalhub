@@ -146,7 +146,28 @@ escopo dessa limpeza).
 ```
 VITE_SUPABASE_URL
 VITE_SUPABASE_ANON_KEY
+VITE_GOOGLE_CLIENT_ID   — OAuth client (Google Cloud Console) compartilhado por Google
+                          Calendar (CalendarPage.tsx) e Google Drive (googleDrive.ts,
+                          aba "Google Drive" do Escritório Digital)
 ```
+
+### Google Calendar / Google Drive — OAuth 100% client-side, sem Edge Function
+Ambas as integrações (`CalendarPage.tsx` e `src/lib/googleDrive.ts`) usam Google Identity
+Services (`google.accounts.oauth2.initTokenClient`) direto no navegador — sem redirect_uri,
+sem code exchange, sem client_secret, sem Edge Function. O `access_token` fica em
+`sessionStorage` por usuário (~1h) e nunca passa pelo backend. Isso significa que um erro
+"ao voltar do Google" NUNCA vai aparecer em log de Edge Function/Supabase — é sempre um erro
+do navegador (visível em `driveError`/`gMsg` na tela, ou no toast).
+Mesmo `VITE_GOOGLE_CLIENT_ID` (mesmo projeto no Google Cloud) serve as duas features, mas
+cada uma exige sua própria API habilitada em "APIs e Serviços → Biblioteca" nesse projeto:
+Calendar precisa da **Google Calendar API**, Drive precisa da **Google Drive API** — habilitar
+uma não habilita a outra. Sintoma clássico de esquecer isso: o consentimento OAuth passa
+normalmente (client ID/origens/tela de consentimento já configurados pro Calendar), mas a
+primeira chamada REST da feature nova (ex.: `ensureRootFolder` do Drive, logo após conectar)
+volta 403 "Access Not Configured / API has not been used in project ... or it is disabled".
+Outros pontos que quebram o mesmo fluxo sem gerar log nenhum: origem JavaScript autorizada
+faltando pro domínio de produção, ou (app em modo "Teste" na tela de consentimento OAuth)
+usuário não cadastrado em "Test users".
 
 ## Storage Supabase
 - Bucket `avatars` (público, policy aberta). Upload via `supabase.storage.from('avatars').upload(path, file)` → URL pública com `getPublicUrl`.

@@ -232,6 +232,7 @@ export function EscritorioDigitalPage() {
       setDriveToken(token); setDriveEmail(email)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Erro ao conectar com o Google Drive'
+      setDriveError(message)
       toast(`Erro ao conectar com o Google Drive: ${message}`, 'error')
     } finally {
       setDriveConnecting(false)
