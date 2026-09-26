@@ -8,8 +8,12 @@
 // expira em ~1h e precisa de reconexão manual depois disso.
 //
 // Escopo: drive.file (restrito — só enxerga arquivos/pastas que o próprio app
-// cria). Por isso toda navegação parte de uma pasta raiz "LegalHub" que o app
-// cria na primeira conexão de cada usuário (ver ensureRootFolder).
+// cria ou que o usuário escolheu explicitamente via Picker). Por isso toda
+// navegação "nativa" parte de uma pasta raiz "LegalHub" que o app cria na
+// primeira conexão de cada usuário (ver ensureRootFolder). Itens escolhidos no
+// resto do Drive do usuário (ver seção "Picker" abaixo) entram nessa mesma
+// pasta como atalhos (shortcutDetails) — mantém o escopo drive.file intacto
+// (nunca lemos o Drive inteiro do usuário) e reaproveita 100% da UI existente.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
@@ -18,8 +22,9 @@ export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files'
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
+const SHORTCUT_MIME = 'application/vnd.google-apps.shortcut'
 const ROOT_FOLDER_NAME = 'LegalHub'
-const DRIVE_FIELDS = 'id,name,mimeType,size,modifiedTime,iconLink,webViewLink,parents'
+const DRIVE_FIELDS = 'id,name,mimeType,size,modifiedTime,iconLink,webViewLink,parents,shortcutDetails(targetId,targetMimeType)'
 
 export interface DriveItem {
   id: string
@@ -30,10 +35,30 @@ export interface DriveItem {
   iconLink?: string
   webViewLink?: string
   parents?: string[]
+  shortcutDetails?: { targetId: string; targetMimeType?: string }
+}
+
+export function isShortcut(item: DriveItem) {
+  return item.mimeType === SHORTCUT_MIME
+}
+
+/** Mimetype "efetivo": o do próprio item, ou o do alvo quando o item é um atalho. */
+export function effectiveMimeType(item: DriveItem): string | undefined {
+  return item.shortcutDetails?.targetMimeType || item.mimeType
+}
+
+/** Id "efetivo" pra abrir/baixar/navegar: o do alvo quando o item é um atalho, senão o próprio id. */
+export function resolveTargetId(item: DriveItem): string {
+  return item.shortcutDetails?.targetId || item.id
+}
+
+/** Id de pasta a usar como parent em listagem/criação/upload — resolve atalho de pasta pro id real. */
+export function resolveFolderId(folder: DriveItem | null, fallback: string): string {
+  return folder ? resolveTargetId(folder) : fallback
 }
 
 export function isDriveFolder(item: DriveItem) {
-  return item.mimeType === FOLDER_MIME
+  return effectiveMimeType(item) === FOLDER_MIME
 }
 
 /**
@@ -285,7 +310,7 @@ export async function uploadFile(token: string, file: File, parentId: string): P
 
 /** Baixa o conteúdo do arquivo via alt=media (autenticado com o token) e dispara o download no navegador. */
 export async function downloadFile(token: string, item: DriveItem): Promise<void> {
-  const res = await fetch(`${DRIVE_API}/files/${item.id}?alt=media`, { headers: { Authorization: `Bearer ${token}` } })
+  const res = await fetch(`${DRIVE_API}/files/${resolveTargetId(item)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) throw new DriveApiError(`Falha ao baixar (HTTP ${res.status})`, res.status)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -297,5 +322,117 @@ export async function downloadFile(token: string, item: DriveItem): Promise<void
 
 /** URL de preview embutível do próprio Drive (usa a sessão logada do Google no navegador). */
 export function getPreviewUrl(item: DriveItem) {
-  return `https://drive.google.com/file/d/${item.id}/preview`
+  return `https://drive.google.com/file/d/${resolveTargetId(item)}/preview`
+}
+
+/**
+ * Cria um atalho (shortcutDetails) dentro de `parentId` apontando pra
+ * `targetId` — usado pra "trazer" um item escolhido no Picker (fora do
+ * escopo drive.file original) pra dentro da pasta "LegalHub". O escopo
+ * drive.file concede acesso ao próprio atalho e ao arquivo/pasta alvo (o
+ * Picker já garantiu esse acesso no momento da escolha); excluir o atalho
+ * depois (trashItem) nunca afeta o arquivo original do usuário.
+ */
+export async function createShortcut(token: string, targetId: string, parentId: string, name: string): Promise<DriveItem> {
+  return driveRequest(`/files?fields=${DRIVE_FIELDS}`, token, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name,
+      mimeType: SHORTCUT_MIME,
+      parents: [parentId],
+      shortcutDetails: { targetId },
+    }),
+  })
+}
+
+// ─── Google Picker ─────────────────────────────────────────────────────────
+// Deixa o usuário escolher arquivos/pastas de QUALQUER lugar do próprio Drive
+// (não só o que o app já criou) sem alargar o escopo OAuth: o Picker roda com
+// o mesmo access_token de drive.file, e o próprio ato de escolher um item
+// nesse widget concede ao app acesso drive.file aquele item específico (é o
+// mecanismo oficial do Google pra "afrouxar" drive.file sem pedir o escopo
+// amplo `drive.readonly`/`drive`). Requer developer key (API key restrita) +
+// appId (número do projeto GCP) — ver isPickerConfigured().
+const PICKER_API_KEY = import.meta.env.VITE_GOOGLE_API_KEY as string | undefined
+const PICKER_APP_ID = import.meta.env.VITE_GOOGLE_APP_ID as string | undefined
+
+export function isPickerConfigured(): boolean {
+  return !!PICKER_API_KEY && !!PICKER_APP_ID
+}
+
+export interface PickerSelection {
+  id: string
+  name: string
+  mimeType: string
+}
+
+/**
+ * Extrai a seleção de um callback do Google Picker — função pura (sem
+ * dependência do `window.google`), testável isoladamente com um fixture da
+ * resposta real da lib (`{ action, docs: [{ id, name, mimeType, ... }] }`).
+ */
+export function extractPickerSelection(data: unknown): PickerSelection[] {
+  const d = data as { action?: string; docs?: Array<{ id?: string; name?: string; mimeType?: string }> } | null | undefined
+  if (!d || d.action !== 'picked' || !Array.isArray(d.docs)) return []
+  return d.docs
+    .filter((doc): doc is { id: string; name: string; mimeType: string } => !!doc?.id && !!doc?.name && !!doc?.mimeType)
+    .map(doc => ({ id: doc.id, name: doc.name, mimeType: doc.mimeType }))
+}
+
+function loadPickerLib(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const g = () => (window as any).google
+    const gapi = () => (window as any).gapi
+    if (g()?.picker) { resolve(); return }
+    const onGapiReady = () => {
+      gapi().load('picker', { callback: () => resolve(), onerror: () => reject(new Error('Falha ao carregar o Google Picker')) })
+    }
+    if (gapi()) { onGapiReady(); return }
+    if (!document.getElementById('gapi-script')) {
+      const s = document.createElement('script')
+      s.id = 'gapi-script'; s.src = 'https://apis.google.com/js/api.js'; s.async = true; s.defer = true
+      s.onload = onGapiReady
+      s.onerror = () => reject(new Error('Falha ao carregar a biblioteca do Google API'))
+      document.body.appendChild(s)
+    } else {
+      const interval = setInterval(() => { if (gapi()) { clearInterval(interval); onGapiReady() } }, 100)
+      setTimeout(() => { clearInterval(interval); if (!gapi()) reject(new Error('Falha ao carregar a biblioteca do Google API')) }, 10_000)
+    }
+  })
+}
+
+/**
+ * Abre o Google Picker (DocsView com pastas navegáveis/selecionáveis,
+ * multi-seleção) usando o access_token já obtido em connectDrive. Resolve com
+ * a lista escolhida (vazia se o usuário cancelar).
+ */
+export async function openDrivePicker(token: string): Promise<PickerSelection[]> {
+  if (!isPickerConfigured()) {
+    throw new Error('Google Picker não configurado: faltam as variáveis VITE_GOOGLE_API_KEY / VITE_GOOGLE_APP_ID.')
+  }
+  await loadPickerLib()
+  const google = (window as any).google
+  return new Promise((resolve, reject) => {
+    try {
+      const docsView = new google.picker.DocsView(google.picker.ViewId.DOCS)
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(true)
+
+      const picker = new google.picker.PickerBuilder()
+        .addView(docsView)
+        .setOAuthToken(token)
+        .setDeveloperKey(PICKER_API_KEY)
+        .setAppId(PICKER_APP_ID)
+        .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+        .setCallback((data: any) => {
+          if (data.action === google.picker.Action.PICKED) resolve(extractPickerSelection(data))
+          else if (data.action === google.picker.Action.CANCEL) resolve([])
+        })
+        .build()
+      picker.setVisible(true)
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error('Erro ao abrir o Google Picker'))
+    }
+  })
 }

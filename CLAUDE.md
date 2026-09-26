@@ -149,6 +149,10 @@ VITE_SUPABASE_ANON_KEY
 VITE_GOOGLE_CLIENT_ID   — OAuth client (Google Cloud Console) compartilhado por Google
                           Calendar (CalendarPage.tsx) e Google Drive (googleDrive.ts,
                           aba "Google Drive" do Escritório Digital)
+VITE_GOOGLE_API_KEY     — developer key do Google Picker (aba "Google Drive" →
+                          botão "Adicionar do meu Drive"). Ver seção própria abaixo.
+VITE_GOOGLE_APP_ID      — número do projeto GCP (não o client ID), exigido pelo Picker
+                          junto com VITE_GOOGLE_API_KEY.
 ```
 
 ### Google Calendar / Google Drive — OAuth 100% client-side, sem Edge Function
@@ -168,6 +172,41 @@ volta 403 "Access Not Configured / API has not been used in project ... or it is
 Outros pontos que quebram o mesmo fluxo sem gerar log nenhum: origem JavaScript autorizada
 faltando pro domínio de produção, ou (app em modo "Teste" na tela de consentimento OAuth)
 usuário não cadastrado em "Test users".
+
+### Google Drive — escopo `drive.file` + Google Picker (atalhos)
+`googleDrive.ts` usa só o escopo `drive.file` (o app só enxerga o que ele mesmo cria, dentro da
+pasta raiz "LegalHub" — nunca o Drive inteiro do usuário). Pra deixar o usuário trazer arquivos/
+pastas que já existiam no Drive dele sem alargar esse escopo, a aba "Google Drive" do Escritório
+Digital tem o botão "Adicionar do meu Drive", que abre o **Google Picker**
+(`https://apis.google.com/js/api.js` + `gapi.load('picker')`, carregado sob demanda em
+`loadPickerLib()`) com uma `DocsView` (`setIncludeFolders`/`setSelectFolderEnabled`, seleção
+múltipla) usando o mesmo `access_token` de `connectDrive`. O próprio ato de escolher um item no
+Picker é o mecanismo oficial do Google pra conceder acesso `drive.file` àquele item específico,
+sem precisar do escopo amplo `drive.readonly`/`drive`.
+
+Cada item escolhido vira um **atalho** (`files.create` com `mimeType: application/vnd.google-apps.shortcut`
++ `shortcutDetails.targetId`) dentro da pasta atual do LegalHub — não uma cópia. Toda a UI/navegação
+existente (`isDriveFolder`, `DriveFileIcon`, download, preview, mover, listar filhos) resolve o
+atalho pro id/mimetype do alvo via `effectiveMimeType()`/`resolveTargetId()`/`resolveFolderId()`
+(`googleDrive.ts`) — abrir uma pasta-atalho navega (`listChildren`) pelo id real da pasta-alvo, e
+baixar/pré-visualizar um arquivo-atalho busca o conteúdo do id real. Excluir ("lixeira") um atalho
+sempre remove só a referência dentro do LegalHub (`trashItem` no id do próprio atalho) — nunca o
+arquivo/pasta original do usuário no Drive; a UI deixa isso explícito no texto de confirmação
+("Remover atalho" em vez de "Excluir"). Atalhos são identificáveis na UI por um ícone
+`FolderSymlink` sobreposto/inline.
+
+Pré-requisitos do Picker (além do `VITE_GOOGLE_CLIENT_ID` já usado pelo OAuth):
+1. Ativar a **Google Picker API** em "APIs e Serviços → Biblioteca" no mesmo projeto GCP do
+   `VITE_GOOGLE_CLIENT_ID`.
+2. Criar uma **API key** em "APIs e Serviços → Credenciais", restrita por HTTP referrer ao domínio
+   de produção (`https://legalhubgestor.vercel.app/*`, + `http://localhost:5173/*` em dev) e por
+   API à Picker API — vira `VITE_GOOGLE_API_KEY`.
+3. `VITE_GOOGLE_APP_ID` é o **número do projeto** GCP (Project number, não o Project ID nem o
+   client ID) — aparece em "Configurações do projeto" no Console.
+4. Cadastrar as duas envs na Vercel (Production + Preview) e redeployar.
+Sem essas envs, `isPickerConfigured()` retorna `false`: o botão "Adicionar do meu Drive" fica
+desabilitado com tooltip explicando o que falta, e `openDrivePicker()` lança erro claro em vez de
+quebrar silenciosamente — o resto do app (drive.file nativo) continua funcionando normalmente.
 
 ## Storage Supabase
 - Bucket `avatars` (público, policy aberta). Upload via `supabase.storage.from('avatars').upload(path, file)` → URL pública com `getPublicUrl`.

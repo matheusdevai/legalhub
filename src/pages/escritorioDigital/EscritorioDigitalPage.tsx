@@ -2,7 +2,7 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useState } from 'react'
 import {
   Folder, FolderPlus, Upload, ChevronRight, Trash2, Download, File, FileText, Image, X, HardDrive, Home, LayoutGrid, List,
-  Link2Off, RefreshCw, Loader, CheckCircle, Pencil, FolderInput, AlertCircle,
+  Link2Off, RefreshCw, Loader, CheckCircle, Pencil, FolderInput, AlertCircle, FolderSymlink,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Modal, Input, Select, Spinner, EmptyState, Button } from '@/components/ui'
@@ -14,11 +14,12 @@ import { toast } from '@/components/ui/Toast'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { getTenantStorageQuotaBytes } from '@/lib/storageUtils'
 import {
-  DriveItem, isDriveFolder, DriveApiError, getDescendantFolderIds,
+  DriveItem, isDriveFolder, isShortcut as isDriveShortcut, effectiveMimeType as effectiveDriveMimeType, DriveApiError, getDescendantFolderIds,
   getStoredToken as getStoredDriveToken, getStoredEmail as getStoredDriveEmail, wasConnected as wasDriveConnected,
   connectDrive, disconnectDrive, ensureRootFolder, listChildren as listDriveChildren, listAllFolders,
   createFolder as createDriveFolderApi, renameItem as renameDriveItemApi, moveItem as moveDriveItemApi,
   trashItem as trashDriveItemApi, uploadFile as uploadDriveFileApi, downloadFile as downloadDriveFileApi, getPreviewUrl as getDrivePreviewUrl,
+  resolveFolderId as resolveDriveFolderId, openDrivePicker, createShortcut as createDriveShortcutApi, isPickerConfigured,
 } from '@/lib/googleDrive'
 
 interface FolderRow {
@@ -64,8 +65,9 @@ function FileIcon({ mime }: { mime?: string }) {
 
 function DriveFileIcon({ item }: { item: DriveItem }) {
   if (isDriveFolder(item)) return <Folder className="w-8 h-8 text-primary-400" fill="currentColor" fillOpacity={0.15} />
-  const isImage = item.mimeType?.startsWith('image/')
-  const isPdf = item.mimeType === 'application/pdf'
+  const mime = effectiveDriveMimeType(item)
+  const isImage = mime?.startsWith('image/')
+  const isPdf = mime === 'application/pdf'
   const color = isPdf ? 'text-red-500' : isImage ? 'text-purple-500' : 'text-gray-400'
   if (isImage) return <Image className={cn('w-8 h-8', color)} />
   if (isPdf) return <FileText className={cn('w-8 h-8', color)} />
@@ -149,8 +151,12 @@ export function EscritorioDigitalPage() {
   const [moving, setMoving] = useState(false)
 
   const [drivePreviewItem, setDrivePreviewItem] = useState<DriveItem | null>(null)
+  const [pickerLoading, setPickerLoading] = useState(false)
 
   const driveCurrentFolder = drivePath[drivePath.length - 1] || null
+  // Resolve atalho de pasta (vindo do Picker) pro id real da pasta-alvo — toda
+  // navegação/criação/upload usa esse id, nunca o id do atalho em si.
+  const driveCurrentFolderId = resolveDriveFolderId(driveCurrentFolder, driveRootId || '')
   const driveConnected = !!driveToken
 
   // Restaura token salvo (sessionStorage sobrevive a navegação entre páginas, não a fechar a aba)
@@ -210,7 +216,7 @@ export function EscritorioDigitalPage() {
         const rootId = driveRootId || await ensureRootFolder(driveToken, uid)
         if (cancelled) return
         setDriveRootId(rootId)
-        const target = driveCurrentFolder?.id || rootId
+        const target = driveCurrentFolder ? resolveDriveFolderId(driveCurrentFolder, rootId) : rootId
         const items = await listDriveChildren(driveToken, target)
         if (!cancelled) setDriveItems(items)
       } catch (err) {
@@ -249,13 +255,43 @@ export function EscritorioDigitalPage() {
     setDrivePath(p => [...p, folder])
   }
 
+  /**
+   * Abre o Google Picker pra escolher qualquer arquivo/pasta do Drive do
+   * usuário (fora do que o app já criou) e cria um atalho pra cada item
+   * escolhido dentro da pasta atual — mantém o escopo drive.file (nunca lemos
+   * o Drive inteiro) e reaproveita a UI/navegação existente pros atalhos.
+   */
+  async function addFromMyDrive() {
+    if (!driveToken) return
+    if (!isPickerConfigured()) {
+      toast('Seletor do Google Drive não configurado. Peça para o administrador cadastrar VITE_GOOGLE_API_KEY e VITE_GOOGLE_APP_ID.', 'error')
+      return
+    }
+    const parentId = driveCurrentFolderId
+    if (!parentId) return
+    setPickerLoading(true)
+    try {
+      const selection = await openDrivePicker(driveToken)
+      if (!selection.length) return
+      for (const doc of selection) {
+        await createDriveShortcutApi(driveToken, doc.id, parentId, doc.name)
+      }
+      toast(`${selection.length} ${selection.length === 1 ? 'item adicionado' : 'itens adicionados'} do seu Google Drive`, 'success')
+      loadDriveChildren(parentId)
+    } catch (err) {
+      handleDriveError(err, 'Erro ao adicionar itens do Google Drive')
+    } finally {
+      setPickerLoading(false)
+    }
+  }
+
   function goToDriveBreadcrumb(index: number) {
     setDrivePath(p => p.slice(0, index + 1))
   }
 
   async function createDriveFolderSubmit() {
     if (!driveToken || !driveNewFolderName.trim()) return
-    const parentId = driveCurrentFolder?.id || driveRootId
+    const parentId = driveCurrentFolderId
     if (!parentId) return
     setDriveSavingFolder(true)
     try {
@@ -271,7 +307,7 @@ export function EscritorioDigitalPage() {
 
   async function uploadIntoDriveFolder() {
     if (!driveToken || !driveUploadFile) return
-    const parentId = driveCurrentFolder?.id || driveRootId
+    const parentId = driveCurrentFolderId
     if (!parentId) return
     setDriveUploading(true)
     setDriveUploadError('')
@@ -296,7 +332,7 @@ export function EscritorioDigitalPage() {
     try {
       await renameDriveItemApi(driveToken, renameTarget.id, renameValue.trim())
       setRenameTarget(null)
-      loadDriveChildren(driveCurrentFolder?.id || driveRootId!)
+      loadDriveChildren(driveCurrentFolderId)
     } catch (err) {
       handleDriveError(err, 'Erro ao renomear')
     } finally {
@@ -313,7 +349,7 @@ export function EscritorioDigitalPage() {
       // mover pra dentro de si mesma ou de uma subpasta criaria um ciclo.
       const blocked = new Set<string>([item.id])
       if (isDriveFolder(item)) {
-        for (const id of getDescendantFolderIds(folders, item.id)) blocked.add(id)
+        for (const id of getDescendantFolderIds(folders, resolveDriveFolderId(item, item.id))) blocked.add(id)
       }
       setMoveFolders(folders.filter(f => !blocked.has(f.id)))
     } catch (err) {
@@ -323,12 +359,12 @@ export function EscritorioDigitalPage() {
 
   async function submitMove() {
     if (!driveToken || !moveTarget || !moveDestination) return
-    const oldParentId = moveTarget.parents?.[0] || driveCurrentFolder?.id || driveRootId!
+    const oldParentId = moveTarget.parents?.[0] || driveCurrentFolderId
     setMoving(true)
     try {
       await moveDriveItemApi(driveToken, moveTarget.id, moveDestination, oldParentId)
       setMoveTarget(null)
-      loadDriveChildren(driveCurrentFolder?.id || driveRootId!)
+      loadDriveChildren(driveCurrentFolderId)
     } catch (err) {
       handleDriveError(err, 'Erro ao mover')
     } finally {
@@ -338,13 +374,18 @@ export function EscritorioDigitalPage() {
 
   async function deleteDriveItem(item: DriveItem) {
     if (!driveToken) return
-    const label = isDriveFolder(item) ? 'pasta' : 'arquivo'
-    if (!(await confirmDialog(`Enviar "${item.name}" para a lixeira do Google Drive?`, { danger: true }))) return
+    // Atalho (vindo do Picker): a lixeira remove só a referência dentro do
+    // LegalHub, nunca o arquivo/pasta original do usuário no Drive.
+    if (isDriveShortcut(item)) {
+      if (!(await confirmDialog(`Remover o atalho "${item.name}" desta pasta? O arquivo original no seu Drive não é afetado.`, { danger: true }))) return
+    } else {
+      if (!(await confirmDialog(`Enviar "${item.name}" para a lixeira do Google Drive?`, { danger: true }))) return
+    }
     try {
       await trashDriveItemApi(driveToken, item.id)
-      loadDriveChildren(driveCurrentFolder?.id || driveRootId!)
+      loadDriveChildren(driveCurrentFolderId)
     } catch (err) {
-      handleDriveError(err, `Erro ao excluir ${label}`)
+      handleDriveError(err, isDriveShortcut(item) ? 'Erro ao remover atalho' : `Erro ao excluir ${isDriveFolder(item) ? 'pasta' : 'arquivo'}`)
     }
   }
 
@@ -730,6 +771,13 @@ export function EscritorioDigitalPage() {
               <Button variant="secondary" size="sm" onClick={() => { setDriveUploadFile(null); setDriveUploadError(''); setDriveUploadOpen(true) }}>
                 <Upload className="w-4 h-4" /> Enviar arquivo
               </Button>
+              <Button
+                variant="secondary" size="sm" onClick={addFromMyDrive} loading={pickerLoading}
+                disabled={!isPickerConfigured()}
+                title={isPickerConfigured() ? undefined : 'Configure VITE_GOOGLE_API_KEY e VITE_GOOGLE_APP_ID para habilitar o seletor do Google Drive'}
+              >
+                <GIcon className="w-4 h-4" /> Adicionar do meu Drive
+              </Button>
               <div className="ml-auto flex items-center rounded-lg border border-gray-200 dark:border-dark-600 overflow-hidden">
                 <button onClick={() => setViewMode('icons')} className={cn('p-1.5 transition-colors', viewMode === 'icons' ? 'bg-primary-600 text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-dark-700')} title="Visualizar em ícones">
                   <LayoutGrid className="w-4 h-4" />
@@ -752,11 +800,12 @@ export function EscritorioDigitalPage() {
                     <button onClick={() => openDriveFolder(item)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                       <DriveFileIcon item={item} />
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{item.name}</span>
+                      {isDriveShortcut(item) && <FolderSymlink className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" aria-label="Atalho do meu Drive" />}
                     </button>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                       <button onClick={() => openRenameModal(item)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-600 transition-colors" title="Renomear"><Pencil className="w-3.5 h-3.5" /></button>
                       <button onClick={() => openMoveModal(item)} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-600 transition-colors" title="Mover"><FolderInput className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => deleteDriveItem(item)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Excluir"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => deleteDriveItem(item)} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title={isDriveShortcut(item) ? 'Remover atalho' : 'Excluir'}><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                 ))}
@@ -764,14 +813,17 @@ export function EscritorioDigitalPage() {
                   <div key={item.id} className="group flex items-center gap-3 px-4 py-2 hover:bg-gray-50 dark:hover:bg-dark-700/40 transition-colors cursor-pointer" onClick={() => setDrivePreviewItem(item)}>
                     <DriveFileIcon item={item} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">{item.name}</p>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate flex items-center gap-1.5">
+                        {item.name}
+                        {isDriveShortcut(item) && <FolderSymlink className="w-3 h-3 text-gray-400 flex-shrink-0" aria-label="Atalho do meu Drive" />}
+                      </p>
                       <p className="text-xs text-gray-400">{formatFileSize(item.size ? Number(item.size) : undefined)}</p>
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                       <button onClick={e => { e.stopPropagation(); downloadDriveItemClick(item) }} className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors" title="Baixar"><Download className="w-3.5 h-3.5" /></button>
                       <button onClick={e => { e.stopPropagation(); openRenameModal(item) }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-600 transition-colors" title="Renomear"><Pencil className="w-3.5 h-3.5" /></button>
                       <button onClick={e => { e.stopPropagation(); openMoveModal(item) }} className="p-1.5 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-dark-600 transition-colors" title="Mover"><FolderInput className="w-3.5 h-3.5" /></button>
-                      <button onClick={e => { e.stopPropagation(); deleteDriveItem(item) }} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title="Excluir"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={e => { e.stopPropagation(); deleteDriveItem(item) }} className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors" title={isDriveShortcut(item) ? 'Remover atalho' : 'Excluir'}><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                 ))}
@@ -783,10 +835,15 @@ export function EscritorioDigitalPage() {
                     <div className="relative w-full">
                       <button onClick={() => openDriveFolder(item)} className="relative w-full aspect-square rounded-xl border border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-700 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-lg transition-all flex items-center justify-center">
                         <Folder className="w-10 h-10 text-primary-400" fill="currentColor" fillOpacity={0.15} />
+                        {isDriveShortcut(item) && (
+                          <span className="absolute bottom-1.5 left-1.5 p-1 bg-white/90 dark:bg-dark-800/90 rounded-md" title="Atalho do meu Drive">
+                            <FolderSymlink className="w-3 h-3 text-gray-500" />
+                          </span>
+                        )}
                       </button>
                       <div className="absolute top-1.5 right-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button onClick={() => openRenameModal(item)} className="p-1.5 bg-white/90 rounded-lg text-gray-600 hover:bg-white transition-opacity" title="Renomear"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => deleteDriveItem(item)} className="p-1.5 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-opacity" title="Excluir"><Trash2 className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => deleteDriveItem(item)} className="p-1.5 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-opacity" title={isDriveShortcut(item) ? 'Remover atalho' : 'Excluir'}><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     </div>
                     <button onClick={() => openDriveFolder(item)} className="mt-2 text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight line-clamp-2 text-center hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
@@ -798,10 +855,15 @@ export function EscritorioDigitalPage() {
                   <div key={item.id} className="group flex flex-col items-center">
                     <div onClick={() => setDrivePreviewItem(item)} className="relative w-full aspect-square rounded-xl border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-800 hover:border-primary-300 dark:hover:border-primary-600 hover:shadow-lg transition-all flex items-center justify-center cursor-pointer">
                       <DriveFileIcon item={item} />
+                      {isDriveShortcut(item) && (
+                        <span className="absolute bottom-1.5 left-1.5 p-1 bg-white/90 dark:bg-dark-800/90 rounded-md" title="Atalho do meu Drive">
+                          <FolderSymlink className="w-3 h-3 text-gray-500" />
+                        </span>
+                      )}
                       <div className="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
                         <button onClick={e => { e.stopPropagation(); downloadDriveItemClick(item) }} className="p-2 bg-white/90 rounded-lg text-emerald-600 hover:bg-white transition-colors" title="Baixar"><Download className="w-4 h-4" /></button>
                         <button onClick={e => { e.stopPropagation(); openRenameModal(item) }} className="p-2 bg-white/90 rounded-lg text-gray-600 hover:bg-white transition-colors" title="Renomear"><Pencil className="w-4 h-4" /></button>
-                        <button onClick={e => { e.stopPropagation(); deleteDriveItem(item) }} className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors" title="Excluir"><Trash2 className="w-4 h-4" /></button>
+                        <button onClick={e => { e.stopPropagation(); deleteDriveItem(item) }} className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-white transition-colors" title={isDriveShortcut(item) ? 'Remover atalho' : 'Excluir'}><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
                     <p className="mt-2 text-xs font-medium text-gray-700 dark:text-gray-300 leading-tight line-clamp-2 text-center">{item.name}</p>
