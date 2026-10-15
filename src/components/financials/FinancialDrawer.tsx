@@ -119,7 +119,16 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
       // um lançamento novo, e é obrigatório (ver baseValid) para não voltar a ficar em branco.
       const todayStr = new Date().toISOString().slice(0, 10)
       setForm({ ...DRAWER_EMPTY_FORM, due_date: editId ? '' : todayStr, ...initial })
-      setTimeout(() => firstInput.current?.focus(), 100)
+      // Só foca o primeiro campo se o usuário ainda não pôs o foco em outro
+      // campo do drawer — senão o timer rouba o foco no meio da digitação.
+      const timer = setTimeout(() => {
+        const input = firstInput.current
+        if (!input) return
+        const dialog = input.closest('[role="dialog"]')
+        if (dialog?.contains(document.activeElement) && document.activeElement !== dialog) return
+        input.focus()
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [open, initial, editId])
 
