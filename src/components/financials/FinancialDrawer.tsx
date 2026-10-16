@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, ArrowUpRight, ArrowDownRight, DollarSign, CalendarDays, FileText, User, Briefcase, Tag, CheckCircle2, Clock, Landmark, Layers } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, toLocalISODate } from '@/lib/utils'
 import { Button } from '@/components/ui'
 
 export type InstallmentPlanForm = {
@@ -117,7 +117,7 @@ export function FinancialDrawer({ open, onClose, onSave, initial, editId, client
       // porém some da lista (que é sempre filtrada por mês/ano de vencimento) sem
       // nenhum aviso — por isso o campo aqui já nasce com a data de hoje ao criar
       // um lançamento novo, e é obrigatório (ver baseValid) para não voltar a ficar em branco.
-      const todayStr = new Date().toISOString().slice(0, 10)
+      const todayStr = toLocalISODate()
       setForm({ ...DRAWER_EMPTY_FORM, due_date: editId ? '' : todayStr, ...initial })
       // Só foca o primeiro campo se o usuário ainda não pôs o foco em outro
       // campo do drawer — senão o timer rouba o foco no meio da digitação.

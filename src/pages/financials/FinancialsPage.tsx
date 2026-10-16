@@ -2,7 +2,7 @@ import { usePageLoadingState } from '@/contexts/PageLoadingContext'
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Plus, Search, DollarSign, TrendingUp, Trash2,
+  Plus, Search, TrendingUp, Trash2,
   Wallet, Plane, Coffee, Car, Bed, Receipt, Scale,
   Edit3, CheckCircle2, Clock, Users, UserCheck,
   ChevronLeft, ChevronRight, RefreshCw, ArrowUpDown, Download,
@@ -15,10 +15,15 @@ import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
 import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM, computeInstallmentAmounts } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
+import { FinancialSheet, type SheetPatch, type QuickAddInput } from '@/components/financials/FinancialSheet'
+import {
+  monthSheetFinancials, buildSheetRows, statusForPaidDate, occurrenceInsertPayload,
+  templateUpdateAfterMaterialize, type SheetRow,
+} from '@/lib/financialSheet'
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount, ExpenseBudget } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatCurrency, FINANCIAL_STATUS_COLORS, FINANCIAL_STATUS_LABELS, sanitizeFileName } from '@/lib/utils'
+import { formatDate, formatCurrency, sanitizeFileName, toLocalISODate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib/expenseUtils'
@@ -37,7 +42,7 @@ type ExpenseForm = {
 }
 const EMPTY_EXPENSE: ExpenseForm = {
   category: 'process', description: '', amount: '',
-  expense_date: new Date().toISOString().slice(0, 10),
+  expense_date: toLocalISODate(),
   process_id: '', trip_destination: '', reimbursable: true, reimbursed: false, notes: '', receipt_url: '',
 }
 
@@ -118,11 +123,10 @@ export function FinancialsPage() {
   const [lancCategoryFilter, setLancCategoryFilter] = useState('')
   const [onlyOverdue, setOnlyOverdue] = useState(false)
   const [lancSortField, setLancSortField] = useState<'due_date' | 'amount' | 'client_name'>('due_date')
-  const [lancSortDir, setLancSortDir] = useState<'asc' | 'desc'>('desc')
+  // Planilha: ordem cronológica por padrão (o saldo acumulado é calculado nessa ordem)
+  const [lancSortDir, setLancSortDir] = useState<'asc' | 'desc'>('asc')
   const [lancFilterOpen, setLancFilterOpen] = useState(false)
   const [lancSortOpen, setLancSortOpen] = useState(false)
-  const [lancPage, setLancPage] = useState(0)
-  const [pageSize, setPageSize] = useState(50)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkWorking, setBulkWorking] = useState(false)
 
@@ -201,8 +205,9 @@ export function FinancialsPage() {
     if (results[6]) setExpenseBudgets(results[6].data || [])
 
     // Sincroniza status "vencido" — pendentes com vencimento no passado deixam de depender de cálculo manual
-    const todayStr = new Date().toISOString().slice(0, 10)
-    const toMarkOverdue = financialsData.filter(f => f.status === 'pending' && f.due_date && f.due_date < todayStr).map(f => f.id)
+    // Templates recorrentes ficam de fora: o status deles não é de nenhum lançamento real
+    const todayStr = toLocalISODate()
+    const toMarkOverdue = financialsData.filter(f => !f.recurring && f.status === 'pending' && f.due_date && f.due_date < todayStr).map(f => f.id)
     if (toMarkOverdue.length > 0) {
       await supabase.from('financials').update({ status: 'overdue' }).in('id', toMarkOverdue)
       financialsData = financialsData.map(f => toMarkOverdue.includes(f.id) ? { ...f, status: 'overdue' as const } : f)
@@ -235,10 +240,14 @@ export function FinancialsPage() {
   const currentYear = now.getFullYear()
 
   // Month lançamentos (filtered by selected month/year)
+  // Por vencimento (padrão), o mês inclui as ocorrências previstas das recorrências
+  // (ver lib/financialSheet.ts); os templates em si nunca aparecem como linha.
   const lancMonthFinancials = useMemo(() => {
-    if (onlyOverdue) return financials.filter(f => f.status === 'overdue')
+    if (onlyOverdue) return financials.filter(f => !f.recurring && f.status === 'overdue')
+    if (lancDateFilter === 'due') return monthSheetFinancials(financials, lancYear, lancMonth)
     return financials.filter(f => {
-      const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
+      if (f.recurring) return false
+      const dateStr = f.paid_date || f.due_date
       if (!dateStr) return false
       const d = new Date(`${dateStr}T00:00:00`)
       return d.getMonth() === lancMonth && d.getFullYear() === lancYear
@@ -277,9 +286,7 @@ export function FinancialsPage() {
     [lancMonthFinancials, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, lancSortField, lancSortDir]
   )
 
-  useEffect(() => { setLancPage(0) }, [lancMonth, lancYear, lancSearch, lancContaFilter, lancTypeFilter, lancStatusFilter, lancCategoryFilter, onlyOverdue, pageSize])
-  const lancTotalPages = Math.max(1, Math.ceil(lancFiltered.length / pageSize))
-  const lancPageItems = lancFiltered.slice(lancPage * pageSize, (lancPage + 1) * pageSize)
+  const sheetRows = useMemo(() => buildSheetRows(lancFiltered), [lancFiltered])
 
   // Gastos (payable) ainda não descontados de honorários, somados por cliente
   const pendingExpensesByClient = useMemo(() => {
@@ -298,22 +305,20 @@ export function FinancialsPage() {
   const saldo = totalReceivablePaid - totalPayablePaid
 
   // Current month stats
-  const monthFinancials = financials.filter(f => {
-    const d = parseFinancialDate(f)
-    return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-  })
+  // Mesmo recorte da planilha (reais + ocorrências previstas das recorrências)
+  const monthFinancials = monthSheetFinancials(financials, currentYear, currentMonth)
   const receitaMensalPrevista = monthFinancials.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0)
   const despesaMensalPrevista = monthFinancials.filter(f => f.type === 'payable').reduce((s, f) => s + Number(f.amount), 0)
   const receitaMensalRealizada = monthFinancials.filter(f => f.type === 'receivable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
   const despesaMensalRealizada = monthFinancials.filter(f => f.type === 'payable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
 
   const pagamentosAtrasados = financials.filter(f => {
-    const today = now.toISOString().split('T')[0]
-    return f.type === 'receivable' && (f.status === 'overdue' || (f.status === 'pending' && f.due_date && f.due_date < today))
+    const today = toLocalISODate(now)
+    return !f.recurring && f.type === 'receivable' && (f.status === 'overdue' || (f.status === 'pending' && f.due_date && f.due_date < today))
   }).reduce((s, f) => s + Number(f.amount), 0)
   const pagamentosAtrasadosCount = financials.filter(f => {
-    const today = now.toISOString().split('T')[0]
-    return f.type === 'receivable' && (f.status === 'overdue' || (f.status === 'pending' && f.due_date && f.due_date < today))
+    const today = toLocalISODate(now)
+    return !f.recurring && f.type === 'receivable' && (f.status === 'overdue' || (f.status === 'pending' && f.due_date && f.due_date < today))
   }).length
 
   // Previous month for comparison
@@ -342,10 +347,7 @@ export function FinancialsPage() {
       const d = new Date(currentYear, currentMonth - 5 + i, 1)
       const m = d.getMonth()
       const y = d.getFullYear()
-      const items = financials.filter(f => {
-        const fd = parseFinancialDate(f)
-        return fd.getMonth() === m && fd.getFullYear() === y
-      })
+      const items = monthSheetFinancials(financials, y, m)
       return {
         month: MONTHS_SHORT[m],
         receita: items.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0),
@@ -353,12 +355,6 @@ export function FinancialsPage() {
       }
     })
   }, [financials, currentMonth, currentYear])
-
-  // Lançamentos footer totals
-  const lancTotal = lancFiltered.reduce((s, f) => s + Number(f.amount), 0)
-  const lancSaldo = lancFiltered.filter(f => f.type === 'receivable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
-    - lancFiltered.filter(f => f.type === 'payable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
-  const lancPrevisto = lancFiltered.filter(f => f.status === 'pending').reduce((s, f) => s + Number(f.amount), 0)
 
   // Annual data
   const yearFinancials = financials.filter(f => {
@@ -473,6 +469,10 @@ export function FinancialsPage() {
       due_date: f.due_date || '', paid_date: f.paid_date || '',
       status: (f.status as 'pending' | 'paid' | 'overdue' | 'cancelled') || 'pending',
       notes: f.notes || '', account_id: f.account_id || '',
+      // Sem isso, editar um template recorrente pelo drawer e salvar desligava a recorrência
+      recurring: !!f.recurring,
+      recurrence_interval: f.recurrence_interval || 'monthly',
+      recurrence_end_date: f.recurrence_end_date || '',
     })
     setDrawerOpen(true)
   }
@@ -518,7 +518,7 @@ export function FinancialsPage() {
           amount: installmentAmount,
           client_id: clientId, client_name: clientName,
           process_id: processId, process_number: processNumber,
-          due_date: dueDate.toISOString().slice(0, 10),
+          due_date: toLocalISODate(dueDate),
           paid_date: null,
           status: 'pending',
           notes: form.notes || null,
@@ -560,24 +560,99 @@ export function FinancialsPage() {
     await withErrorFeedback(supabase.from('financials').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir lançamento')
     load()
   }
-  async function toggleFinancialPaid(f: Financial) {
-    const nowPaid = f.status !== 'paid'
-    const payload = nowPaid
-      ? { status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }
-      : { status: 'pending', paid_date: null }
-    setFinancials(prev => prev.map(x => x.id === f.id ? { ...x, ...payload } as Financial : x))
-    await withErrorFeedback(supabase.from('financials').update(payload).eq('id', f.id), 'Erro ao atualizar pagamento')
+  // ─── Planilha: edição na célula, pagar, incluir ──────────────────────────────
+  /** Grava uma ocorrência prevista (com `patch` aplicado) e avança o template se for a próxima dele. */
+  async function materializeOccurrence(row: SheetRow, patch: Partial<Financial>) {
+    const template = financials.find(f => f.id === row.templateId)
+    const date = row.financial.due_date
+    if (!template || !date) return
+    const { data, error } = await withErrorFeedback(
+      supabase.from('financials').insert(occurrenceInsertPayload(template, date, patch)).select().single(),
+      'Erro ao salvar lançamento'
+    )
+    if (error || !data) return
+    const upd = templateUpdateAfterMaterialize(template, date)
+    if (upd) await withErrorFeedback(supabase.from('financials').update(upd).eq('id', template.id), 'Erro ao atualizar recorrência')
+    setFinancials(prev => {
+      const next = upd?.deleted_at
+        ? prev.filter(f => f.id !== template.id)
+        : prev.map(f => f.id === template.id && upd ? { ...f, ...upd } : f)
+      return [...next, data as Financial]
+    })
+    if (upd?.deleted_at) setRecurringTemplates(prev => prev.filter(f => f.id !== template.id))
+    else if (upd) setRecurringTemplates(prev => prev.map(f => f.id === template.id ? { ...f, ...upd } : f))
+  }
+
+  async function updateFinancialRow(id: string, patch: Partial<Financial>, errorPrefix: string) {
+    setFinancials(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x))
+    await withErrorFeedback(supabase.from('financials').update(patch).eq('id', id), errorPrefix)
+  }
+
+  async function patchSheetRow(row: SheetRow, patch: SheetPatch) {
+    const f = row.financial
+    const today = toLocalISODate()
+    const full: Partial<Financial> = { ...patch }
+    if ('paid_date' in patch) {
+      full.status = statusForPaidDate(patch.paid_date ?? null, f.due_date, today)
+    } else if (patch.due_date && f.status !== 'paid' && f.status !== 'cancelled') {
+      full.status = statusForPaidDate(null, patch.due_date, today)
+    }
+    if (row.projected) return materializeOccurrence(row, full)
+    await updateFinancialRow(f.id, full, 'Erro ao salvar lançamento')
+  }
+
+  async function toggleSheetRowPaid(row: SheetRow) {
+    const f = row.financial
+    const today = toLocalISODate()
+    const payload: Partial<Financial> = f.status !== 'paid'
+      ? { status: 'paid', paid_date: today }
+      : { status: statusForPaidDate(null, f.due_date, today), paid_date: null }
+    if (row.projected) return materializeOccurrence(row, payload)
+    await updateFinancialRow(f.id, payload, 'Erro ao atualizar pagamento')
+  }
+
+  async function quickAddFinancial(input: QuickAddInput): Promise<boolean> {
+    const { data, error } = await withErrorFeedback(
+      supabase.from('financials').insert({
+        ...input,
+        status: statusForPaidDate(null, input.due_date, toLocalISODate()),
+        paid_date: null,
+        reconciled: false,
+      }).select().single(),
+      'Erro ao salvar lançamento'
+    )
+    if (error || !data) return false
+    setFinancials(prev => [...prev, data as Financial])
+    return true
+  }
+
+  async function deleteSheetRow(row: SheetRow) {
+    if (!row.projected) return deleteFinancial(row.financial.id)
+    // Ocorrência prevista: "pular este mês" = gravá-la como cancelada (a recorrência segue nos próximos meses)
+    if (!(await confirmDialog('Pular esta ocorrência? A recorrência continua nos meses seguintes.'))) return
+    await materializeOccurrence(row, { status: 'cancelled' })
+  }
+
+  function editSheetRow(row: SheetRow) {
+    if (!row.projected) return openEdit(row.financial)
+    const template = financials.find(f => f.id === row.templateId)
+    if (template) openEdit(template)
   }
 
   async function stopRecurrence(templateId: string) {
-    await withErrorFeedback(supabase.from('financials').update({ recurring: false }).eq('id', templateId), 'Erro ao encerrar recorrência')
+    // Se já gerou ocorrências, o template não é mais "o lançamento" de ninguém — só
+    // desligar o recurring deixaria ele como um lançamento solto na próxima data.
+    const hasOccurrences = financials.some(f => f.generated_from_id === templateId)
+    const patch = hasOccurrences ? { recurring: false, deleted_at: new Date().toISOString() } : { recurring: false }
+    await withErrorFeedback(supabase.from('financials').update(patch).eq('id', templateId), 'Erro ao encerrar recorrência')
     setRecurringTemplates(prev => prev.filter(f => f.id !== templateId))
+    setFinancials(prev => hasOccurrences ? prev.filter(f => f.id !== templateId) : prev.map(f => f.id === templateId ? { ...f, recurring: false } : f))
   }
 
   function openNewExpense(prefillDate?: string) {
     setEditExpenseId(null)
     setReceiptError('')
-    setExpenseForm({ ...EMPTY_EXPENSE, expense_date: prefillDate || new Date().toISOString().slice(0, 10) })
+    setExpenseForm({ ...EMPTY_EXPENSE, expense_date: prefillDate || toLocalISODate() })
     setExpenseModalOpen(true)
   }
   function openEditExpense(e: UserExpense) {
@@ -660,18 +735,19 @@ export function FinancialsPage() {
   function toggleSelectLanc(id: string) {
     setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
-  function togglePageSelectionLanc() {
+  function toggleSelectAllLanc() {
+    const ids = sheetRows.filter(r => !r.projected).map(r => r.financial.id)
     setSelectedIds(prev => {
-      const allSelected = lancPageItems.every(f => prev.has(f.id))
+      const allSelected = ids.length > 0 && ids.every(id => prev.has(id))
       const next = new Set(prev)
-      if (allSelected) lancPageItems.forEach(f => next.delete(f.id))
-      else lancPageItems.forEach(f => next.add(f.id))
+      if (allSelected) ids.forEach(id => next.delete(id))
+      else ids.forEach(id => next.add(id))
       return next
     })
   }
   async function bulkMarkPaid() {
     setBulkWorking(true)
-    await withErrorFeedback(supabase.from('financials').update({ status: 'paid', paid_date: new Date().toISOString().slice(0, 10) }).in('id', Array.from(selectedIds)), 'Erro ao marcar como pago')
+    await withErrorFeedback(supabase.from('financials').update({ status: 'paid', paid_date: toLocalISODate() }).in('id', Array.from(selectedIds)), 'Erro ao marcar como pago')
     setBulkWorking(false)
     setSelectedIds(new Set())
     load()
@@ -704,13 +780,19 @@ export function FinancialsPage() {
 
   /** mode 'month' exporta só `month`/`year`; mode 'year' exporta os 12 meses de `year`. */
   function exportLancamentos(mode: 'year' | 'month', year: number, month: number) {
-    const dateFiltered = financials.filter(f => {
-      const dateStr = lancDateFilter === 'paid' ? (f.paid_date || f.due_date) : f.due_date
-      if (!dateStr) return false
-      const d = new Date(`${dateStr}T00:00:00`)
-      if (mode === 'year') return d.getFullYear() === year
-      return d.getMonth() === month && d.getFullYear() === year
-    })
+    // Mesmo recorte da planilha: por vencimento inclui as ocorrências previstas das recorrências
+    const dateFiltered = lancDateFilter === 'due'
+      ? (mode === 'year'
+        ? Array.from({ length: 12 }, (_, m) => monthSheetFinancials(financials, year, m)).flat()
+        : monthSheetFinancials(financials, year, month))
+      : financials.filter(f => {
+        if (f.recurring) return false
+        const dateStr = f.paid_date || f.due_date
+        if (!dateStr) return false
+        const d = new Date(`${dateStr}T00:00:00`)
+        if (mode === 'year') return d.getFullYear() === year
+        return d.getMonth() === month && d.getFullYear() === year
+      })
     const scoped = applyLancSecondaryFilters(onlyOverdue ? dateFiltered.filter(f => f.status === 'overdue') : dateFiltered)
 
     const receitas = scoped.filter(f => f.type === 'receivable').reduce((s, f) => s + Number(f.amount), 0)
@@ -919,7 +1001,6 @@ export function FinancialsPage() {
             <button
               onClick={() => {
                 setOnlyOverdue(true)
-                setLancPage(0)
                 document.getElementById('lancamentos-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
               }}
               className="text-[11px] text-primary-600 dark:text-primary-400 hover:underline mt-1"
@@ -1210,139 +1291,64 @@ export function FinancialsPage() {
             </div>
           )}
 
-          {/* Table */}
-          {lancFiltered.length === 0 ? (
-            <EmptyState icon={DollarSign} title="Nenhum lançamento neste período" description="Navegue entre os meses ou crie um novo lançamento." />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-dark-700/50 bg-slate-50 dark:bg-dark-700/30">
-                    <th className="w-9 px-3 py-2.5">
-                      <input type="checkbox" className="w-3.5 h-3.5 rounded border-slate-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                        checked={lancPageItems.length > 0 && lancPageItems.every(f => selectedIds.has(f.id))}
-                        onChange={togglePageSelectionLanc} />
-                    </th>
-                    {['Vencimento', 'Pagamento', 'Competência', 'Lançamento', 'Categoria', 'Status', 'Valor'].map(h => (
-                      <th key={h} className={cn(
-                        'px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400',
-                        h === 'Valor' ? 'text-right' : 'text-left'
-                      )}>{h}</th>
-                    ))}
-                    <th className="px-4 py-2.5 w-20" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 dark:divide-dark-700/30">
-                  {lancPageItems.map(f => {
-                    const isReceita = f.type === 'receivable'
-                    const catLabel = CATEGORY_LABELS[f.category || ''] || f.category || '—'
-                    const competencia = f.due_date ? `${MONTHS_SHORT[new Date(`${f.due_date}T00:00:00`).getMonth()]}/${new Date(`${f.due_date}T00:00:00`).getFullYear()}` : '—'
-                    const linkedClient = clients.find(c => c.id === f.client_id)
-                    const wa = linkedClient?.phone ? waLink(linkedClient.phone) : null
-                    return (
-                      <tr key={f.id} className="hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors group">
-                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" className="w-3.5 h-3.5 rounded border-slate-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                            checked={selectedIds.has(f.id)} onChange={() => toggleSelectLanc(f.id)} />
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(f.due_date)}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{formatDate(f.paid_date)}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">{competencia}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0', isReceita ? 'bg-emerald-500' : 'bg-red-400')} />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate max-w-[200px]">{f.description}</p>
-                                {f.installment_group_id && (
-                                  <span className="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-300">
-                                    {f.installment_number === 0 ? 'Entrada' : `Parcela ${f.installment_number}/${f.installment_total}`}
-                                  </span>
-                                )}
-                              </div>
-                              {f.client_name && (
-                                <button
-                                  onClick={() => navigate('/clientes', { state: { prefillSearch: f.client_name } })}
-                                  className="text-[11px] text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate block"
-                                >{f.client_name}</button>
-                              )}
-                              {f.process_number && (
-                                <button
-                                  onClick={() => navigate('/processos', { state: { prefillSearch: f.process_number } })}
-                                  className="text-[11px] text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate block font-mono"
-                                >{f.process_number}</button>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs text-slate-500 dark:text-slate-400">{catLabel}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => toggleFinancialPaid(f)}
-                            title={f.status === 'paid' ? 'Marcar como pendente' : 'Marcar como pago'}
-                            className={cn(
-                              'text-[10px] font-semibold px-2 py-1 rounded-full border transition-colors',
-                              FINANCIAL_STATUS_COLORS[f.status || 'pending']
-                            )}
-                          >
-                            {FINANCIAL_STATUS_LABELS[f.status || 'pending']}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={cn('text-sm font-bold', isReceita ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
-                            {isReceita ? '' : '-'}{formatCurrency(f.amount)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {wa && isReceita && f.status !== 'paid' && (
-                              <a
-                                href={`${wa}?text=${encodeURIComponent(`Olá${f.client_name ? ' ' + f.client_name.split(' ')[0] : ''}, passando para lembrar do pagamento "${f.description}" no valor de ${formatCurrency(f.amount)}${f.due_date ? `, com vencimento em ${formatDate(f.due_date)}` : ''}.`)}`}
-                                target="_blank" rel="noreferrer" title="Cobrar via WhatsApp"
-                                className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-slate-400 hover:text-green-500"
-                              ><MessageCircle className="w-3.5 h-3.5" /></a>
-                            )}
-                            <button onClick={() => openEdit(f)} className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400 hover:text-primary-600">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => deleteFinancial(f.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Footer totals */}
-          <div className="flex items-center justify-between gap-4 px-4 py-3 bg-slate-50 dark:bg-dark-700/30 border-t border-slate-100 dark:border-dark-700/50 flex-wrap text-xs text-slate-500 dark:text-slate-400">
-            <div className="flex items-center gap-6">
-              <span>total do período filtrado: <strong className="text-slate-700 dark:text-slate-200">{formatCurrency(lancTotal)}</strong></span>
-              <span>saldo: <strong className={cn(lancSaldo >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500')}>{formatCurrency(lancSaldo)}</strong></span>
-              <span>previsto: <strong className="text-slate-700 dark:text-slate-200">{formatCurrency(lancPrevisto)}</strong></span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span>Registros por página:</span>
-              <select
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setLancPage(0) }}
-                className="text-xs border border-slate-200 dark:border-dark-600 rounded px-1.5 py-0.5 bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-300"
-              >
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={200}>200</option>
-              </select>
-              <span className="mx-1">{lancFiltered.length === 0 ? 0 : lancPage * pageSize + 1}–{Math.min((lancPage + 1) * pageSize, lancFiltered.length)} de {lancFiltered.length}</span>
-              <button onClick={() => setLancPage(p => Math.max(0, p - 1))} disabled={lancPage === 0} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-dark-600 disabled:opacity-40"><ChevronLeft className="w-3.5 h-3.5" /></button>
-              <button onClick={() => setLancPage(p => Math.min(lancTotalPages - 1, p + 1))} disabled={lancPage >= lancTotalPages - 1} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-dark-600 disabled:opacity-40"><ChevronRight className="w-3.5 h-3.5" /></button>
-            </div>
-          </div>
+          {/* Planilha */}
+          <FinancialSheet
+            rows={sheetRows}
+            accounts={accounts}
+            categoryLabels={CATEGORY_LABELS}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelectLanc}
+            onToggleSelectAll={toggleSelectAllLanc}
+            onPatch={patchSheetRow}
+            onTogglePaid={toggleSheetRowPaid}
+            onQuickAdd={quickAddFinancial}
+            hideQuickAdd={onlyOverdue}
+            defaultNewDate={lancYear === currentYear && lancMonth === currentMonth ? toLocalISODate() : toLocalISODate(new Date(lancYear, lancMonth, 1))}
+            renderMeta={row => {
+              const f = row.financial
+              if (!f.client_name && !f.process_number) return null
+              return (
+                <div className="flex items-center gap-2 not-italic">
+                  {f.client_name && (
+                    <button
+                      onClick={() => navigate('/clientes', { state: { prefillSearch: f.client_name } })}
+                      className="text-[11px] text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate max-w-[160px]"
+                    >{f.client_name}</button>
+                  )}
+                  {f.process_number && (
+                    <button
+                      onClick={() => navigate('/processos', { state: { prefillSearch: f.process_number } })}
+                      className="text-[11px] text-slate-400 hover:text-primary-600 dark:hover:text-primary-400 hover:underline truncate max-w-[160px] font-mono"
+                    >{f.process_number}</button>
+                  )}
+                </div>
+              )
+            }}
+            renderActions={row => {
+              const f = row.financial
+              const linkedClient = clients.find(c => c.id === f.client_id)
+              const wa = linkedClient?.phone ? waLink(linkedClient.phone) : null
+              return (
+                <>
+                  {wa && f.type === 'receivable' && f.status !== 'paid' && (
+                    <a
+                      href={`${wa}?text=${encodeURIComponent(`Olá${f.client_name ? ' ' + f.client_name.split(' ')[0] : ''}, passando para lembrar do pagamento "${f.description}" no valor de ${formatCurrency(f.amount)}${f.due_date ? `, com vencimento em ${formatDate(f.due_date)}` : ''}.`)}`}
+                      target="_blank" rel="noreferrer" title="Cobrar via WhatsApp"
+                      className="p-1.5 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/20 text-slate-400 hover:text-green-500"
+                    ><MessageCircle className="w-3.5 h-3.5" /></a>
+                  )}
+                  <button onClick={() => editSheetRow(row)} title={row.projected ? 'Editar recorrência' : 'Editar lançamento'}
+                    className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-600 text-slate-400 hover:text-primary-600">
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => deleteSheetRow(row)} title={row.projected ? 'Pular esta ocorrência' : 'Excluir'}
+                    className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-400 hover:text-red-500">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )
+            }}
+          />
         </Card>
         </>
         )}
