@@ -3,7 +3,7 @@ import { Receipt, ArrowRight } from 'lucide-react'
 import { Modal, Button, Input } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { withErrorFeedback } from '@/lib/errorFeedback'
-import { formatCurrency, formatDate, cn } from '@/lib/utils'
+import { formatCurrency, formatDate, cn, toLocalISODate } from '@/lib/utils'
 import { Financial } from '@/types'
 
 interface Props {
@@ -20,14 +20,14 @@ export function ReconcileExpensesModal({ open, onClose, clientId, clientName, on
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [grossAmount, setGrossAmount] = useState('')
   const [description, setDescription] = useState('')
-  const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10))
+  const [dueDate, setDueDate] = useState(toLocalISODate())
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setDescription(`Honorários — ${clientName}`)
     setGrossAmount('')
-    setDueDate(new Date().toISOString().slice(0, 10))
+    setDueDate(toLocalISODate())
     async function load() {
       setLoading(true)
       const { data } = await supabase

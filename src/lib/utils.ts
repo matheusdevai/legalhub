@@ -23,6 +23,15 @@ export function formatDate(date: string | Date | null | undefined, fmt = 'dd/MM/
   }
 }
 
+/** 'YYYY-MM-DD' no fuso LOCAL. `toISOString().slice(0, 10)` usa UTC — no Brasil
+ *  (UTC-3), depois das 21h isso já devolve a data de amanhã. */
+export function toLocalISODate(d: Date = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 export function formatCurrency(value: number | null | undefined) {
   if (value == null) return 'R$ 0,00'
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)
