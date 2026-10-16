@@ -22,6 +22,8 @@ import {
 } from '@/lib/financialSheet'
 import { adjustmentPlan } from '@/lib/recurringMatrix'
 import { RecurringTab } from './RecurringTab'
+import { CashFlowTab } from './CashFlowTab'
+import { cashFlowYears, type CashFlow, type CashFlowMode } from '@/lib/cashFlow'
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount, ExpenseBudget } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
@@ -32,7 +34,6 @@ import { dateParts, groupExpensesByMonth, buildExpenseMonthColumns } from '@/lib
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 const RevenueExpenseLineChart = lazy(() => import('./FinancialsCharts').then(m => ({ default: m.RevenueExpenseLineChart })))
-const AnnualRevenueBarChart = lazy(() => import('./FinancialsCharts').then(m => ({ default: m.AnnualRevenueBarChart })))
 const ChartFallback = () => <div className="h-full min-h-[160px] animate-pulse bg-slate-100 dark:bg-dark-700 rounded-xl" />
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   subscription: 'Assinatura', tax: 'Impostos', comissao: 'Comissão', other: 'Outros',
 }
 
-type SecondaryTab = 'recorrentes' | 'comissoes' | 'expenses' | 'anual'
+type SecondaryTab = 'recorrentes' | 'comissoes' | 'expenses' | 'fluxo'
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function FinancialsPage() {
@@ -151,7 +152,8 @@ export function FinancialsPage() {
   const [expSearch, setExpSearch] = useState('')
   const [expCategory, setExpCategory] = useState('')
   const [expYear, setExpYear] = useState(now.getFullYear())
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  const [cashFlowYear, setCashFlowYear] = useState(now.getFullYear())
+  const [cashFlowMode, setCashFlowMode] = useState<CashFlowMode>('forecast')
 
   // Contas bancárias accordion
   const [contasOpen, setContasOpen] = useState<Record<string, boolean>>({})
@@ -363,23 +365,8 @@ export function FinancialsPage() {
     })
   }, [financials, currentMonth, currentYear])
 
-  // Annual data
-  const yearFinancials = financials.filter(f => {
-    const d = parseFinancialDate(f)
-    return d.getFullYear() === selectedYear
-  })
-  const monthlyData = MONTHS_SHORT.map((month, i) => {
-    const items = yearFinancials.filter(f => parseFinancialDate(f).getMonth() === i)
-    const receitas = items.filter(f => f.type === 'receivable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
-    const despesas = items.filter(f => f.type === 'payable' && f.status === 'paid').reduce((s, f) => s + Number(f.amount), 0)
-    return { month, receitas, despesas, saldo: receitas - despesas, total: items.length }
-  })
-  const yearTotalReceitas = monthlyData.reduce((s, m) => s + m.receitas, 0)
-  const yearTotalDespesas = monthlyData.reduce((s, m) => s + m.despesas, 0)
-  const yearSaldo = yearTotalReceitas - yearTotalDespesas
-
-  const years = Array.from(new Set(financials.map(f => parseFinancialDate(f).getFullYear()))).sort((a, b) => b - a)
-  if (!years.includes(selectedYear)) years.unshift(selectedYear)
+  // Anos com lançamento + atual + próximo (seletor de ano da exportação)
+  const years = useMemo(() => cashFlowYears(financials, currentYear), [financials, currentYear])
 
   // Expense computed
   const filteredExpenses = useMemo(() => expenses.filter(e => {
@@ -689,6 +676,50 @@ export function FinancialsPage() {
     load()
   }
 
+  // ─── Aba Fluxo de Caixa ───────────────────────────────────────────────────────
+  function openCashFlowCell(month: number, category: string, type: Financial['type']) {
+    setOnlyOverdue(false)
+    setLancDateFilter(cashFlowMode === 'actual' ? 'paid' : 'due')
+    setLancTypeFilter(type)
+    setLancCategoryFilter(category)
+    setLancStatusFilter(cashFlowMode === 'actual' ? 'paid' : '')
+    setLancYear(cashFlowYear)
+    setLancMonth(month)
+    setSecondaryTab(null)
+  }
+  function exportCashFlow(cf: CashFlow) {
+    const modeLabel = cashFlowMode === 'forecast' ? 'Previsto' : 'Realizado'
+    const label = (c: string) => CATEGORY_LABELS[c] || c || 'Sem categoria'
+    const money = (v: number) => formatCurrency(v)
+    const line = (name: string, values: number[], total: number) => [name, ...values.map(money), money(total)]
+    const table: string[][] = [
+      ['ENTRADAS', ...Array(13).fill('')],
+      ...cf.income.map(r => line(label(r.category), r.values, r.total)),
+      line('Total entradas', cf.incomeTotals, cf.totalIncome),
+      ['SAÍDAS', ...Array(13).fill('')],
+      ...cf.expense.map(r => line(label(r.category), r.values, r.total)),
+      line('Total saídas', cf.expenseTotals, cf.totalExpense),
+      line('Resultado', cf.results, cf.totalResult),
+      ['Saldo acumulado', ...cf.balances.map(money), ''],
+    ]
+    const columns = ['Categoria', ...MONTHS_SHORT, 'Total']
+    const csvContent = [columns, ...table].map(r => r.map(c => `"${c}"`).join(',')).join('\n')
+    openExportWindow({
+      title: `Fluxo de Caixa ${cashFlowYear} — ${modeLabel}`,
+      subtitle: `${modeLabel} · saldo inicial ${formatCurrency(cf.opening)}`,
+      filename: `fluxo-de-caixa-${cashFlowYear}-${cashFlowMode === 'forecast' ? 'previsto' : 'realizado'}`,
+      stats: [
+        { value: formatCurrency(cf.totalIncome), label: 'Entradas', accent: '#16a34a' },
+        { value: formatCurrency(cf.totalExpense), label: 'Saídas', accent: '#dc2626' },
+        { value: formatCurrency(cf.totalResult), label: 'Resultado', accent: '#2563eb' },
+        { value: formatCurrency(cf.balances[11]), label: 'Saldo em dez', accent: '#7c3aed' },
+      ],
+      columns,
+      rows: table.map(r => r.map((text, i) => ({ text, bold: i === 0 || r[0].startsWith('Total') || r[0] === 'Resultado', right: i > 0 }))),
+      csvContent,
+    })
+  }
+
   async function stopRecurrence(templateId: string) {
     // Se já gerou ocorrências, o template não é mais "o lançamento" de ninguém — só
     // desligar o recurring deixaria ele como um lançamento solto na próxima data.
@@ -968,7 +999,7 @@ export function FinancialsPage() {
             { id: 'recorrentes', label: `Recorrentes${recurringTemplates.length > 0 ? ` (${recurringTemplates.length})` : ''}`, icon: Repeat },
             { id: 'comissoes', label: 'Comissões', icon: Users },
             { id: 'expenses', label: 'Minhas Despesas', icon: Wallet },
-            { id: 'anual', label: 'Relatório Anual', icon: TrendingUp },
+            { id: 'fluxo', label: 'Fluxo de Caixa', icon: TrendingUp },
           ] as { id: SecondaryTab | null; label: string; icon: any }[]).map(t => {
             const Icon = t.icon
             const active = secondaryTab === t.id
@@ -1757,69 +1788,18 @@ export function FinancialsPage() {
           </div>
         )}
 
-        {/* ── Relatório Anual ── */}
-        {secondaryTab === 'anual' && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <select className="px-3 py-2 text-sm border border-slate-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-slate-900 dark:text-slate-100"
-                value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}>
-                {years.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <Card className="p-4 border-l-4 border-green-500">
-                <p className="text-xs text-slate-500 font-medium">Total Receitas {selectedYear}</p>
-                <p className="text-xl font-bold text-green-600 mt-1">{formatCurrency(yearTotalReceitas)}</p>
-              </Card>
-              <Card className="p-4 border-l-4 border-red-500">
-                <p className="text-xs text-slate-500 font-medium">Total Despesas {selectedYear}</p>
-                <p className="text-xl font-bold text-red-600 mt-1">{formatCurrency(yearTotalDespesas)}</p>
-              </Card>
-              <Card className={cn('p-4 border-l-4', yearSaldo >= 0 ? 'border-primary-500' : 'border-orange-500')}>
-                <p className="text-xs text-slate-500 font-medium">Saldo Líquido {selectedYear}</p>
-                <p className={cn('text-xl font-bold mt-1', yearSaldo >= 0 ? 'text-primary-600' : 'text-orange-600')}>{formatCurrency(yearSaldo)}</p>
-              </Card>
-            </div>
-            <Card className="p-5">
-              <h3 className="font-semibold text-slate-900 dark:text-white mb-4 text-sm">Receitas vs Despesas — {selectedYear}</h3>
-              <Suspense fallback={<ChartFallback />}>
-                <AnnualRevenueBarChart data={monthlyData} />
-              </Suspense>
-            </Card>
-            <Card className="overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100 dark:border-dark-700">
-                <h3 className="font-semibold text-slate-900 dark:text-white text-sm">Detalhamento por Mês</h3>
-              </div>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-100 dark:border-dark-700">
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Mês</th>
-                    <th className="px-4 py-3 text-right font-medium text-green-600">Receitas</th>
-                    <th className="px-4 py-3 text-right font-medium text-red-600">Despesas</th>
-                    <th className="px-4 py-3 text-right font-medium text-primary-600">Saldo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyData.map((m, i) => (
-                    <tr key={i} className={cn('border-b border-slate-50 dark:border-dark-700 transition-colors', (m.receitas > 0 || m.despesas > 0) ? 'hover:bg-slate-50 dark:hover:bg-dark-700/30' : 'opacity-40')}>
-                      <td className="px-4 py-3 font-medium text-slate-900 dark:text-white">{MONTHS_PT[i]}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-green-600">{m.receitas > 0 ? formatCurrency(m.receitas) : '—'}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-red-600">{m.despesas > 0 ? formatCurrency(m.despesas) : '—'}</td>
-                      <td className={cn('px-4 py-3 text-right font-bold', m.saldo > 0 ? 'text-primary-600' : m.saldo < 0 ? 'text-red-600' : 'text-slate-400')}>
-                        {(m.receitas > 0 || m.despesas > 0) ? formatCurrency(m.saldo) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                  <tr className="bg-slate-50 dark:bg-dark-700/50 font-bold border-t border-slate-200 dark:border-dark-700">
-                    <td className="px-4 py-3 text-slate-900 dark:text-white">Total</td>
-                    <td className="px-4 py-3 text-right text-green-600">{formatCurrency(yearTotalReceitas)}</td>
-                    <td className="px-4 py-3 text-right text-red-600">{formatCurrency(yearTotalDespesas)}</td>
-                    <td className={cn('px-4 py-3 text-right', yearSaldo >= 0 ? 'text-primary-600' : 'text-red-600')}>{formatCurrency(yearSaldo)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </Card>
-          </div>
+        {/* ── Fluxo de Caixa ── */}
+        {secondaryTab === 'fluxo' && (
+          <CashFlowTab
+            financials={financials}
+            year={cashFlowYear}
+            onYearChange={setCashFlowYear}
+            mode={cashFlowMode}
+            onModeChange={setCashFlowMode}
+            categoryLabels={CATEGORY_LABELS}
+            onOpenCell={openCashFlowCell}
+            onExport={exportCashFlow}
+          />
         )}
 
       </div>
