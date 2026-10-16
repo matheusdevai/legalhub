@@ -9,7 +9,7 @@ import {
   ChevronDown, Minus,
   MessageCircle, Sparkles, Landmark, X, SlidersHorizontal,
   Paperclip, CheckSquare, Square,
-  LineChart as LineChartIcon,
+  LineChart as LineChartIcon, Repeat,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
@@ -17,9 +17,11 @@ import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM, computeIn
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 import { FinancialSheet, type SheetPatch, type QuickAddInput } from '@/components/financials/FinancialSheet'
 import {
-  monthSheetFinancials, buildSheetRows, statusForPaidDate, occurrenceInsertPayload,
+  monthSheetFinancials, buildSheetRows, statusForPaidDate, occurrenceInsertPayload, parseMoneyInput,
   templateUpdateAfterMaterialize, type SheetRow,
 } from '@/lib/financialSheet'
+import { adjustmentPlan } from '@/lib/recurringMatrix'
+import { RecurringTab } from './RecurringTab'
 import { supabase } from '@/lib/supabase'
 import { Financial, Client, Process, UserExpense, Colaborador, FinancialAccount, ExpenseBudget } from '@/types'
 import { useAuth } from '@/contexts/AuthContext'
@@ -80,7 +82,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   subscription: 'Assinatura', tax: 'Impostos', comissao: 'Comissão', other: 'Outros',
 }
 
-type SecondaryTab = 'comissoes' | 'expenses' | 'anual'
+type SecondaryTab = 'recorrentes' | 'comissoes' | 'expenses' | 'anual'
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function FinancialsPage() {
@@ -103,7 +105,12 @@ export function FinancialsPage() {
 
   const [financials, setFinancials] = useState<Financial[]>([])
   const [recurringTemplates, setRecurringTemplates] = useState<Financial[]>([])
-  const [recurringModalOpen, setRecurringModalOpen] = useState(false)
+  // Aba Recorrentes
+  const [recurringYear, setRecurringYear] = useState(new Date().getFullYear())
+  const [adjustTarget, setAdjustTarget] = useState<Financial | null>(null)
+  const [adjustAmount, setAdjustAmount] = useState('')
+  const [adjustFrom, setAdjustFrom] = useState('')
+  const [savingAdjust, setSavingAdjust] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [processes, setProcesses] = useState<Process[]>([])
   const [expenses, setExpenses] = useState<UserExpense[]>([])
@@ -639,6 +646,49 @@ export function FinancialsPage() {
     if (template) openEdit(template)
   }
 
+  // ─── Aba Recorrentes ──────────────────────────────────────────────────────────
+  function toggleOccurrencePaid(occurrence: Financial) {
+    return toggleSheetRowPaid(buildSheetRows([occurrence])[0])
+  }
+  function openMonthInSheet(year: number, month: number) {
+    setOnlyOverdue(false)
+    setLancDateFilter('due')
+    setLancYear(year)
+    setLancMonth(month)
+    setSecondaryTab(null)
+  }
+  function openNewRecurring() {
+    setEditId(null)
+    setDrawerInitial({ ...DRAWER_EMPTY_FORM, type: 'payable', category: 'rent', recurring: true, recurrence_interval: 'monthly' })
+    setDrawerOpen(true)
+  }
+  async function confirmStopRecurrence(template: Financial) {
+    if (!(await confirmDialog(`Encerrar a recorrência "${template.description}"? Os lançamentos já gravados continuam; os próximos meses deixam de ser previstos.`))) return
+    await stopRecurrence(template.id)
+  }
+  function openAdjust(template: Financial) {
+    setAdjustTarget(template)
+    setAdjustAmount(String(template.amount).replace('.', ','))
+    setAdjustFrom((template.due_date || toLocalISODate()).slice(0, 7))
+  }
+  async function saveAdjust() {
+    const t = adjustTarget
+    const amount = parseMoneyInput(adjustAmount)
+    if (!t || !adjustFrom || amount == null) return
+    setSavingAdjust(true)
+    const plan = adjustmentPlan(t, financials, adjustFrom)
+    if (plan.materializeDates.length > 0) {
+      await withErrorFeedback(supabase.from('financials').insert(plan.materializeDates.map(d => occurrenceInsertPayload(t, d))), 'Erro ao reajustar recorrência')
+    }
+    if (plan.updateIds.length > 0) {
+      await withErrorFeedback(supabase.from('financials').update({ amount }).in('id', plan.updateIds), 'Erro ao reajustar recorrência')
+    }
+    await withErrorFeedback(supabase.from('financials').update({ amount }).eq('id', t.id), 'Erro ao reajustar recorrência')
+    setSavingAdjust(false)
+    setAdjustTarget(null)
+    load()
+  }
+
   async function stopRecurrence(templateId: string) {
     // Se já gerou ocorrências, o template não é mais "o lançamento" de ninguém — só
     // desligar o recurring deixaria ele como um lançamento solto na próxima data.
@@ -915,6 +965,7 @@ export function FinancialsPage() {
         <div className="flex gap-1 border-b border-slate-200 dark:border-dark-700 overflow-x-auto">
           {([
             { id: null, label: 'Visão Geral', icon: LineChartIcon },
+            { id: 'recorrentes', label: `Recorrentes${recurringTemplates.length > 0 ? ` (${recurringTemplates.length})` : ''}`, icon: Repeat },
             { id: 'comissoes', label: 'Comissões', icon: Users },
             { id: 'expenses', label: 'Minhas Despesas', icon: Wallet },
             { id: 'anual', label: 'Relatório Anual', icon: TrendingUp },
@@ -1259,7 +1310,7 @@ export function FinancialsPage() {
             </div>
 
             <button
-              onClick={() => setRecurringModalOpen(true)}
+              onClick={() => setSecondaryTab('recorrentes')}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-dark-600 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Recorrentes{recurringTemplates.length > 0 ? ` (${recurringTemplates.length})` : ''}
@@ -1351,6 +1402,22 @@ export function FinancialsPage() {
           />
         </Card>
         </>
+        )}
+
+        {/* ── Recorrentes ── */}
+        {secondaryTab === 'recorrentes' && (
+          <RecurringTab
+            templates={recurringTemplates}
+            financials={financials}
+            year={recurringYear}
+            onYearChange={setRecurringYear}
+            onTogglePaid={toggleOccurrencePaid}
+            onOpenMonth={openMonthInSheet}
+            onAdjust={openAdjust}
+            onEdit={openEdit}
+            onStop={confirmStopRecurrence}
+            onNew={openNewRecurring}
+          />
         )}
 
         {/* ── Comissões ── */}
@@ -1783,29 +1850,30 @@ export function FinancialsPage() {
         />
       )}
 
-      {/* ── Modal: Lançamentos recorrentes ativos ── */}
-      <Modal open={recurringModalOpen} onClose={() => setRecurringModalOpen(false)} title="Lançamentos recorrentes ativos" size="md">
-        <div className="space-y-2">
-          {recurringTemplates.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-6">Nenhuma recorrência ativa.</p>
-          ) : recurringTemplates.map(f => (
-            <div key={f.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100 dark:border-dark-700">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                  {f.description} · {formatCurrency(f.amount)}
-                </p>
-                <p className="text-xs text-slate-400">
-                  {f.type === 'receivable' ? 'Receita' : 'Despesa'} · a cada {f.recurrence_interval === 'weekly' ? 'semana' : f.recurrence_interval === 'yearly' ? 'ano' : 'mês'} · próxima em {formatDate(f.due_date)}
-                  {f.recurrence_end_date && ` · até ${formatDate(f.recurrence_end_date)}`}
-                </p>
+      {/* ── Modal: Reajustar recorrência a partir de um mês ── */}
+      <Modal open={!!adjustTarget} onClose={() => setAdjustTarget(null)} title="Reajustar recorrência" size="sm">
+        {adjustTarget && (() => {
+          const plan = adjustFrom ? adjustmentPlan(adjustTarget, financials, adjustFrom) : { materializeDates: [], updateIds: [] }
+          return (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                <strong>{adjustTarget.description}</strong> · hoje {formatCurrency(adjustTarget.amount)}
+              </p>
+              <Input label="Novo valor (R$)" inputMode="decimal" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} />
+              <Input label="A partir de" type="month" value={adjustFrom} onChange={e => setAdjustFrom(e.target.value)} />
+              <p className="text-xs text-slate-500 dark:text-slate-400" data-testid="adjust-preview">
+                {plan.materializeDates.length > 0
+                  ? `${plan.materializeDates.length} ocorrência(s) antes desse mês ficam gravada(s) com o valor atual. `
+                  : 'Nenhuma ocorrência prevista antes desse mês. '}
+                {plan.updateIds.length > 0 && `${plan.updateIds.length} lançamento(s) já gravado(s) e não pago(s) a partir desse mês recebem o valor novo.`}
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="secondary" onClick={() => setAdjustTarget(null)}>Cancelar</Button>
+                <Button onClick={saveAdjust} loading={savingAdjust} disabled={!adjustFrom || parseMoneyInput(adjustAmount) == null}>Reajustar</Button>
               </div>
-              <button onClick={() => stopRecurrence(f.id)}
-                className="flex-shrink-0 text-xs font-medium text-red-500 hover:text-red-600 px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
-                Parar
-              </button>
             </div>
-          ))}
-        </div>
+          )
+        })()}
       </Modal>
 
       {/* ── Modal: Despesa pessoal ── */}
