@@ -80,6 +80,13 @@ Deno.serve(async (req: Request) => {
     if (!email || !password || !name) {
       return new Response(JSON.stringify({ error: 'email, password e name são obrigatórios' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
+    // Nunca confiar no papel vindo do body: um admin de escritório não pode
+    // criar super_admin (papel de plataforma, enxerga todos os tenants).
+    const allowedRoles = ['admin', 'lawyer', 'intern', 'financial', 'client']
+    if (callerProfile.role === 'super_admin') allowedRoles.push('super_admin')
+    if (!allowedRoles.includes(role)) {
+      return new Response(JSON.stringify({ error: 'Perfil de acesso inválido' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
     if (role === 'client' && !client_id) {
       return new Response(JSON.stringify({ error: 'client_id é obrigatório para acesso do tipo client' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } })
     }
@@ -94,7 +101,10 @@ Deno.serve(async (req: Request) => {
       email,
       password,
       email_confirm: true,
-      user_metadata: { name, role, tenant_id: callerProfile.tenant_id },
+      user_metadata: { name },
+      // role/tenant_id em app_metadata: só o service role grava aqui, e é de
+      // onde handle_new_user() lê (user_metadata é editável pelo usuário).
+      app_metadata: { role, tenant_id: callerProfile.tenant_id },
     })
 
     if (authError || !authData.user) {
