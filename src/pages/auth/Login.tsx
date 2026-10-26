@@ -47,6 +47,7 @@ export function Login() {
   const [loading,  setLoading]  = useState(false)
 
   const [signupName,  setSignupName]  = useState('')
+  const [signupOffice, setSignupOffice] = useState('')
   const [signupEmail, setSignupEmail] = useState('')
   const [signupPwd,   setSignupPwd]   = useState('')
   const [signupPwd2,  setSignupPwd2]  = useState('')
@@ -69,11 +70,16 @@ export function Login() {
   async function handleSignup(e: FormEvent) {
     e.preventDefault(); setError('')
     if (signupPwd !== signupPwd2) { setError('As senhas não coincidem.'); return }
-    if (signupPwd.length < 6)     { setError('Senha deve ter mínimo 6 caracteres.'); return }
+    if (signupPwd.length < 8)     { setError('Senha deve ter no mínimo 8 caracteres.'); return }
     setLoading(true)
     const { error: err } = await supabase.auth.signUp({
       email: signupEmail, password: signupPwd,
-      options: { data: { name: signupName, display_name: signupName } },
+      // office_name: handle_new_user() cria o escritório com esse nome e
+      // abre o teste grátis de 14 dias no plano Pro.
+      options: {
+        data: { name: signupName, display_name: signupName, office_name: signupOffice.trim() },
+        emailRedirectTo: window.location.origin + '/dashboard',
+      },
     })
     setLoading(false)
     if (err) { setError(err.message); return }
@@ -230,7 +236,7 @@ export function Login() {
               <h2 className="text-[26px] font-bold text-slate-900 leading-tight">
                 Criar conta
               </h2>
-              <p className="text-[13px] text-slate-500 mt-1.5">Comece a usar o LegalHub agora</p>
+              <p className="text-[13px] text-slate-500 mt-1.5">14 dias grátis no plano Pro, sem cartão de crédito</p>
             </div>
             {signupDone ? (
               <div className="bg-green-50 border border-green-100 rounded-2xl p-5 text-center">
@@ -252,6 +258,12 @@ export function Login() {
                     className={inputCls} />
                 </div>
                 <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">Nome do escritório</label>
+                  <input type="text" placeholder="Silva & Associados Advocacia"
+                    value={signupOffice} onChange={e => setSignupOffice(e.target.value)}
+                    className={inputCls} />
+                </div>
+                <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">E-mail</label>
                   <input type="email" placeholder="seu@email.com.br" required
                     value={signupEmail} onChange={e => setSignupEmail(e.target.value)}
@@ -260,7 +272,7 @@ export function Login() {
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">Senha</label>
                   <div className="relative">
-                    <input type={showPwd ? 'text' : 'password'} placeholder="Mínimo 6 caracteres" required
+                    <input type={showPwd ? 'text' : 'password'} placeholder="Mínimo 8 caracteres" required
                       value={signupPwd} onChange={e => setSignupPwd(e.target.value)}
                       className={inputCls + ' pr-11'} />
                     <button type="button" tabIndex={-1} onClick={() => setShowPwd(v => !v)}

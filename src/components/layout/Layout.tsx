@@ -9,6 +9,8 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { isEbookEligible, EBOOK_URL } from '@/lib/promoUtils'
+import { tenantAccess, type SubscriptionSnapshot } from '@/lib/billingStatus'
+import { cn } from '@/lib/utils'
 import type { Notification, Profile } from '@/types'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -50,30 +52,59 @@ function MaintenanceBanner() {
 }
 
 /**
- * Soft-gate de inadimplência: avisa sem bloquear nenhuma leitura/escrita.
- * Um bloqueio de fato (hard-gate via RLS, usando a função tenant_is_active())
- * fica para uma etapa futura, após um período de carência ainda a definir.
+ * Aviso de assinatura do escritório. O bloqueio de fato é no banco
+ * (enforce_tenant_active(), mesmo critério de tenantAccess()): teste vencido
+ * ou assinatura cancelada/incompleta = somente leitura. Pagamento pendente
+ * (past_due) só avisa, enquanto o Stripe tenta cobrar de novo.
  */
-function BillingPastDueBanner({ status, isAdmin }: { status: string | null; isAdmin: boolean }) {
+function BillingBanner({ subscription, isAdmin }: { subscription: SubscriptionSnapshot | null; isAdmin: boolean }) {
   const navigate = useNavigate()
-  if (status !== 'past_due' && status !== 'canceled') return null
-  const canceled = status === 'canceled'
+  const { readOnly, trialDaysLeft } = tenantAccess(subscription)
+  const pastDue = subscription?.status === 'past_due'
+  if (!readOnly && trialDaysLeft === null && !pastDue) return null
+
+  const trial = trialDaysLeft !== null
+  let title: string
+  let detail: string
+  if (trial) {
+    title = trialDaysLeft === 1 ? 'Último dia do seu teste grátis.' : `Seu teste grátis termina em ${trialDaysLeft} dias.`
+    detail = isAdmin
+      ? 'Assine um plano para continuar usando sem interrupção — seus dados são mantidos.'
+      : 'Avise o administrador do escritório para assinar um plano.'
+  } else if (readOnly) {
+    title = subscription?.status === 'trialing' ? 'Seu teste grátis terminou.' : 'Assinatura inativa.'
+    detail = isAdmin
+      ? 'O escritório está em modo somente leitura: você ainda vê e exporta tudo, mas não cria nem edita. Assine para voltar a editar.'
+      : 'O escritório está em modo somente leitura. Avise o administrador para assinar um plano.'
+  } else {
+    title = 'Pagamento da assinatura pendente.'
+    detail = isAdmin
+      ? 'Regularize a forma de pagamento para evitar a suspensão do acesso do escritório.'
+      : 'Avise o administrador do escritório para regularizar a assinatura.'
+  }
 
   return (
-    <div className="no-print flex items-center gap-3 px-4 sm:px-6 py-2.5 border-b border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/15">
-      <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
-      <p className="flex-1 text-xs sm:text-sm text-red-800 dark:text-red-300 min-w-0">
-        <span className="font-semibold">{canceled ? 'Assinatura cancelada.' : 'Pagamento da assinatura pendente.'}</span>{' '}
-        {isAdmin
-          ? 'Regularize a forma de pagamento para evitar a suspensão do acesso do escritório.'
-          : 'Avise o administrador do escritório para regularizar a assinatura.'}
+    <div className={cn(
+      'no-print flex items-center gap-3 px-4 sm:px-6 py-2.5 border-b',
+      trial
+        ? 'border-primary-200 dark:border-primary-900/40 bg-primary-50 dark:bg-primary-900/15'
+        : 'border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-900/15',
+    )}>
+      <AlertCircle className={cn('w-4 h-4 flex-shrink-0', trial ? 'text-primary-600 dark:text-primary-400' : 'text-red-600 dark:text-red-400')} />
+      <p className={cn('flex-1 text-xs sm:text-sm min-w-0', trial ? 'text-primary-800 dark:text-primary-300' : 'text-red-800 dark:text-red-300')}>
+        <span className="font-semibold">{title}</span>{' '}{detail}
       </p>
       {isAdmin && (
         <button
           onClick={() => navigate('/configuracoes?tab=plan')}
-          className="flex-shrink-0 text-xs font-semibold text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800 rounded-lg px-3 py-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+          className={cn(
+            'flex-shrink-0 text-xs font-semibold rounded-lg px-3 py-1.5 transition-colors',
+            trial
+              ? 'text-white bg-primary-600 hover:bg-primary-700'
+              : 'text-red-800 dark:text-red-300 border border-red-300 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/30',
+          )}
         >
-          Ir para Plano
+          {trial || readOnly ? 'Assinar agora' : 'Ir para Plano'}
         </button>
       )}
     </div>
@@ -130,7 +161,7 @@ const NOTIF_COLORS: Record<string, string> = {
 
 export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
-  const { session, profile, signOut, subscriptionStatus } = useAuth()
+  const { session, profile, signOut, subscription } = useAuth()
   const isBillingAdmin = profile?.role === 'admin' || profile?.role === 'super_admin'
   const { theme, toggleTheme } = useTheme()
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
@@ -552,7 +583,7 @@ export function Layout({ children }: LayoutProps) {
 
         {/* Maintenance banner */}
         <MaintenanceBanner />
-        <BillingPastDueBanner status={subscriptionStatus} isAdmin={isBillingAdmin} />
+        <BillingBanner subscription={subscription} isAdmin={isBillingAdmin} />
         <EbookPromoBanner profile={profile} />
 
         {/* Content */}
