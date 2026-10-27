@@ -14,6 +14,7 @@ import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
 import { NotificationPrefs, Plan, Subscription } from '@/types'
 import { withErrorFeedback } from '@/lib/errorFeedback'
+import { extractFunctionErrorMessage } from '@/lib/functionErrors'
 import { toast } from '@/components/ui/Toast'
 
 const SUBSCRIPTION_STATUS_META: Record<string, { label: string; badge: string }> = {
@@ -27,19 +28,6 @@ const SUBSCRIPTION_STATUS_META: Record<string, { label: string; badge: string }>
 function formatGB(bytes: number | null): string {
   if (!bytes) return '0 GB'
   return `${(bytes / 1073741824).toFixed(1)} GB`
-}
-
-/** Lê o corpo JSON de erro de uma Edge Function chamada via supabase.functions.invoke. */
-async function extractFunctionErrorMessage(fnErr: unknown, data: { error?: string } | null): Promise<string> {
-  if (data?.error) return data.error
-  const withContext = fnErr as { context?: Response; message?: string } | null
-  if (withContext?.context && typeof withContext.context.json === 'function') {
-    try {
-      const body = await withContext.context.json()
-      if (body?.error) return body.error
-    } catch { /* corpo não era JSON */ }
-  }
-  return withContext?.message || 'Erro inesperado. Tente novamente.'
 }
 
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -188,7 +176,7 @@ export function SettingsPage() {
       supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).neq('role', 'client'),
       supabase.from('clients').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).is('deleted_at', null),
       supabase.from('processes').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).is('deleted_at', null),
-      supabase.from('ai_generations').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).gte('created_at', startOfMonth.toISOString()),
+      supabase.from('ai_generations').select('*', { count: 'exact', head: true }).eq('tenant_id', profile.tenant_id).neq('status', 'error').gte('created_at', startOfMonth.toISOString()),
       supabase.from('tenants').select('storage_used_bytes, storage_quota_bytes').eq('id', profile.tenant_id).single(),
     ])
 

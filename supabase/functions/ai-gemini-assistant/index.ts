@@ -228,6 +228,11 @@ Deno.serve(async (req: Request) => {
       })
       .select('id')
       .single()
+    // Limite mensal do plano e escritório em somente leitura são barrados
+    // pelo trigger enforce_ai_generation_limit() — repassa a mensagem dele.
+    if (insertErr?.message?.includes('Limite do plano atingido') || insertErr?.message?.includes('somente leitura')) {
+      return new Response(JSON.stringify({ error: insertErr.message }), { status: 403, headers: { ...CORS, 'Content-Type': 'application/json' } })
+    }
     if (insertErr || !generation) {
       console.error('ai_generations insert error:', insertErr)
       return new Response(JSON.stringify({ error: 'Erro ao registrar a geração' }), { status: 500, headers: { ...CORS, 'Content-Type': 'application/json' } })
