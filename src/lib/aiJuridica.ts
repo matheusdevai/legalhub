@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { extractFunctionErrorMessage } from '@/lib/functionErrors'
 
 // Contrato compartilhado do frontend com a Edge Function ai-gemini-assistant.
 // Ver FOUNDATION_CONTRACT.md (raiz do work dir da missão) para o documento
@@ -40,7 +41,6 @@ export async function runAiGeneration(req: AiGenerationRequest): Promise<AiGener
   const { data, error: fnErr } = await supabase.functions.invoke('ai-gemini-assistant', {
     body: req,
   })
-  if (fnErr) throw fnErr
-  if (data?.error) throw new Error(data.error)
+  if (fnErr || data?.error) throw new Error(await extractFunctionErrorMessage(fnErr, data))
   return data as AiGenerationResult
 }
