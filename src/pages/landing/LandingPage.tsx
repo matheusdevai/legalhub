@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
+import { isLaunchPromoActive, EBOOK_PROMO_END } from '@/lib/promoUtils'
 
 /** Logomarca oficial (a mesma do Login e do Sidebar) — ícone recortado num chip
  *  escuro, já que /logomarca.png é branca e foi feita para fundo escuro. */
@@ -148,6 +149,11 @@ const TESTIMONIALS = [
 ]
 
 const PROMO_MONTHLY_PRICE = 149
+// A oferta some sozinha da página quando a janela acaba — create-checkout-session
+// para de aplicar o cupom na mesma data, então anunciar depois disso seria
+// prometer um preço que o checkout não cobra.
+const PROMO_ACTIVE = isLaunchPromoActive()
+const PROMO_LAST_DAY = new Date(new Date(EBOOK_PROMO_END).getTime() - 1).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
 // ─── Planos ─────────────────────────────────────────────────────────────────
 // Espelha o seed real de `plans` em
@@ -216,12 +222,12 @@ const PLANS = [
 const FAQS = [
   {
     q: 'Preciso de cartão de crédito para começar?',
-    a: 'Não. Você cria a conta e conhece o sistema sem precisar informar dados de pagamento.',
+    a: 'Não. Você cria a conta e usa o sistema por 14 dias grátis, com todos os recursos do plano Pro, sem informar dados de pagamento. Se não assinar ao fim do teste, seus dados continuam disponíveis para consulta e exportação.',
   },
-  {
+  ...(PROMO_ACTIVE ? [{
     q: 'Como funciona a promoção de lançamento?',
-    a: `Ao assinar agora, você paga R$ ${PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, independentemente do plano escolhido. Depois desse período, passa a valer o valor normal do plano contratado. Como bônus, você também recebe o e-book completo do LegalHub direto dentro do sistema.`,
-  },
+    a: `Assinando até ${PROMO_LAST_DAY}, você paga R$ ${PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, independentemente do plano escolhido. Depois desse período, passa a valer o valor normal do plano contratado. Como bônus, você também recebe o e-book completo do LegalHub direto dentro do sistema.`,
+  }] : []),
   {
     q: 'Posso trocar de plano depois?',
     a: 'Sim. Você pode fazer upgrade ou downgrade de plano a qualquer momento, conforme o volume de processos do seu escritório crescer.',
@@ -771,17 +777,17 @@ export function LandingPage() {
             </p>
           </Reveal>
 
-          <Reveal delay={80} className="max-w-3xl mx-auto mb-8 rounded-2xl border border-[#1677FF]/20 bg-[#1677FF]/[0.06] p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+          {PROMO_ACTIVE && <Reveal delay={80} className="max-w-3xl mx-auto mb-8 rounded-2xl border border-[#1677FF]/20 bg-[#1677FF]/[0.06] p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
             <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#0B5CFF]/15">
               <CalendarCheck className="w-5 h-5 text-[#1677FF]" />
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-white">
-                Oferta de lançamento: assine hoje e pague R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, em qualquer plano
+                Oferta de lançamento: assine até {PROMO_LAST_DAY} e pague R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, em qualquer plano
               </p>
               <p className="mt-1 text-xs text-[#1677FF]">Bônus: você recebe o e-book completo do LegalHub direto dentro do sistema</p>
             </div>
-          </Reveal>
+          </Reveal>}
 
           <Reveal delay={120} className="max-w-xl mx-auto mb-14 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3 mb-3">
@@ -836,7 +842,7 @@ export function LandingPage() {
                 <p className="mt-1.5 text-xs text-[#A7B0C0] leading-relaxed min-h-[2.5rem]">{plan.tagline}</p>
 
                 <div className="mt-5">
-                  {plan.price > PROMO_MONTHLY_PRICE ? (
+                  {PROMO_ACTIVE && plan.price > PROMO_MONTHLY_PRICE ? (
                     <>
                       <div className="flex items-center gap-2">
                         <span className="text-sm text-[#A7B0C0] line-through">R$ {plan.price}/mês</span>
@@ -858,7 +864,7 @@ export function LandingPage() {
                         <span className="font-serif text-4xl font-semibold tracking-tight text-white">{plan.price}</span>
                         <span className="text-sm text-[#A7B0C0]">/mês</span>
                       </div>
-                      <p className="mt-1 text-[11px] text-[#1677FF] font-medium">já é o valor promocional dos 3 primeiros meses</p>
+                      {PROMO_ACTIVE && <p className="mt-1 text-[11px] text-[#1677FF] font-medium">já é o valor promocional dos 3 primeiros meses</p>}
                     </>
                   )}
                 </div>

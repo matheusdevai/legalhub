@@ -12,6 +12,11 @@ const CORS = {
 // CLAUDE.md (não confundir com o projeto Vercel vazio "lawfy-saas").
 const APP_URL = Deno.env.get('APP_URL') || 'https://legalhubgestor.vercel.app'
 
+// Fim da promoção de lançamento (R$ 149/mês nos 3 primeiros meses). Mesma
+// data de EBOOK_PROMO_END em src/lib/promoUtils.ts — a Landing Page só exibe
+// a oferta até lá, então o checkout só aplica o cupom até lá.
+const LAUNCH_PROMO_END = new Date(Deno.env.get('LAUNCH_PROMO_END') || '2026-11-23T00:00:00.000Z')
+
 // Mesmo rate limit de create-user: no máximo RATE_LIMIT chamadas numa janela
 // de RATE_WINDOW_SECONDS, contra edge_function_rate_limits (só service role).
 // Evita que uma credencial de admin comprometida crie Checkout Sessions em
@@ -108,12 +113,18 @@ Deno.serve(async (req: Request) => {
 
     const stripe = new Stripe(stripeSecretKey, { httpClient: Stripe.createFetchHttpClient() })
 
+    // Cupom da promoção de lançamento (plans.stripe_launch_coupon_id): sem
+    // ele, quem assina Pro/Enterprise na promoção pagaria o preço cheio,
+    // diferente do que a Landing Page anuncia.
+    const launchCoupon = new Date() < LAUNCH_PROMO_END ? plan.stripe_launch_coupon_id : null
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       customer: existingSubscription?.stripe_customer_id || undefined,
       customer_email: existingSubscription?.stripe_customer_id ? undefined : (callerProfile.email || undefined),
       line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
+      discounts: launchCoupon ? [{ coupon: launchCoupon }] : undefined,
       client_reference_id: callerProfile.tenant_id,
       metadata: { tenant_id: callerProfile.tenant_id, plan_id: plan.id },
       subscription_data: { metadata: { tenant_id: callerProfile.tenant_id, plan_id: plan.id } },
