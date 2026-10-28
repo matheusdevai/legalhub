@@ -133,14 +133,25 @@ escopo dessa limpeza).
   `current_tenant_id`, `update_updated_at`, `update_pje_updated_at`,
   `set_pje_queue_tenant`, `cleanup_trash`, `sync_client_process_count`,
   `update_documents_updated_at`) receberam `SET search_path = public, pg_temp`.
-- **Não corrigido de propósito** (risco de quebrar fluxo existente sem mais
-  contexto — revisar manualmente antes de mexer): várias funções
-  `SECURITY DEFINER` são executáveis por `anon`/`authenticated` via RPC
-  (`notify_user`, `auto_set_tenant_id`, `handle_new_user`, etc. — algumas são
-  intencionais, ex. `notify_user` precisa disso para notificar outro usuário);
-  extensões `pg_net`/`pg_trgm` instaladas no schema `public`; "Leaked Password
-  Protection" desabilitado no Auth (ativar no Dashboard, não há API/migration
-  para isso).
+- Funções `SECURITY DEFINER` expostas via RPC (`/rest/v1/rpc/...`): migration
+  `20261027130000_revoke_internal_definer_functions` revogou EXECUTE de
+  `anon`/`authenticated` nas internas (`cleanup_trash`,
+  `lawfy_generate_notifications`, `lawfy_generate_recurring_items`,
+  `lawfy_notify_clients_payment_due` — chamáveis sem login antes disso — e
+  todas as funções de trigger: `auto_set_tenant_id`, `handle_new_user`,
+  `lawfy_auto_assign_task`, `sync_task_calendar_event` etc.). Crons rodam como
+  `postgres` e triggers não checam EXECUTE ao disparar, então nada mudou de
+  comportamento. Continuam expostas **de propósito**: `current_tenant_id`,
+  `current_client_id`, `is_admin_user`, `is_client_user`, `tenant_is_active`,
+  `has_role` (usadas dentro de policies RLS — sem EXECUTE a query do usuário
+  falha) e `notify_user` (só `authenticated`; chamada pelo app, já valida que
+  remetente e destinatário são do mesmo tenant). Função `SECURITY DEFINER`
+  nova que não for helper de RLS deve nascer com o mesmo `REVOKE`.
+- **Não corrigido de propósito**: extensões `pg_net`/`pg_trgm` no schema
+  `public` (`pg_net` não é relocável — mover exige drop/recreate e derruba os
+  crons que dependem de `net.http_post`; risco só de aviso do advisor);
+  "Leaked Password Protection" desabilitado no Auth (ativar no Dashboard →
+  Authentication, não há API/migration para isso).
 
 ## Env vars
 ```
