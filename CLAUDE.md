@@ -30,6 +30,10 @@ src/
     ui/index.tsx              — biblioteca de UI (ver seção abaixo)
     onboarding/OnboardingModal.tsx
   pages/
+    landing/LandingPage.tsx   — landing pública (/); dados/planos/FAQ/tour em landingData.ts (PLANS espelha o seed de `plans`),
+                                ProductTour.tsx + DemoVideo.tsx tocam os vídeos de public/demo/<id>.{mp4,webm,jpg} — gravações
+                                reais num escritório demo com dados fictícios; regravar com scripts/demo-videos/ (ver README lá).
+                                Sem prova social inventada: só números/depoimentos reais e autorizados.
     auth/Login.tsx
     dashboard/Dashboard.tsx   — tabs: visao | lista | quadro | desempenho | ia | configuracoes
     clients/ClientsPage.tsx

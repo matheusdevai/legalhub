@@ -1,0 +1,5 @@
+.state.json
+frames/
+out/
+node_modules/
+package-lock.json
