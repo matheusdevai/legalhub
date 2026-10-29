@@ -10,10 +10,10 @@ export const PROMO_LAST_DAY = new Date(new Date(EBOOK_PROMO_END).getTime() - 1).
 export const TRIAL_DAYS = 14
 
 // ─── Tour do produto ────────────────────────────────────────────────────────
-// Vídeos gravados no app real, num escritório de demonstração com dados
-// fictícios (public/demo/<id>.mp4/.webm + pôster .jpg). Para regravar, ver
-// scripts/demo-videos/README.md.
-export type TourId = 'painel' | 'intimacoes' | 'processos' | 'financeiro' | 'agenda' | 'ia'
+// Vídeos narrados gravados no app real, num escritório de demonstração com
+// dados fictícios (public/demo/<id>.mp4/.webm + legenda .vtt + pôster .jpg).
+// Para regravar, ver scripts/demo-videos/README.md.
+export type TourId = 'painel' | 'intimacoes' | 'processos' | 'clientes' | 'agenda' | 'financeiro' | 'ia' | 'documentos' | 'relatorios' | 'leads'
 
 export interface TourItem {
   id: TourId
@@ -50,12 +50,12 @@ export const TOUR: TourItem[] = [
     path: '/processos',
   },
   {
-    id: 'financeiro',
-    label: 'Financeiro',
-    title: 'Honorários e despesas sob controle',
-    description: 'Planilha de lançamentos, contas recorrentes mês a mês e fluxo de caixa previsto x realizado.',
-    bullets: ['Recorrências projetadas automaticamente', 'Fluxo de caixa com saldo acumulado', 'Comissão de parceiros lançada automaticamente'],
-    path: '/financeiro',
+    id: 'clientes',
+    label: 'Clientes',
+    title: 'Cada cliente com o histórico completo',
+    description: 'Contatos, processos e documentos de cada cliente em uma ficha só, com importação por planilha.',
+    bullets: ['Importação de clientes por CSV', 'Aviso de cadastro duplicado', 'Ficha com processos e documentos'],
+    path: '/clientes',
   },
   {
     id: 'agenda',
@@ -64,6 +64,46 @@ export const TOUR: TourItem[] = [
     description: 'Visões de mês, semana, dia e lista, com sincronização com o Google Agenda.',
     bullets: ['Prazos das tarefas aparecem automaticamente', 'Cores por tipo de compromisso', 'Integração com Google Agenda'],
     path: '/agenda',
+  },
+  {
+    id: 'financeiro',
+    label: 'Financeiro',
+    title: 'Honorários e despesas sob controle',
+    description: 'Planilha de lançamentos, contas recorrentes mês a mês e fluxo de caixa previsto x realizado.',
+    bullets: ['Recorrências projetadas automaticamente', 'Fluxo de caixa com saldo acumulado', 'Comissão de parceiros lançada automaticamente'],
+    path: '/financeiro',
+  },
+  {
+    id: 'ia',
+    label: 'IA Jurídica',
+    title: 'Análises e peças com inteligência artificial',
+    description: 'A Excelência lê o processo e os documentos anexados e entrega status, riscos, prazos críticos e próximos passos.',
+    bullets: ['Análise de processo judicial e administrativo', 'Petição inicial, recursos e cumprimento de despacho', 'Você revisa antes de usar'],
+    path: '/ia-juridica',
+  },
+  {
+    id: 'documentos',
+    label: 'Documentos',
+    title: 'Pastas por cliente e modelos do escritório',
+    description: 'O Escritório Digital guarda os arquivos de cada caso; a biblioteca reúne procurações, contratos e petições-modelo.',
+    bullets: ['Uma pasta para cada cliente', 'Armazenamento do escritório sempre visível', 'Modelos prontos para reaproveitar'],
+    path: '/escritorio-digital',
+  },
+  {
+    id: 'relatorios',
+    label: 'Relatórios',
+    title: 'A agilidade da equipe em números',
+    description: 'Tarefas no prazo, em atraso e pendentes, e a produtividade de cada pessoa no mês.',
+    bullets: ['Score de agilidade do escritório', 'Produtividade por usuário', 'Tarefas com mais atrasos'],
+    path: '/relatorios',
+  },
+  {
+    id: 'leads',
+    label: 'Leads',
+    title: 'Do primeiro contato ao contrato assinado',
+    description: 'Funil de possíveis clientes por etapa e origem, com follow-ups do dia e conversão em cliente.',
+    bullets: ['Funil em kanban por etapa', 'Origem de cada lead', 'Lead ganho vira cliente com um clique'],
+    path: '/leads',
   },
 ]
 

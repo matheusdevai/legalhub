@@ -25,12 +25,12 @@ describe('TOUR', () => {
     expect(new Set(TOUR.map(t => t.id)).size).toBe(TOUR.length)
   })
 
-  it('os arquivos de vídeo (mp4 + webm) e o pôster existem em public/demo', () => {
+  it('vídeo (mp4 + webm), legenda e pôster de cada aba existem em public/demo', () => {
     // import.meta.glob só lista os arquivos (não carrega nada)
-    const files = Object.keys(import.meta.glob('../../../public/demo/*.{mp4,webm,jpg}', { query: '?url' }))
+    const files = Object.keys(import.meta.glob('../../../public/demo/*.{mp4,webm,jpg,vtt}', { query: '?url' }))
       .map(f => f.split('/').pop())
     for (const item of TOUR) {
-      for (const ext of ['mp4', 'webm', 'jpg']) {
+      for (const ext of ['mp4', 'webm', 'jpg', 'vtt']) {
         expect(files, `${item.id}.${ext}`).toContain(`${item.id}.${ext}`)
       }
     }

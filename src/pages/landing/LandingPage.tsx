@@ -163,6 +163,9 @@ export function LandingPage() {
         @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-14px) } }
         @keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
         html { scroll-padding-top: 80px; }
+        .lh-demo-video::cue { background: rgba(2,7,17,0.82); color: #fff; font-family: Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.4; }
+        .lh-demo-video-lg::cue { font-size: 22px; }
+        @media (max-width: 640px) { .lh-demo-video::cue { font-size: 12px; } }
         a:focus-visible, button:focus-visible, input:focus-visible {
           outline: 2px solid #1677FF; outline-offset: 2px; border-radius: 6px;
         }
@@ -369,7 +372,7 @@ export function LandingPage() {
           <SectionHeading
             eyebrow="Veja funcionando"
             title="Um tour pelo sistema, sem precisar agendar nada"
-            subtitle="Gravações reais da plataforma. Escolha uma área para ver como ela funciona no dia a dia."
+            subtitle="Gravações reais da plataforma, narradas passo a passo. Escolha uma área e clique em “Ouvir narração”."
           />
           <Reveal><ProductTour /></Reveal>
           <p className="mt-8 text-center text-[11px] text-[#A7B0C0]/70">Vídeos gravados num escritório de demonstração com dados fictícios.</p>
@@ -414,7 +417,7 @@ export function LandingPage() {
               <div className="pointer-events-none absolute -inset-12 -z-10 rounded-full blur-3xl opacity-40" style={{ background: 'radial-gradient(circle, #0B5CFF, transparent 65%)' }} />
               <div className="rounded-[2.6rem] border-[10px] border-[#0f1522] bg-[#0f1522] overflow-hidden shadow-[0_40px_90px_-20px_rgba(0,0,0,0.7)]">
                 <div className="relative rounded-[1.9rem] overflow-hidden">
-                  <DemoVideo src="/demo/mobile.mp4" poster="/demo/mobile.jpg" label="LegalHub no celular" aspect="390 / 844" />
+                  <DemoVideo src="/demo/mobile.mp4" poster="/demo/mobile.jpg" label="LegalHub no celular" aspect="390 / 844" compact />
                   <div className="absolute top-2 left-1/2 -translate-x-1/2 w-20 h-5 rounded-full bg-black" aria-hidden />
                 </div>
               </div>

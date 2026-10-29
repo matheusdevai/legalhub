@@ -19,20 +19,40 @@ escritório real.
 
 ## Regravar
 
+Precisa de macOS (a narração usa as vozes do sistema).
+
 ```bash
 npm run dev                                    # app em http://localhost:5173
 cd scripts/demo-videos
 npm i --no-save playwright ffmpeg-static       # dependências só da gravação
 npx playwright install chromium                # se ainda não tiver
-DEMO_EMAIL=... DEMO_PASSWORD=... node clips.cjs dashboard processos   # ou sem argumentos = todos
-./publish.sh dashboard:painel processos:processos intimacoes:intimacoes \
-  financeiro:financeiro agenda:agenda mobile:mobile ia:ia
+swiftc -O tts.swift -o tts                     # gerador de voz (AVSpeechSynthesizer)
+DEMO_EMAIL=... DEMO_PASSWORD=... node clips.cjs painel processos   # ou sem argumentos = todos
+./publish.sh painel intimacoes processos clientes agenda financeiro ia documentos relatorios leads mobile
 ```
 
-`clips.cjs` tem um roteiro por vídeo (cliques, rolagens, digitação), com um
-cursor desenhado na página. Se um seletor quebrar depois de uma mudança na
-interface, ajuste o roteiro daquele clipe. `publish.sh` gera, para cada
-clipe, MP4 (H.264), WebM (VP9) e um pôster JPG.
+`clips.cjs` tem um roteiro por vídeo: falas (`h.say`) intercaladas com
+cliques, rolagens e digitação, e um cursor desenhado na página. Cada fala
+espera a anterior terminar, e as ações seguintes acontecem enquanto ela toca.
+Se um seletor quebrar depois de uma mudança na interface, ajuste o roteiro
+daquele clipe.
+
+A gravação gera, por clipe, um MP4 com a narração mixada, a legenda `.vtt`
+(as falas quebradas em trechos curtos, nos tempos certos) e um pôster JPG.
+`publish.sh` copia tudo para `public/demo` e gera o WebM (VP9 + Opus).
+
+### Voz
+
+A voz é a **Luciana** do macOS. A Premium é usada se estiver instalada
+(Ajustes do Sistema → Acessibilidade → Conteúdo Falado → Voz do Sistema →
+Gerenciar Vozes → Português (Brasil) → Luciana Premium); senão, a compacta.
+Para forçar outra voz, use `VOICE_ID=<identificador>`, e `VOICE_RATE` (padrão
+0.52) para a velocidade. O áudio fica em cache em `tts-cache/` por
+texto + voz + velocidade.
+
+A Excelência (clipe `ia`) faz uma geração real no Gemini. Se a API responder
+"alta demanda", o roteiro tenta de novo até 5 vezes, num trecho cortado do
+vídeo.
 
 O id de cada aba do tour em `landingData.ts` precisa casar com o nome do
 arquivo em `public/demo/`. `landingData.test.ts` falha se faltar algum.

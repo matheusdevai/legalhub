@@ -1,27 +1,33 @@
 import { useRef, useState } from 'react'
-import { BarChart3, Bell, CalendarDays, CheckCircle2, DollarSign, FolderOpen, Sparkles } from 'lucide-react'
+import { BarChart3, Bell, CalendarDays, CheckCircle2, DollarSign, FolderOpen, HardDrive, LayoutDashboard, Sparkles, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BrowserFrame, DemoVideo } from './DemoVideo'
 import { TOUR, tourVideo, type TourId } from './landingData'
 
 const ICONS: Record<TourId, typeof BarChart3> = {
-  painel: BarChart3,
+  painel: LayoutDashboard,
   intimacoes: Bell,
   processos: FolderOpen,
-  financeiro: DollarSign,
+  clientes: Users,
   agenda: CalendarDays,
+  financeiro: DollarSign,
   ia: Sparkles,
+  documentos: HardDrive,
+  relatorios: BarChart3,
+  leads: Target,
 }
 
 /**
- * Tour com abas: cada aba toca o vídeo daquela área do sistema. Sem interação
- * o tour avança sozinho ao fim de cada vídeo; depois que a pessoa escolhe uma
- * aba, o vídeo dela fica em loop e o avanço automático para.
+ * Tour com abas: cada aba toca o vídeo narrado daquela área do sistema. Sem
+ * interação o tour avança sozinho ao fim de cada vídeo; depois que a pessoa
+ * escolhe uma aba, o vídeo dela fica em loop e o avanço automático para.
  */
 export function ProductTour() {
   const [index, setIndex] = useState(0)
   const [progress, setProgress] = useState(0)
   const [autoAdvance, setAutoAdvance] = useState(true)
+  // Som da narração vale para o tour inteiro: ligado numa aba, segue ligado nas próximas
+  const [muted, setMuted] = useState(true)
   const chipsRef = useRef<HTMLDivElement>(null)
   const item = TOUR[index]
   const video = tourVideo(item.id)
@@ -82,6 +88,8 @@ export function ProductTour() {
             poster={video.poster}
             label={`Demonstração: ${item.label}`}
             loop={!autoAdvance}
+            muted={muted}
+            onMutedChange={setMuted}
             onProgress={setProgress}
             onEnded={() => { if (autoAdvance) select((index + 1) % TOUR.length, false) }}
           />

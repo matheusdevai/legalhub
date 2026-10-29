@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Maximize2, Pause, Play, X } from 'lucide-react'
+import { Maximize2, Pause, Play, Volume2, VolumeX, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 function prefersReducedMotion() {
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 }
 
-/** MP4 (H.264) primeiro — Safari/iOS e quase todo navegador; WebM (VP9) para
- *  quem não tem H.264 (ex.: Chromium sem codecs proprietários). Os dois
+/** MP4 (H.264 + AAC) primeiro — Safari/iOS e quase todo navegador; WebM
+ *  (VP9 + Opus) para quem não tem H.264. Legenda WebVTT da narração. Os três
  *  arquivos ficam lado a lado em public/demo com o mesmo nome. */
 function VideoSources({ src }: { src: string }) {
   return (
     <>
       <source src={src} type="video/mp4" />
       <source src={src.replace(/\.mp4$/, '.webm')} type="video/webm" />
+      <track kind="captions" src={src.replace(/\.mp4$/, '.vtt')} srcLang="pt-BR" label="Português" default />
     </>
   )
 }
@@ -48,17 +49,24 @@ interface DemoVideoProps {
   /** Toca sozinho (mudo) quando visível. Desligado se o usuário pede menos movimento. */
   autoPlay?: boolean
   loop?: boolean
+  /** Controlado pelo pai (ex.: o tour mantém o som ligado ao trocar de aba). */
+  muted?: boolean
+  onMutedChange?: (muted: boolean) => void
   onEnded?: () => void
   onProgress?: (fraction: number) => void
   aspect?: string
+  /** Botão "Ouvir narração" em versão compacta (telas pequenas, ex.: moldura de celular). */
+  compact?: boolean
   className?: string
 }
 
 /**
- * Vídeo de demonstração: só baixa quando chega perto da tela, pausa fora da
- * tela, respeita prefers-reduced-motion e abre em tela cheia com controles.
+ * Vídeo de demonstração narrado: toca mudo e legendado quando visível (só
+ * baixa quando chega perto da tela, pausa fora dela, respeita
+ * prefers-reduced-motion); "Ouvir narração" liga o som e recomeça do início;
+ * tela cheia abre com controles e som.
  */
-export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, onEnded, onProgress, aspect = '16 / 10', className }: DemoVideoProps) {
+export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, muted: mutedProp, onMutedChange, onEnded, onProgress, aspect = '16 / 10', compact = false, className }: DemoVideoProps) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const [near, setNear] = useState(false)
@@ -66,8 +74,11 @@ export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, on
   const [playing, setPlaying] = useState(false)
   const [userPaused, setUserPaused] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [mutedState, setMutedState] = useState(true)
+  const muted = mutedProp ?? mutedState
+  const setMuted = (m: boolean) => { setMutedState(m); onMutedChange?.(m) }
   const reduced = prefersReducedMotion()
-  const shouldAutoPlay = autoPlay && !reduced && !userPaused
+  const shouldAutoPlay = !userPaused && ((autoPlay && !reduced) || !muted)
 
   useEffect(() => {
     const el = wrapRef.current
@@ -84,9 +95,20 @@ export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, on
 
   useEffect(() => {
     const v = videoRef.current
+    if (v) v.muted = muted
+  }, [muted, near, src])
+
+  useEffect(() => {
+    const v = videoRef.current
     if (!v || !near) return
-    if (visible && shouldAutoPlay && !expanded) v.play().catch(() => {})
-    else if (!visible || expanded) v.pause()
+    if (visible && shouldAutoPlay && !expanded) {
+      v.play().catch(() => {
+        // Navegador barrou som sem gesto do usuário (ex.: Safari ao trocar de
+        // vídeo): volta para mudo e segue tocando com legenda.
+        if (!v.muted) { v.muted = true; setMuted(true); v.play().catch(() => {}) }
+      })
+    } else if (!visible || expanded) v.pause()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, shouldAutoPlay, near, src, expanded])
 
   function toggle() {
@@ -96,9 +118,19 @@ export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, on
     else { setUserPaused(true); v.pause() }
   }
 
+  function enableSound() {
+    const v = videoRef.current
+    setMuted(false)
+    setUserPaused(false)
+    if (!v) return
+    v.muted = false
+    v.currentTime = 0
+    v.play().catch(() => { v.muted = true; setMuted(true) })
+  }
+
   return (
     <>
-      <div ref={wrapRef} className={cn('relative group bg-[#06152D]', className)} style={{ aspectRatio: aspect }}>
+      <div ref={wrapRef} className={cn('relative group bg-[#06152D] overflow-hidden', className)} style={{ aspectRatio: aspect }}>
         {near ? (
           <video
             ref={videoRef}
@@ -109,7 +141,7 @@ export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, on
             loop={loop}
             preload="metadata"
             aria-label={label}
-            className="absolute inset-0 w-full h-full object-cover object-top"
+            className="lh-demo-video absolute inset-0 w-full h-full object-cover object-top"
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             onEnded={() => onEnded?.()}
@@ -136,14 +168,29 @@ export function DemoVideo({ src, poster, label, autoPlay = true, loop = true, on
           </button>
         )}
 
+        {near && muted && (
+          <button onClick={enableSound} aria-label={`Ouvir narração: ${label}`}
+            className={cn('absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-[#0B5CFF] text-white font-semibold shadow-[0_6px_20px_rgba(11,92,255,0.5)] hover:brightness-110 transition',
+              compact ? 'p-2' : 'pl-2.5 pr-3.5 py-1.5 text-xs')}>
+            <Volume2 className={compact ? 'w-4 h-4' : 'w-3.5 h-3.5'} />
+            {!compact && 'Ouvir narração'}
+          </button>
+        )}
+
         <div className={cn('absolute bottom-2.5 right-2.5 flex gap-1.5 transition-opacity', playing ? 'opacity-0 group-hover:opacity-100 focus-within:opacity-100' : 'opacity-100')}>
+          {!muted && (
+            <button onClick={() => setMuted(true)} aria-label="Silenciar narração"
+              className="w-8 h-8 rounded-lg bg-[#020711]/75 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#020711]">
+              <VolumeX className="w-3.5 h-3.5" />
+            </button>
+          )}
           {playing && (
             <button onClick={toggle} aria-label="Pausar vídeo"
               className="w-8 h-8 rounded-lg bg-[#020711]/75 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#020711]">
               <Pause className="w-3.5 h-3.5" fill="currentColor" />
             </button>
           )}
-          <button onClick={() => setExpanded(true)} aria-label="Ver em tela cheia"
+          <button onClick={() => setExpanded(true)} aria-label="Ver em tela cheia, com som"
             className="w-8 h-8 rounded-lg bg-[#020711]/75 backdrop-blur border border-white/10 flex items-center justify-center text-white hover:bg-[#020711]">
             <Maximize2 className="w-3.5 h-3.5" />
           </button>
@@ -173,7 +220,8 @@ function VideoLightbox({ src, poster, label, onClose }: { src: string; poster: s
           className="absolute -top-11 right-0 w-9 h-9 rounded-full border border-white/15 flex items-center justify-center text-white hover:bg-white/10">
           <X className="w-4 h-4" />
         </button>
-        <video poster={poster} controls autoPlay muted playsInline className="w-full max-h-[80vh] rounded-xl border border-white/10 bg-black">
+        {/* Aberto por clique: pode tocar com som */}
+        <video poster={poster} controls autoPlay playsInline className="lh-demo-video lh-demo-video-lg w-full max-h-[80vh] rounded-xl border border-white/10 bg-black">
           <VideoSources src={src} />
         </video>
         <p className="mt-3 text-center text-xs text-[#A7B0C0]">{label} · dados fictícios de um escritório de demonstração</p>

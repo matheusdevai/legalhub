@@ -6,6 +6,7 @@ const path = require('path')
 const { execFileSync } = require('child_process')
 const ffmpeg = require('ffmpeg-static')
 const { launch, ensureLogin, BASE } = require('./common.cjs')
+const { synth, buildVtt } = require('./narration.cjs')
 
 const CURSOR_SCRIPT = `
 (() => {
@@ -58,8 +59,8 @@ async function record(name, { width = 1280, height = 800, scale = 1, touch = fal
     async goto(route) { await page.goto(BASE + route); await page.waitForLoadState('networkidle').catch(() => {}); await page.waitForTimeout(900); await page.mouse.move(pos.x, pos.y) },
     async moveTo(target, { dx = 0, dy = 0, duration = 650 } = {}) {
       const loc = typeof target === 'string' ? page.locator(target).first() : target
-      await loc.scrollIntoViewIfNeeded().catch(() => {})
-      const box = await loc.boundingBox()
+      await loc.scrollIntoViewIfNeeded({ timeout: 3000 }).catch(() => {})
+      const box = await loc.boundingBox({ timeout: 3000 }).catch(() => null)
       if (!box) throw new Error('sem bounding box: ' + target)
       const to = { x: box.x + box.width / 2 + dx, y: box.y + box.height / 2 + dy }
       const steps = Math.max(12, Math.round(duration / 16))
@@ -98,24 +99,44 @@ async function record(name, { width = 1280, height = 800, scale = 1, touch = fal
   })
 
   const startCast = () => cdp.send('Page.startScreencast', { format: 'jpeg', quality: 88, maxWidth: Math.round(width * scale), maxHeight: Math.round(height * scale), everyNthFrame: 1 })
+  // Corta uma espera do vídeo: o último frame antes do corte fica só `hold` segundos.
+  async function cut(waitFn, hold = 0.6) {
+    await cdp.send('Page.stopScreencast')
+    if (frames.length) frames[frames.length - 1].hold = hold
+    await waitFn()
+    await startCast()
+    await page.waitForTimeout(150)
+  }
+
+  // Narração: cada fala espera a anterior terminar, é sintetizada fora do
+  // vídeo (corte sem pausa visível) e marcada no relógio de parede — depois
+  // convertido para o tempo do vídeo.
+  const speech = []
+  let speakingUntil = 0
+  const now = () => Date.now() / 1000
+  async function waitSpeech(pad = 0.35) {
+    const left = speakingUntil + pad - now()
+    if (left > 0) await page.waitForTimeout(left * 1000)
+  }
+  async function say(text) {
+    await waitSpeech()
+    let clip
+    if (speech.some(s => s.text === text)) throw new Error('fala repetida: ' + text)
+    await cut(async () => { clip = synth(text) }, 0.04)
+    const at = now()
+    speech.push({ text, ...clip, at })
+    speakingUntil = at + clip.dur
+  }
+
   try {
-    await scenario({ ...h,
+    await scenario({ ...h, say, waitSpeech, cut,
       start: async () => {
         await page.mouse.move(pos.x, pos.y)
         await startCast()
         await page.waitForTimeout(300)
       },
-      // Corta uma espera longa (ex.: resposta da IA): o último frame antes do
-      // corte fica só CUT_HOLD segundos no vídeo, em vez da espera inteira.
-      cut: async waitFn => {
-        await cdp.send('Page.stopScreencast')
-        if (frames.length) frames[frames.length - 1].cut = true
-        await waitFn()
-        await startCast()
-        await page.waitForTimeout(300)
-      },
     })
-    await page.waitForTimeout(600)
+    await waitSpeech(0.9)
   } finally {
     await cdp.send('Page.stopScreencast').catch(() => {})
     await page.waitForTimeout(300)
@@ -124,22 +145,46 @@ async function record(name, { width = 1280, height = 800, scale = 1, touch = fal
 
   if (frames.length < 2) throw new Error('nenhum frame capturado')
   const endTs = frames[frames.length - 1].ts + 0.5
-  const list = frames.map((f, i) => {
-    const dur = f.cut ? 0.6 : Math.max(0.001, ((frames[i + 1]?.ts ?? endTs) - f.ts))
-    return `file '${f.file}'\nduration ${dur.toFixed(4)}`
-  }).join('\n') + `\nfile '${frames[frames.length - 1].file}'\n`
+  let t = 0
+  for (const [i, f] of frames.entries()) {
+    f.vstart = t
+    f.dur = f.hold ?? Math.max(0.001, ((frames[i + 1]?.ts ?? endTs) - f.ts))
+    t += f.dur
+  }
+  const videoLen = t
+  // Relógio de parede → tempo do vídeo (respeitando os cortes)
+  function toVideoTime(ts) {
+    let k = 0
+    while (k + 1 < frames.length && frames[k + 1].ts <= ts) k++
+    const f = frames[k]
+    return f.vstart + Math.min(Math.max(0, ts - f.ts), f.dur)
+  }
+
+  const list = frames.map(f => `file '${f.file}'\nduration ${f.dur.toFixed(4)}`).join('\n') + `\nfile '${frames[frames.length - 1].file}'\n`
   const listFile = path.join(frameDir, 'list.txt')
   fs.writeFileSync(listFile, list)
 
-  const out = path.join(outDir, name + '.mp4')
+  const silent = path.join(frameDir, 'silent.mp4')
   execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listFile,
     '-vf', 'fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
-    '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-movflags', '+faststart', '-an', out])
-  // Pôster: primeiro frame "assentado" (1s) em WebP via JPEG
-  execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-ss', '0.8', '-i', out, '-frames:v', '1', '-vf', `scale=${Math.min(1280, Math.round(width * scale))}:-2`, '-q:v', '4', path.join(outDir, name + '.jpg')])
+    '-c:v', 'libx264', '-preset', 'slow', '-crf', '24', '-movflags', '+faststart', '-an', silent])
+
+  const out = path.join(outDir, name + '.mp4')
+  const cues = speech.map(s => ({ text: s.text, start: toVideoTime(s.at), dur: s.dur, file: s.file }))
+  if (cues.length) {
+    const inputs = cues.flatMap(c => ['-i', c.file])
+    const delays = cues.map((c, i) => `[${i + 1}]aresample=48000,adelay=${Math.round(c.start * 1000)}:all=1[a${i}]`).join(';')
+    const mix = `${cues.map((_, i) => `[a${i}]`).join('')}amix=inputs=${cues.length}:normalize=0,apad,volume=1.6[aout]`
+    execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-i', silent, ...inputs, '-filter_complex', `${delays};${mix}`,
+      '-map', '0:v', '-map', '[aout]', '-t', videoLen.toFixed(3), '-c:v', 'copy', '-c:a', 'aac', '-b:a', '96k', '-ac', '1', '-movflags', '+faststart', out])
+    fs.writeFileSync(path.join(outDir, name + '.vtt'), buildVtt(cues))
+    fs.writeFileSync(path.join(outDir, name + '.cues.json'), JSON.stringify(cues.map(({ text, start, dur }) => ({ text, start, dur })), null, 1))
+  } else {
+    fs.copyFileSync(silent, out)
+  }
+  execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-ss', '2.5', '-i', out, '-frames:v', '1', '-q:v', '5', path.join(outDir, name + '.jpg')])
   const size = (fs.statSync(out).size / 1024 / 1024).toFixed(2)
-  const secs = (endTs - frames[0].ts).toFixed(1)
-  console.log(`${name}: ${frames.length} frames, ${secs}s, ${size} MB → ${out}`)
+  console.log(`${name}: ${frames.length} frames, ${videoLen.toFixed(1)}s, ${cues.length} falas, ${size} MB`)
 }
 
 module.exports = { record }
