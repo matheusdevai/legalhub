@@ -56,3 +56,15 @@ vídeo.
 
 O id de cada aba do tour em `landingData.ts` precisa casar com o nome do
 arquivo em `public/demo/`. `landingData.test.ts` falha se faltar algum.
+
+## Vídeo completo (para enviar a clientes)
+
+Depois de gravar os clipes, junta tudo num vídeo só, com abertura narrada,
+cartela por parte, encerramento com o teste grátis e capítulos:
+
+```bash
+node make-full.cjs "$HOME/Desktop/LegalHub - Vídeos de demonstração"
+```
+
+Gera `LegalHub - Demonstração completa.mp4` (narrado), uma versão com
+legenda gravada na imagem, o `.srt` e a pasta `Partes/` com cada clipe.

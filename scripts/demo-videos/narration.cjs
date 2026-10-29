@@ -72,20 +72,23 @@ function splitLong(sentence) {
   })
 }
 
-/** Uma fala vira 1+ legendas (frases e trechos curtos), com tempo proporcional ao tamanho. */
+/** Uma fala vira 1+ trechos de legenda (frases e pedaços curtos), com tempo proporcional ao tamanho. */
+function splitCue(c) {
+  const parts = c.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g).map(s => s.trim()).filter(Boolean).flatMap(splitLong)
+  const total = parts.reduce((s, p) => s + p.length, 0)
+  let t = c.start
+  return parts.map(p => {
+    const d = c.dur * (p.length / total)
+    const cue = { text: p, start: t, end: t + d }
+    t += d
+    return cue
+  })
+}
+
 function buildVtt(cues) {
   const lines = ['WEBVTT', '']
-  for (const c of cues) {
-    const parts = c.text.match(/[^.!?]+[.!?]+|[^.!?]+$/g).map(s => s.trim()).filter(Boolean).flatMap(splitLong)
-    const total = parts.reduce((s, p) => s + p.length, 0)
-    let t = c.start
-    for (const p of parts) {
-      const d = c.dur * (p.length / total)
-      lines.push(`${vttTime(t)} --> ${vttTime(t + d)}`, p, '')
-      t += d
-    }
-  }
+  for (const c of cues) for (const p of splitCue(c)) lines.push(`${vttTime(p.start)} --> ${vttTime(p.end)}`, p.text, '')
   return lines.join('\n')
 }
 
-module.exports = { synth, buildVtt }
+module.exports = { synth, buildVtt, splitCue }
