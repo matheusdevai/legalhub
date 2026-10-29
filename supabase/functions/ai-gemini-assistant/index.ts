@@ -141,8 +141,8 @@ async function callGemini(prompt: string, apiKey: string, attachments: { mimeTyp
   if (!candidate || candidate.finishReason === 'SAFETY') {
     throw new Error('A IA não pôde gerar uma resposta para essa solicitação.')
   }
-  const parts = candidate.content?.parts || []
-  const text = parts.filter((p: any) => p.text).map((p: any) => p.text).join('\n')
+  const responseParts = candidate.content?.parts || []
+  const text = responseParts.filter((p: any) => p.text).map((p: any) => p.text).join('\n')
   if (!text) throw new Error('A IA retornou uma resposta vazia.')
   return text
 }
