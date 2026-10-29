@@ -29,9 +29,10 @@ CREATE TRIGGER trg_set_task_completed_at
   FOR EACH ROW EXECUTE FUNCTION public.set_task_completed_at();
 
 -- Retroativo: tarefas concluídas sem completed_at recebem a melhor estimativa
--- disponível (última alteração). Sem disparar triggers, para não mexer em
--- updated_at nem gerar auditoria/sincronização de agenda à toa.
+-- disponível (última alteração; tarefas antigas sem updated_at ficam com a
+-- criação). Sem disparar triggers, para não mexer em updated_at nem gerar
+-- auditoria/sincronização de agenda à toa.
 SET LOCAL session_replication_role = replica;
-UPDATE public.tasks SET completed_at = updated_at
+UPDATE public.tasks SET completed_at = coalesce(updated_at, created_at)
  WHERE status = 'done' AND completed_at IS NULL;
 SET LOCAL session_replication_role = origin;
