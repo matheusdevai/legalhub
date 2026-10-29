@@ -16,11 +16,12 @@ import { AiCopilotoTab } from '@/components/ai/AiCopilotoTab'
 import { Modal, Button, Input, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent } from '@/lib/utils'
+import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent, toLocalISODate } from '@/lib/utils'
 import { Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
+import { completionDayKey, completionMonthKey, startOfLocalDayISO } from '@/lib/dashboardDates'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 
 type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'ia' | 'configuracoes'
@@ -210,7 +211,7 @@ export function timeAgo(dateStr?: string | null): string {
 }
 
 export function taskTime(task: Task): { label: string; isOverdue: boolean } {
-  const today = new Date().toISOString().split('T')[0]
+  const today = toLocalISODate()
   const due = task.due_date ? String(task.due_date).split('T')[0] : null
   if (!due) return { label: timeAgo(task.created_at), isOverdue: false }
   if (due === today) {
@@ -277,7 +278,7 @@ export function Dashboard() {
   }
 
   function exportListaTasks(tasks: Task[], _userName: string) {
-    const todayStr = new Date().toISOString().split('T')[0]
+    const todayStr = toLocalISODate()
     const PRIORITY_BADGE: Record<string, string> = { low: 'gray', medium: 'blue', high: 'orange', urgent: 'red' }
     const STATUS_BADGE: Record<string, string> = { pending: 'amber', in_progress: 'blue', done: 'green', cancelled: 'gray' }
     const TYPE_LABEL: Record<string, string> = { custom: 'Tarefa', deadline: 'Prazo', hearing: 'Audiência', meeting: 'Reunião', document: 'Documento' }
@@ -317,13 +318,12 @@ export function Dashboard() {
 
   async function loadQuadroTasks() {
     setQuadroRefreshing(true)
-    const todayStr = new Date().toISOString().split('T')[0]
     const [{ data: pending }, { data: completed }] = await Promise.all([
       supabase.from('tasks').select('*').in('status', ['pending', 'in_progress'])
         .is('deleted_at', null).order('created_at', { ascending: false }).limit(200),
       supabase.from('tasks').select('*').eq('status', 'done')
-        .gte('updated_at', todayStr).is('deleted_at', null)
-        .order('updated_at', { ascending: false }).limit(50),
+        .gte('completed_at', startOfLocalDayISO()).is('deleted_at', null)
+        .order('completed_at', { ascending: false }).limit(50),
     ])
     setQuadroTasks(pending || [])
     setQuadroCompletedToday(completed || [])
@@ -348,8 +348,8 @@ export function Dashboard() {
     const now = new Date()
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
     const startOfPrevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
-    const endOfPrevMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString()
-    const todayStr = now.toISOString().split('T')[0]
+    const todayStart = startOfLocalDayISO(now)
+    const todayStr = toLocalISODate(now)
     const last6MonthsStart = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString()
 
     const [
@@ -366,21 +366,21 @@ export function Dashboard() {
       { data: receivables },
     ] = await Promise.all([
       supabase.from('tasks').select('*', { count: 'exact', head: true })
-        .eq('status', 'done').gte('updated_at', todayStr).is('deleted_at', null),
+        .eq('status', 'done').gte('completed_at', todayStart).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
-        .eq('status', 'done').gte('updated_at', startOfMonth).is('deleted_at', null),
+        .eq('status', 'done').gte('completed_at', startOfMonth).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
-        .eq('status', 'done').gte('updated_at', startOfPrevMonth).lte('updated_at', endOfPrevMonth).is('deleted_at', null),
+        .eq('status', 'done').gte('completed_at', startOfPrevMonth).lt('completed_at', startOfMonth).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
         .in('status', ['pending', 'in_progress']).is('deleted_at', null),
       supabase.from('tasks').select('*', { count: 'exact', head: true })
         .in('status', ['pending', 'in_progress']).lt('due_date', todayStr).is('deleted_at', null),
       supabase.from('tasks').select('*').in('status', ['pending', 'in_progress'])
         .is('deleted_at', null).order('due_date', { ascending: true }).limit(20),
-      supabase.from('tasks').select('updated_at').eq('status', 'done')
-        .gte('updated_at', last6MonthsStart).is('deleted_at', null),
+      supabase.from('tasks').select('completed_at').eq('status', 'done')
+        .gte('completed_at', last6MonthsStart).is('deleted_at', null),
       supabase.from('tasks').select('priority').eq('status', 'done')
-        .gte('updated_at', startOfMonth).is('deleted_at', null),
+        .gte('completed_at', startOfMonth).is('deleted_at', null),
       supabase.from('processes').select('*', { count: 'exact', head: true })
         .eq('status', 'active').is('deleted_at', null),
       supabase.from('clients').select('*', { count: 'exact', head: true })
@@ -401,7 +401,8 @@ export function Dashboard() {
     // Daily scores (last 7 days) and calendar day map from last 6 months
     const dayMap: Record<string, number> = {}
     last6MonthsCompleted?.forEach(t => {
-      const d = String(t.updated_at).split('T')[0]
+      if (!t.completed_at) return
+      const d = completionDayKey(t.completed_at)
       dayMap[d] = (dayMap[d] || 0) + 1
     })
     setCalendarDayMap(dayMap)
@@ -410,7 +411,7 @@ export function Dashboard() {
     const dailyData: { date: string; dayLabel: string; count: number }[] = []
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getTime() - i * 86400000)
-      const key = d.toISOString().split('T')[0]
+      const key = toLocalISODate(d)
       dailyData.push({ date: key, dayLabel: i === 0 ? 'Hoje' : DAY_NAMES[d.getDay()], count: dayMap[key] || 0 })
     }
     setDailyScores(dailyData)
@@ -418,7 +419,8 @@ export function Dashboard() {
     // Monthly scores (last 6 months)
     const monthMap: Record<string, number> = {}
     last6MonthsCompleted?.forEach(t => {
-      const key = String(t.updated_at).slice(0, 7)
+      if (!t.completed_at) return
+      const key = completionMonthKey(t.completed_at)
       monthMap[key] = (monthMap[key] || 0) + 1
     })
     const SHORT_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
@@ -658,7 +660,7 @@ export function Dashboard() {
                 ) : (
                   <div className="divide-y divide-slate-50 dark:divide-dark-700/30">
                     {tasks.slice(0, 8).map(task => {
-                      const isOverdue = task.due_date && task.due_date < new Date().toISOString().split('T')[0]
+                      const isOverdue = task.due_date && task.due_date < toLocalISODate()
                       return (
                         <div key={task.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 dark:hover:bg-dark-700/40 transition-colors group">
                           <button onClick={() => markDone(task.id)}
@@ -1012,8 +1014,8 @@ export function Dashboard() {
         })()}
 
         {tab === 'quadro' && (() => {
-          const todayStr = new Date().toISOString().split('T')[0]
-          const nextWeekStr = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0]
+          const todayStr = toLocalISODate()
+          const nextWeekStr = toLocalISODate(new Date(Date.now() + 7 * 86400000))
 
           const qSearch = quadroSearch.toLowerCase()
           const filteredBase = quadroTasks.filter(t => {
@@ -1549,7 +1551,7 @@ export function Dashboard() {
 
       {/* ── Task list modal (pending / overdue) ── */}
       {(() => {
-        const todayStr = new Date().toISOString().split('T')[0]
+        const todayStr = toLocalISODate()
         const modalTasks = taskListModalType === 'overdue'
           ? tasks.filter(t => t.due_date && String(t.due_date).split('T')[0] < todayStr)
           : tasks
