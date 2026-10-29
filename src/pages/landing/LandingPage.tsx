@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import {
-  Users, Briefcase, CalendarDays, DollarSign, Bell, ShieldCheck,
-  ArrowRight, Menu, X, CheckCircle2, Building2, Cloud, Network,
-  Quote, ChevronRight, ChevronLeft, FileText, ListChecks, BarChart3,
-  FolderOpen, Search, Play, CalendarCheck, Scale, Gavel, Mail, Phone,
-  MapPin, Linkedin, Instagram, Facebook, HardDrive,
+  ArrowRight, Menu, X, CheckCircle2, ChevronRight, Play, Mail, MapPin,
+  Bell, CalendarDays, DollarSign, FolderOpen, Sparkles, HardDrive, Users,
+  UserCheck, ShieldCheck, Lock, KeyRound, Building2, FileSpreadsheet, Smartphone,
+  Briefcase, Clock, Zap,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
-import { isLaunchPromoActive, EBOOK_PROMO_END } from '@/lib/promoUtils'
+import { BrowserFrame, DemoVideo } from './DemoVideo'
+import { ProductTour } from './ProductTour'
+import {
+  FAQS, PLANS, PROMO_ACTIVE, PROMO_LAST_DAY, PROMO_MONTHLY_PRICE, TRIAL_DAYS,
+  recommendedPlanFor, tourVideo,
+} from './landingData'
 
 /** Logomarca oficial (a mesma do Login e do Sidebar) — ícone recortado num chip
  *  escuro, já que /logomarca.png é branca e foi feita para fundo escuro. */
@@ -38,7 +42,7 @@ function Reveal({ children, delay = 0, className = '', style }: { children: Reac
     if (!el) return
     const obs = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) { setVisible(true); obs.disconnect() }
-    }, { threshold: 0.15 })
+    }, { threshold: 0.12 })
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
@@ -46,7 +50,7 @@ function Reveal({ children, delay = 0, className = '', style }: { children: Reac
   return (
     <div
       ref={ref}
-      className={cn('transition-all duration-700 ease-out', visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8', className)}
+      className={cn('transition-all duration-700 ease-out motion-reduce:transition-none', visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 motion-reduce:opacity-100 motion-reduce:translate-y-0', className)}
       style={{ transitionDelay: `${delay}ms`, ...style }}
     >
       {children}
@@ -59,302 +63,57 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
   return <span className="text-xs font-bold uppercase tracking-[0.14em] text-[#1677FF]">{children}</span>
 }
 
+function SectionHeading({ eyebrow, title, subtitle, center = true }: { eyebrow: string; title: React.ReactNode; subtitle?: string; center?: boolean }) {
+  return (
+    <Reveal className={cn('max-w-2xl mb-12 sm:mb-14', center && 'mx-auto text-center')}>
+      <Eyebrow>{eyebrow}</Eyebrow>
+      <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white" style={{ textWrap: 'balance' } as React.CSSProperties}>{title}</h2>
+      {subtitle && <p className="mt-4 text-[#A7B0C0] leading-relaxed">{subtitle}</p>}
+    </Reveal>
+  )
+}
+
 const NAV_LINKS = [
-  { href: '#funcionalidades', label: 'Funcionalidades' },
-  { href: '#tecnologia', label: 'Soluções' },
+  { href: '#demonstracao', label: 'Demonstração' },
+  { href: '#recursos', label: 'Recursos' },
+  { href: '#seguranca', label: 'Segurança' },
   { href: '#planos', label: 'Planos' },
-  { href: '#faq', label: 'Recursos' },
-  { href: '#contato', label: 'Sobre' },
+  { href: '#faq', label: 'Dúvidas' },
 ]
 
-/** PLACEHOLDERS VISUAIS — substituir por logos/nomes de clientes reais assim que
- *  houver cases publicáveis. Nenhum nome abaixo corresponde a um cliente de verdade. */
-const TRUST_LOGO_PLACEHOLDERS = [
-  { name: 'Azevedo & Costa', subtitle: 'Advocacia Associados', icon: Scale },
-  { name: 'Barros Martins', subtitle: 'Sociedade de Advogados', icon: Building2 },
-  { name: 'Fonseca & Lima', subtitle: 'Advocacia', icon: Gavel },
-  { name: 'Ribeiro & Almeida', subtitle: 'Advocacia', icon: Scale },
-  { name: 'Monteiro', subtitle: 'Advocacia', icon: ShieldCheck },
-  { name: 'Carvalho & Dantas', subtitle: 'Advocacia Associados', icon: Building2 },
+// Fontes de dados e serviços com que o sistema de fato se conecta hoje.
+const INTEGRATIONS = ['DJEN · Comunica PJe (CNJ)', 'DataJud (CNJ)', 'Google Agenda', 'Google Drive', 'Escavador', 'Jusbrasil', 'Google Gemini']
+
+const PAINS = [
+  { icon: Clock, title: 'Prazo perdido no meio de e-mails e planilhas', fix: 'Intimações importadas todo dia e prazo calculado em dias úteis, já com tarefa e lembrete.' },
+  { icon: FileSpreadsheet, title: 'Honorários espalhados em cadernos e extratos', fix: 'Planilha de lançamentos, recorrências e fluxo de caixa num só lugar.' },
+  { icon: Users, title: 'Ninguém sabe quem está cuidando do quê', fix: 'Tarefas distribuídas automaticamente para quem está com menos carga.' },
 ]
 
-const STATS = [
-  { icon: Building2, value: '+500', label: 'Escritórios confiam' },
-  { icon: ShieldCheck, value: '99,9%', label: 'Segurança garantida' },
-  { icon: Cloud, value: '100%', label: 'Na nuvem e acessível' },
-  { icon: Network, value: '+250 mil', label: 'Processos gerenciados' },
-]
-
-// ─── Funcionalidades — grid principal (8 cards) ────────────────────────────
+// Grade de 4 colunas no desktop: `wide` ocupa 2 — a ordem abaixo fecha 3 linhas cheias.
 const FEATURES = [
-  { icon: FolderOpen, title: 'Gestão de Processos', description: 'Organize e acompanhe todos os processos em um só lugar. Tenha total controle das etapas e movimentações.' },
-  { icon: ListChecks, title: 'Tarefas e Prazos', description: 'Não perca nenhum prazo com alertas inteligentes e gestão visual de tarefas.' },
-  { icon: CalendarDays, title: 'Agenda Integrada', description: 'Audiências, compromissos e reuniões na sua agenda com sincronização completa.' },
-  { icon: DollarSign, title: 'Financeiro Completo', description: 'Controle receitas, despesas, honorários e recebimentos com relatórios financeiros detalhados.' },
-  { icon: Users, title: 'Gestão de Clientes', description: 'Tenha um histórico completo de cada cliente e relacionamento centralizado.' },
-  { icon: FileText, title: 'Documentos', description: 'Armazene, categorize e acesse todos os documentos com segurança na nuvem.' },
-  { icon: HardDrive, title: 'Escritório Digital', description: 'Um espaço próprio para organizar pastas por cliente ou por área, com controle de armazenamento do escritório.' },
-  { icon: BarChart3, title: 'Relatórios Inteligentes', description: 'Dashboards e relatórios completos para análises e tomadas de decisão.' },
-  { icon: ShieldCheck, title: 'Segurança Avançada', description: 'Seus dados protegidos com criptografia, backups diários e conformidade com a LGPD.' },
+  { icon: Bell, title: 'Intimações automáticas', description: 'Sincronização diária com o DJEN pela sua OAB, cobrindo tribunais estaduais e federais.', wide: true },
+  { icon: Clock, title: 'Cálculo de prazos', description: 'Dias úteis ou corridos, com a tarefa criada e a data na agenda.' },
+  { icon: FolderOpen, title: 'Processos por fase', description: 'Negociação, conhecimento, recursal, execução. Tudo por cliente e por parceiro.' },
+  { icon: CalendarDays, title: 'Agenda + Google', description: 'Audiências, prazos e reuniões sincronizados com o Google Agenda.' },
+  { icon: HardDrive, title: 'Escritório Digital', description: 'Documentos organizados por cliente, com integração ao Google Drive.' },
+  { icon: DollarSign, title: 'Financeiro completo', description: 'Contas a pagar e receber, recorrentes, fluxo de caixa e comissões de parceiros.', wide: true },
+  { icon: Sparkles, title: 'IA jurídica', description: 'Análises de processo, petições e recursos gerados a partir dos autos e dos documentos anexados.', wide: true },
+  { icon: UserCheck, title: 'Portal do Cliente', description: 'Seu cliente acompanha os próprios processos, documentos e pagamentos com login próprio.', wide: true },
 ]
 
-const TECH_CHECKLIST = [
-  'Interface intuitiva e moderna',
-  'Acesso de qualquer lugar, em qualquer dispositivo',
-  'Atualizações constantes e sem complicações',
-  'Suporte humano e especializado',
+const STEPS = [
+  { title: 'Crie a conta', description: `Cadastro em 1 minuto, sem cartão. ${TRIAL_DAYS} dias com todos os recursos do plano Pro.` },
+  { title: 'Traga seus dados', description: 'Importe clientes por CSV e conecte sua OAB para puxar processos e intimações.' },
+  { title: 'Trabalhe com a equipe', description: 'Convide advogados, estagiários e financeiro, cada um com as permissões da função.' },
 ]
 
-// Dados de exemplo do dashboard simulado (hero + seção "tecnologia")
-const DASHBOARD_STAT_CARDS = [
-  { label: 'Processos ativos', value: '1.248' },
-  { label: 'Tarefas pendentes', value: '32' },
-  { label: 'Prazos hoje', value: '8' },
-  { label: 'Audiências hoje', value: '5' },
+const SECURITY = [
+  { icon: Building2, title: 'Dados isolados por escritório', description: 'Cada escritório só enxerga os próprios registros, regra aplicada direto no banco de dados.' },
+  { icon: KeyRound, title: 'Permissões por função', description: 'Administrador, advogado, estagiário e financeiro veem e editam só o que lhes cabe.' },
+  { icon: ShieldCheck, title: 'Monitoramento de acessos', description: 'Login incomum, tentativas de força bruta e exportações em massa ficam registrados.' },
+  { icon: Lock, title: 'Conexão criptografada', description: 'Todo o tráfego passa por HTTPS. Consentimento LGPD registrado no cadastro do cliente.' },
 ]
-const DASHBOARD_DONUT = [
-  { label: 'Em andamento', value: 640, color: '#0B5CFF' },
-  { label: 'Aguardando', value: 290, color: '#1677FF' },
-  { label: 'Arquivado', value: 50, color: '#5B6B85' },
-  { label: 'Suspensos', value: 30, color: '#3A4A66' },
-]
-const DASHBOARD_DEADLINES = [
-  { title: 'Contestação', meta: 'Processo nº 1234-56.2024.8.26.0100', days: '20 dias' },
-  { title: 'Recurso de Apelação', meta: 'Processo nº 2345-67.2024.8.26.0100', days: '21 dias' },
-  { title: 'Audiência Trabalhista', meta: 'Processo nº 3457-23.2024.5.15.0100', days: '22 dias' },
-]
-
-// Depoimentos — placeholders prontos para receber avaliações reais de clientes.
-const TESTIMONIALS = [
-  {
-    quote: 'O LegalHub mudou a forma como gerenciamos nosso escritório. Ganhamos tempo, reduzimos erros e temos tudo sob controle.',
-    name: 'Dr. Renato Azevedo',
-    role: 'Azevedo & Costa Advogados',
-  },
-  {
-    quote: 'Escreva aqui o que o seu cliente disse sobre o resultado que teve com o LegalHub — o quanto de tempo economizou, quantos prazos deixou de perder, etc.',
-    name: 'Nome do cliente',
-    role: 'Cargo · Nome do escritório',
-  },
-  {
-    quote: 'Escreva aqui um segundo depoimento, de preferência sobre um módulo diferente do sistema — financeiro, portal do cliente, agenda.',
-    name: 'Nome do cliente',
-    role: 'Cargo · Nome do escritório',
-  },
-  {
-    quote: 'Escreva aqui um terceiro depoimento, curto e direto, focado no problema que o escritório tinha antes de usar o LegalHub.',
-    name: 'Nome do cliente',
-    role: 'Cargo · Nome do escritório',
-  },
-]
-
-const PROMO_MONTHLY_PRICE = 149
-// A oferta some sozinha da página quando a janela acaba — create-checkout-session
-// para de aplicar o cupom na mesma data, então anunciar depois disso seria
-// prometer um preço que o checkout não cobra.
-const PROMO_ACTIVE = isLaunchPromoActive()
-const PROMO_LAST_DAY = new Date(new Date(EBOOK_PROMO_END).getTime() - 1).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-
-// ─── Planos ─────────────────────────────────────────────────────────────────
-// Espelha o seed real de `plans` em
-// supabase/migrations/20260902160000_stripe_billing_foundation.sql — mudar
-// preço/limite aqui sem atualizar (ou vice-versa) deixa a Landing Page
-// prometendo algo que o billing não aplica.
-const PLANS = [
-  {
-    id: 'basico',
-    name: 'Básico',
-    tagline: 'Para quem está começando a organizar o escritório',
-    price: 149,
-    processLimit: 'Até 300 processos ativos',
-    storageLimit: '5 GB de armazenamento',
-    features: [
-      'Até 3 usuários',
-      'Até 150 clientes cadastrados',
-      'Dashboard completo (visão geral, lista, quadro e desempenho)',
-      'Clientes com busca automática de CPF/CNPJ',
-      'Processos por fase e grupo de ação',
-      'Tarefas com recorrência e cálculo de prazo',
-      'Agenda sincronizada com o Google Calendar',
-      'Financeiro (contas a pagar e a receber)',
-      'Excelência (IA) — até 30 gerações/mês',
-      'Suporte por e-mail',
-    ],
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    tagline: 'Para escritórios em crescimento, com equipe e clientes ativos',
-    price: 349,
-    processLimit: 'Até 1.500 processos ativos',
-    storageLimit: '25 GB de armazenamento',
-    highlight: true,
-    features: [
-      'Tudo do plano Básico',
-      'Até 10 usuários',
-      'Até 750 clientes cadastrados',
-      'Excelência (IA) — até 200 gerações/mês',
-      'Sincronização automática de publicações (OAB/CNJ, Escavador, Jusbrasil)',
-      'Portal do Cliente exclusivo',
-      'Relatórios de desempenho da equipe',
-      'Colaboradores & Parceiros com comissão automática',
-      'Suporte prioritário via chat',
-    ],
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    tagline: 'Para escritórios com alto volume e times maiores',
-    price: 799,
-    processLimit: 'Processos ilimitados',
-    storageLimit: '100 GB de armazenamento',
-    features: [
-      'Tudo do plano Pro',
-      'Até 25 usuários — precisa de mais? Fale com nosso time',
-      'Clientes ilimitados',
-      'Excelência (IA) ilimitada (uso justo)',
-      'Onboarding assistido para toda a equipe',
-      'SLA de suporte dedicado',
-    ],
-  },
-]
-
-const FAQS = [
-  {
-    q: 'Preciso de cartão de crédito para começar?',
-    a: 'Não. Você cria a conta e usa o sistema por 14 dias grátis, com todos os recursos do plano Pro, sem informar dados de pagamento. Se não assinar ao fim do teste, seus dados continuam disponíveis para consulta e exportação.',
-  },
-  ...(PROMO_ACTIVE ? [{
-    q: 'Como funciona a promoção de lançamento?',
-    a: `Assinando até ${PROMO_LAST_DAY}, você paga R$ ${PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, independentemente do plano escolhido. Depois desse período, passa a valer o valor normal do plano contratado. Como bônus, você também recebe o e-book completo do LegalHub direto dentro do sistema.`,
-  }] : []),
-  {
-    q: 'Posso trocar de plano depois?',
-    a: 'Sim. Você pode fazer upgrade ou downgrade de plano a qualquer momento, conforme o volume de processos do seu escritório crescer.',
-  },
-  {
-    q: 'Existe fidelidade ou multa de cancelamento?',
-    a: 'Não. A cobrança é mensal e recorrente, sem contrato de fidelidade — você pode cancelar quando quiser.',
-  },
-  {
-    q: 'Meus dados ficam seguros e isolados dos de outros escritórios?',
-    a: 'Sim. O isolamento por escritório é a base da arquitetura do sistema: cada tenant só acessa os próprios dados, com controle de acesso por função em cada papel do time.',
-  },
-  {
-    q: 'O que acontece se eu ultrapassar o limite de processos do meu plano?',
-    a: 'Você recebe um aviso dentro do sistema e pode migrar para o plano seguinte a qualquer momento, sem perder nenhum dado já cadastrado.',
-  },
-]
-
-/** Conta de 0 até o valor assim que o número entra na viewport (ex: "+500", "99,9%"). */
-function AnimatedStatValue({ value, className }: { value: string; className?: string }) {
-  const match = value.match(/^(\+)?(\d+)(.*)$/)
-  const ref = useRef<HTMLParagraphElement>(null)
-  const [display, setDisplay] = useState(match ? `${match[1] ?? ''}0${match[3]}` : value)
-
-  useEffect(() => {
-    if (!match || !ref.current) return
-    const prefix = match[1] ?? ''
-    const target = parseInt(match[2], 10)
-    const suffix = match[3]
-    let done = false
-    const obs = new IntersectionObserver(([entry]) => {
-      if (!entry.isIntersecting || done) return
-      done = true
-      const start = performance.now()
-      const duration = 900
-      function tick(now: number) {
-        const progress = Math.min(1, (now - start) / duration)
-        const eased = 1 - Math.pow(1 - progress, 3)
-        setDisplay(`${prefix}${Math.round(eased * target)}${suffix}`)
-        if (progress < 1) requestAnimationFrame(tick)
-      }
-      requestAnimationFrame(tick)
-      obs.disconnect()
-    }, { threshold: 0.4 })
-    obs.observe(ref.current)
-    return () => obs.disconnect()
-  }, [])
-
-  return <p ref={ref} className={cn('font-bold leading-none', className)}>{display}</p>
-}
-
-/** Donut CSS (conic-gradient) para o gráfico "Processos por situação". */
-function DonutChart({ total }: { total: string }) {
-  const sum = DASHBOARD_DONUT.reduce((s, d) => s + d.value, 0)
-  let acc = 0
-  const stops = DASHBOARD_DONUT.map(d => {
-    const from = (acc / sum) * 360
-    acc += d.value
-    const to = (acc / sum) * 360
-    return `${d.color} ${from}deg ${to}deg`
-  }).join(', ')
-  return (
-    <div className="flex items-center gap-4">
-      <div className="relative w-20 h-20 flex-shrink-0 rounded-full" style={{ background: `conic-gradient(${stops})` }}>
-        <div className="absolute inset-[6px] rounded-full bg-[#06152D] flex flex-col items-center justify-center">
-          <span className="text-sm font-bold text-white leading-none">{total}</span>
-          <span className="text-[8px] text-[#A7B0C0] mt-0.5">Total</span>
-        </div>
-      </div>
-      <div className="space-y-1">
-        {DASHBOARD_DONUT.map(d => (
-          <div key={d.label} className="flex items-center gap-1.5 text-[10px] text-[#A7B0C0]">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-            {d.label}
-            <span className="text-white font-semibold">{d.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** Miniatura do dashboard real, usada dentro do laptop do hero e da seção "tecnologia". */
-function DashboardScreen({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className="w-full h-full bg-[#06152D] flex flex-col text-left">
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 flex-shrink-0">
-        <div className="w-4 h-4 rounded overflow-hidden bg-[#020711] flex-shrink-0">
-          <img src="/logomarca.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
-        </div>
-        <span className="text-[10px] font-bold text-white">LegalHub</span>
-        <div className="flex-1" />
-        {!compact && <Search className="w-3 h-3 text-[#A7B0C0]" />}
-        <Bell className="w-3 h-3 text-[#A7B0C0]" />
-        {!compact && <div className="w-4 h-4 rounded-full bg-[#0B5CFF]" />}
-      </div>
-      <div className="flex-1 p-3 overflow-hidden">
-        <p className="text-[10px] font-semibold text-white mb-2">Dashboard</p>
-        <div className={cn('grid gap-1.5 mb-2', compact ? 'grid-cols-3' : 'grid-cols-4')}>
-          {DASHBOARD_STAT_CARDS.slice(0, compact ? 3 : 4).map(c => (
-            <div key={c.label} className="rounded-md border border-white/10 bg-white/[0.03] px-1.5 py-1.5">
-              <p className="text-[11px] font-bold text-white leading-none">{c.value}</p>
-              <p className="text-[7px] text-[#A7B0C0] mt-1 leading-tight">{c.label}</p>
-            </div>
-          ))}
-        </div>
-        <div className="rounded-md border border-white/10 bg-white/[0.03] p-2 mb-1.5">
-          <p className="text-[8px] font-semibold text-[#A7B0C0] mb-1.5">Processos por situação</p>
-          <DonutChart total="1.248" />
-        </div>
-        {!compact && (
-          <div className="rounded-md border border-white/10 bg-white/[0.03] p-2">
-            <p className="text-[8px] font-semibold text-[#A7B0C0] mb-1.5">Prazos próximos</p>
-            <div className="space-y-1">
-              {DASHBOARD_DEADLINES.map(d => (
-                <div key={d.title} className="flex items-center justify-between text-[8px]">
-                  <span className="text-white font-medium truncate">{d.title}</span>
-                  <span className="text-[#1677FF] flex-shrink-0 ml-1">{d.days}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
 
 export function LandingPage() {
   const { session, loading } = useAuth()
@@ -364,27 +123,16 @@ export function LandingPage() {
   const [showStickyCta, setShowStickyCta] = useState(false)
   const [faqOpen, setFaqOpen] = useState<number | null>(0)
   const [processCount, setProcessCount] = useState(300)
-  const [testimonialIndex, setTestimonialIndex] = useState(0)
-  const [heroTilt, setHeroTilt] = useState({ x: 3, y: -6 })
 
-  function handleHeroTiltMove(e: React.MouseEvent<HTMLDivElement>) {
-    const rect = e.currentTarget.getBoundingClientRect()
-    const px = (e.clientX - rect.left) / rect.width - 0.5
-    const py = (e.clientY - rect.top) / rect.height - 0.5
-    setHeroTilt({ x: py * -16 + 3, y: px * 16 - 6 })
-  }
-  function handleHeroTiltLeave() {
-    setHeroTilt({ x: 3, y: -6 })
-  }
-
-  const recommendedPlanId = processCount <= 300 ? 'basico' : processCount <= 1500 ? 'pro' : 'enterprise'
+  const recommendedPlanId = recommendedPlanFor(processCount)
 
   useEffect(() => {
     function onScroll() {
       setScrolled(window.scrollY > 8)
       setShowStickyCta(window.scrollY > 700)
     }
-    window.addEventListener('scroll', onScroll)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
 
@@ -394,20 +142,35 @@ export function LandingPage() {
     return () => { document.documentElement.style.scrollBehavior = prev }
   }, [])
 
+  useEffect(() => {
+    if (!menuOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenuOpen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [menuOpen])
+
   if (!loading && session) return <Navigate to="/dashboard" replace />
 
   function goToLogin(mode: 'login' | 'signup' = 'login') {
     navigate('/login', { state: { mode } })
   }
 
+  const hero = tourVideo('painel')
+
   return (
-    <div className="min-h-screen text-white relative" style={{ background: '#020711' }}>
+    <div className="min-h-screen text-white relative overflow-x-clip" style={{ background: '#020711' }}>
       <style>{`
-        @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-24px) } }
-        @keyframes shine { 0% { transform: translateX(-120%) skewX(-15deg) } 100% { transform: translateX(220%) skewX(-15deg) } }
-        html { scroll-padding-top: 88px; }
+        @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-14px) } }
+        @keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
+        html { scroll-padding-top: 80px; }
+        .lh-demo-video::cue { background: rgba(2,7,17,0.82); color: #fff; font-family: Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.4; }
+        .lh-demo-video-lg::cue { font-size: 22px; }
+        @media (max-width: 640px) { .lh-demo-video::cue { font-size: 12px; } }
         a:focus-visible, button:focus-visible, input:focus-visible {
           outline: 2px solid #1677FF; outline-offset: 2px; border-radius: 6px;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .lh-float, .lh-marquee { animation: none !important; }
         }
       `}</style>
 
@@ -415,15 +178,15 @@ export function LandingPage() {
       <header
         className="fixed top-0 inset-x-0 z-50 transition-colors duration-200"
         style={{
-          background: scrolled ? 'rgba(2,7,17,0.85)' : 'transparent',
-          backdropFilter: scrolled ? 'blur(12px)' : 'none',
+          background: scrolled || menuOpen ? 'rgba(2,7,17,0.88)' : 'transparent',
+          backdropFilter: scrolled || menuOpen ? 'blur(14px)' : 'none',
           borderBottom: scrolled ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
         }}
       >
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
-          <BrandMark size={40} />
+        <div className="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between gap-4">
+          <a href="#topo" aria-label="LegalHub, início"><BrandMark size={38} /></a>
 
-          <nav className="hidden md:flex items-center gap-8">
+          <nav className="hidden lg:flex items-center gap-7" aria-label="Seções">
             {NAV_LINKS.map(l => (
               <a key={l.href} href={l.href} className="relative text-sm text-[#A7B0C0] hover:text-white transition-colors group">
                 {l.label}
@@ -432,37 +195,40 @@ export function LandingPage() {
             ))}
           </nav>
 
-          <div className="hidden md:flex items-center gap-3">
+          <div className="hidden lg:flex items-center gap-2">
             <button onClick={() => goToLogin('login')} className="text-sm font-medium text-[#A7B0C0] hover:text-white transition-colors px-3 py-2">
               Entrar
             </button>
             <button
               onClick={() => goToLogin('signup')}
-              className="relative overflow-hidden flex items-center gap-1.5 text-sm font-semibold text-white px-4 py-2.5 rounded-full transition-all active:scale-[0.97] hover:brightness-105 bg-[#0B5CFF]"
+              className="flex items-center gap-1.5 text-sm font-semibold text-white px-4 py-2.5 rounded-full transition-all active:scale-[0.97] hover:brightness-110 bg-[#0B5CFF]"
               style={{ boxShadow: '0 4px 18px rgba(11,92,255,0.4)' }}
             >
-              <CalendarCheck className="w-3.5 h-3.5" /> Agendar demonstração
+              Testar grátis <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          <button className="md:hidden text-white" onClick={() => setMenuOpen(v => !v)}>
+          <button className="lg:hidden w-10 h-10 -mr-2 flex items-center justify-center text-white" onClick={() => setMenuOpen(v => !v)}
+            aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuOpen} aria-controls="mobile-menu">
             {menuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
         </div>
 
         {menuOpen && (
-          <div className="md:hidden px-5 pb-5 pt-1 space-y-3 border-b border-white/10" style={{ background: '#020711' }}>
-            {NAV_LINKS.map(l => (
-              <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)} className="block text-sm text-[#A7B0C0] py-1.5">
-                {l.label}
-              </a>
-            ))}
-            <div className="flex flex-col gap-2 pt-2">
-              <button onClick={() => goToLogin('login')} className="w-full text-center text-sm font-medium text-white border border-white/15 rounded-xl py-2.5">
+          <div id="mobile-menu" className="lg:hidden px-5 pb-6 pt-2 border-b border-white/10 animate-fade-in">
+            <nav className="flex flex-col" aria-label="Seções">
+              {NAV_LINKS.map(l => (
+                <a key={l.href} href={l.href} onClick={() => setMenuOpen(false)} className="text-base text-[#cfd6e2] py-3 border-b border-white/[0.06]">
+                  {l.label}
+                </a>
+              ))}
+            </nav>
+            <div className="grid grid-cols-2 gap-2 pt-5">
+              <button onClick={() => goToLogin('login')} className="text-center text-sm font-medium text-white border border-white/15 rounded-full py-3">
                 Entrar
               </button>
-              <button onClick={() => goToLogin('signup')} className="w-full text-center text-sm font-semibold text-white rounded-full py-2.5 bg-[#0B5CFF]">
-                Agendar demonstração
+              <button onClick={() => goToLogin('signup')} className="text-center text-sm font-semibold text-white rounded-full py-3 bg-[#0B5CFF]">
+                Testar grátis
               </button>
             </div>
           </div>
@@ -470,331 +236,284 @@ export function LandingPage() {
       </header>
 
       {/* ══ HERO ══ */}
-      <section className="relative pt-32 pb-16 sm:pt-40 px-5 sm:px-8 overflow-hidden">
+      <section id="topo" className="relative pt-28 sm:pt-36 pb-16 sm:pb-24 px-5 sm:px-8">
         <div
-          className="pointer-events-none absolute inset-0 opacity-[0.5]"
+          className="pointer-events-none absolute inset-0 opacity-50"
           style={{
             backgroundImage: 'radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)',
             backgroundSize: '26px 26px',
-            maskImage: 'radial-gradient(ellipse 70% 60% at 65% 5%, black, transparent)',
+            maskImage: 'radial-gradient(ellipse 70% 55% at 50% 0%, black, transparent)',
+            WebkitMaskImage: 'radial-gradient(ellipse 70% 55% at 50% 0%, black, transparent)',
           }}
         />
-        <div
-          className="pointer-events-none absolute -top-24 right-0 w-[36rem] h-[36rem] rounded-full blur-3xl opacity-[0.20] animate-[float_9s_ease-in-out_infinite]"
-          style={{ background: 'radial-gradient(circle, #0B5CFF, transparent 70%)' }}
-        />
-        <div
-          className="pointer-events-none absolute top-1/3 -left-32 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-[0.16] animate-[float_11s_ease-in-out_infinite_1.5s]"
-          style={{ background: 'radial-gradient(circle, #1677FF, transparent 70%)' }}
-        />
+        <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[60rem] max-w-[140vw] h-[36rem] rounded-full blur-3xl opacity-25"
+          style={{ background: 'radial-gradient(ellipse, #0B5CFF, transparent 65%)' }} />
 
-        <div className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-14 lg:gap-8 items-center pb-16">
-          <div className="min-w-0 lg:col-span-6 text-center lg:text-left">
-            <Reveal>
-              <div className="inline-flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full border border-white/10 bg-white/[0.04] mb-5">
-                <span className="relative flex h-2 w-2 flex-shrink-0">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#1677FF] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#1677FF]" />
-                </span>
-                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A7B0C0]">Software jurídico completo</span>
-              </div>
-            </Reveal>
-
-            <Reveal delay={80}>
-              <h1 className="font-serif text-4xl sm:text-5xl lg:text-[3.4rem] font-semibold tracking-tight leading-[1.1] text-white" style={{ textWrap: 'balance' } as React.CSSProperties}>
-                Gestão jurídica<br />
-                <span className="text-[#1677FF]">inteligente e eficiente</span>
-              </h1>
-            </Reveal>
-
-            <Reveal delay={160}>
-              <p className="mt-6 text-base sm:text-lg text-[#A7B0C0] max-w-xl mx-auto lg:mx-0 leading-relaxed">
-                O LegalHub centraliza processos, tarefas, prazos, clientes e financeiro em um único sistema.
-                Mais produtividade, mais organização e melhores resultados para o seu escritório.
-              </p>
-            </Reveal>
-
-            <Reveal delay={240}>
-              <div className="mt-9 flex flex-col sm:flex-row items-center lg:justify-start justify-center gap-3">
-                <button
-                  onClick={() => goToLogin('signup')}
-                  className="relative overflow-hidden group w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-white transition-all active:scale-[0.98] hover:-translate-y-0.5 bg-[#0B5CFF] hover:brightness-105"
-                  style={{ boxShadow: '0 10px 30px rgba(11,92,255,0.4)' }}
-                >
-                  <span
-                    className="absolute inset-0 opacity-0 group-hover:opacity-100"
-                    style={{ background: 'linear-gradient(115deg,transparent,rgba(255,255,255,0.45),transparent)', animation: 'shine 1.1s ease' }}
-                  />
-                  <CalendarCheck className="relative w-4 h-4" />
-                  <span className="relative">Agendar demonstração</span>
-                </button>
-                <a
-                  href="#tecnologia"
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-white border border-white/20 hover:bg-white/5 transition-all"
-                >
-                  <Play className="w-3.5 h-3.5" /> Ver como funciona
-                </a>
-              </div>
-            </Reveal>
-
-            <Reveal delay={300}>
-              <div className="mt-7 flex flex-wrap items-center justify-center lg:justify-start gap-x-5 gap-y-2">
-                {['Intuitivo e fácil de usar', '100% seguro e na nuvem', 'Suporte especializado'].map(item => (
-                  <span key={item} className="flex items-center gap-1.5 text-xs text-[#A7B0C0]">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#1677FF] flex-shrink-0" />
-                    {item}
-                  </span>
-                ))}
-              </div>
-            </Reveal>
-          </div>
-
-          {/* Coluna do mockup — "laptop" com o dashboard real, em perspectiva 3D */}
-          <Reveal delay={360} className="min-w-0 lg:col-span-6 relative">
-            <div
-              className="relative mx-auto w-full max-w-[560px]"
-              style={{ perspective: '1600px' }}
-              onMouseMove={handleHeroTiltMove}
-              onMouseLeave={handleHeroTiltLeave}
-            >
-              <div className="relative transition-transform duration-200 ease-out" style={{ transform: `rotateY(${heroTilt.y}deg) rotateX(${heroTilt.x}deg)` }}>
-                <div
-                  className="pointer-events-none absolute -inset-10 -z-10 rounded-[2.5rem] blur-3xl opacity-50 animate-pulse-glow"
-                  style={{ background: 'radial-gradient(ellipse at 30% 20%, #0B5CFF, transparent 60%)' }}
-                />
-                {/* Tela do laptop */}
-                <div
-                  className="rounded-t-xl overflow-hidden border-4 border-b-0"
-                  style={{ borderColor: '#0f1522', background: '#06152D', boxShadow: '0 50px 120px -20px rgba(0,0,0,0.6), 0 0 80px -25px rgba(11,92,255,0.35)' }}
-                >
-                  <div className="flex items-center justify-center py-1" style={{ background: '#0f1522' }}>
-                    <div className="w-1 h-1 rounded-full bg-white/25" />
-                  </div>
-                  <div className="aspect-[16/10.5]">
-                    <DashboardScreen />
-                  </div>
-                </div>
-                {/* Base do laptop */}
-                <div className="relative h-4 rounded-b-xl" style={{ background: 'linear-gradient(180deg, #1a2030, #0c0f16)' }}>
-                  <div className="absolute left-1/2 -translate-x-1/2 top-0 w-24 h-1.5 rounded-b-md bg-black/40" />
-                </div>
-                <div className="mx-auto h-2 w-[104%] -mt-px rounded-b-2xl" style={{ background: 'linear-gradient(180deg, #0c0f16, #05070b)', boxShadow: '0 12px 24px -6px rgba(0,0,0,0.5)' }} />
-              </div>
+        <div className="relative max-w-4xl mx-auto text-center">
+          <Reveal>
+            <div className="inline-flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full border border-white/10 bg-white/[0.04] mb-6">
+              <span className="relative flex h-2 w-2 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#1677FF] opacity-75 motion-reduce:hidden" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#1677FF]" />
+              </span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#A7B0C0]">Intimações do DJEN direto no seu painel</span>
             </div>
           </Reveal>
-        </div>
 
-        {/* Tiles de estatísticas */}
-        <div className="relative max-w-6xl mx-auto grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {STATS.map((s, i) => (
-            <Reveal
-              key={s.label}
-              delay={i * 80}
-              className="rounded-2xl p-5 border border-white/10 hover:border-[#1677FF]/30 transition-colors"
-              style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015))' }}
-            >
-              <s.icon className="w-5 h-5 text-[#1677FF] mb-3" />
-              <AnimatedStatValue value={s.value} className="text-white text-xl sm:text-2xl" />
-              <p className="text-xs text-[#A7B0C0] mt-1">{s.label}</p>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* ══ CONFIANÇA — logos placeholder, ver TRUST_LOGO_PLACEHOLDERS acima ══ */}
-      <section className="relative py-14 px-5 sm:px-8 border-t border-b border-white/[0.06]">
-        <div className="max-w-6xl mx-auto">
-          <Reveal className="text-center mb-8">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#1677FF]">Confiança de quem faz acontecer</p>
+          <Reveal delay={80}>
+            <h1 className="font-serif text-[2.4rem] leading-[1.08] sm:text-6xl lg:text-[4.2rem] font-semibold tracking-tight text-white" style={{ textWrap: 'balance' } as React.CSSProperties}>
+              O escritório inteiro em um só sistema. <span className="text-[#1677FF]">Nenhum prazo esquecido.</span>
+            </h1>
           </Reveal>
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            {TRUST_LOGO_PLACEHOLDERS.map((t, i) => (
-              <Reveal
-                key={t.name}
-                delay={i * 60}
-                className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] opacity-70 hover:opacity-100 hover:border-[#1677FF]/20 transition-all duration-300"
-              >
-                <t.icon className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
-                <div className="text-left leading-tight">
-                  <p className="text-xs font-bold text-white">{t.name.toUpperCase()}</p>
-                  <p className="text-[9px] text-[#A7B0C0]">{t.subtitle}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* ══ FUNCIONALIDADES ══ */}
-      <section id="funcionalidades" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-white/[0.06]">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-14">
-            <Reveal className="max-w-xl">
-              <Eyebrow>Tudo que seu escritório precisa</Eyebrow>
-              <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">
-                Um sistema completo, pensado para <span className="text-[#1677FF]">advogados</span>
-              </h2>
-            </Reveal>
-            <Reveal delay={100} className="max-w-sm">
-              <p className="text-sm text-[#A7B0C0] leading-relaxed">
-                O LegalHub reúne todas as ferramentas que o seu escritório precisa para trabalhar com mais eficiência, organização e controle.
-              </p>
-            </Reveal>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {FEATURES.map((f, i) => (
-              <Reveal
-                key={f.title}
-                delay={i * 50}
-                className="group relative rounded-2xl p-6 border border-white/10 bg-white/[0.02] hover:border-[#1677FF]/30 hover:-translate-y-1 transition-all duration-300 overflow-hidden"
-              >
-                <div className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full blur-2xl opacity-0 group-hover:opacity-20 transition-opacity" style={{ background: '#1677FF' }} />
-                <div className="relative w-11 h-11 rounded-xl flex items-center justify-center mb-4 bg-[#0B5CFF]/15 group-hover:bg-[#0B5CFF] transition-colors">
-                  <f.icon className="w-5 h-5 text-[#1677FF] group-hover:text-white transition-colors" />
-                </div>
-                <h3 className="relative text-base font-semibold text-white">{f.title}</h3>
-                <p className="relative mt-2 text-sm text-[#A7B0C0] leading-relaxed">{f.description}</p>
-              </Reveal>
-            ))}
-          </div>
-
-          <Reveal delay={200} className="mt-10 text-center">
-            <button
-              onClick={() => goToLogin('signup')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold text-[#1677FF] border border-[#1677FF]/30 hover:bg-[#1677FF]/10 transition-colors"
-            >
-              Ver todas as funcionalidades <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ══ TECNOLOGIA QUE TRANSFORMA ══ */}
-      <section id="tecnologia" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-white/[0.06] overflow-hidden">
-        <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-          <Reveal>
-            <Eyebrow>Tecnologia que transforma</Eyebrow>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">
-              Mais <span className="text-[#1677FF]">produtividade</span>, menos burocracia
-            </h2>
-            <p className="mt-4 text-[#A7B0C0] leading-relaxed">
-              Automatize tarefas repetitivas, centralize informações e tenha mais tempo para o que realmente importa: estratégia, clientes e resultados.
+          <Reveal delay={160}>
+            <p className="mt-6 text-base sm:text-lg text-[#A7B0C0] max-w-2xl mx-auto leading-relaxed">
+              Processos, intimações, prazos, agenda, clientes e financeiro do seu escritório de advocacia, com sincronização automática
+              pela sua OAB e inteligência artificial para as peças do dia a dia.
             </p>
-            <ul className="mt-6 space-y-3">
-              {TECH_CHECKLIST.map((item, i) => (
-                <Reveal key={item} delay={i * 80}>
-                  <li className="flex items-center gap-2.5 text-sm text-white">
-                    <CheckCircle2 className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
-                    {item}
-                  </li>
-                </Reveal>
+          </Reveal>
+
+          <Reveal delay={240}>
+            <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                onClick={() => goToLogin('signup')}
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-white transition-all active:scale-[0.98] hover:-translate-y-0.5 bg-[#0B5CFF] hover:brightness-110"
+                style={{ boxShadow: '0 10px 30px rgba(11,92,255,0.45)' }}
+              >
+                Começar {TRIAL_DAYS} dias grátis <ArrowRight className="w-4 h-4" />
+              </button>
+              <a
+                href="#demonstracao"
+                className="w-full sm:w-auto flex items-center justify-center gap-2 px-7 py-3.5 rounded-full text-sm font-semibold text-white border border-white/20 hover:bg-white/5 transition-all"
+              >
+                <Play className="w-3.5 h-3.5" fill="currentColor" /> Ver o sistema funcionando
+              </a>
+            </div>
+          </Reveal>
+
+          <Reveal delay={300}>
+            <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+              {['Sem cartão de crédito', 'Sem fidelidade', 'Funciona no celular'].map(item => (
+                <li key={item} className="flex items-center gap-1.5 text-xs text-[#A7B0C0]">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#1677FF] flex-shrink-0" />
+                  {item}
+                </li>
               ))}
             </ul>
           </Reveal>
+        </div>
 
-          <Reveal delay={150} className="relative">
-            <div className="pointer-events-none absolute -inset-10 -z-10 rounded-[2.5rem] blur-3xl opacity-40" style={{ background: 'radial-gradient(ellipse at 60% 40%, #0B5CFF, transparent 65%)' }} />
-            <div className="relative mx-auto max-w-md rounded-2xl overflow-hidden border border-white/10" style={{ boxShadow: '0 40px 100px -20px rgba(0,0,0,0.5)' }}>
-              <div className="aspect-[16/11]"><DashboardScreen /></div>
+        {/* Vídeo do produto */}
+        <Reveal delay={380} className="relative max-w-6xl mx-auto mt-14 sm:mt-20">
+          <div className="pointer-events-none absolute -inset-x-10 -inset-y-6 -z-10 rounded-[3rem] blur-3xl opacity-40"
+            style={{ background: 'radial-gradient(ellipse at 50% 30%, #0B5CFF, transparent 62%)' }} />
+          <BrowserFrame path="/dashboard">
+            <DemoVideo src={hero.src} poster={hero.poster} label="Demonstração do painel do LegalHub" />
+          </BrowserFrame>
+
+          {/* Cartões flutuantes (desktop) — exemplos de eventos reais do sistema */}
+          <div className="lh-float hidden md:flex absolute -left-6 lg:-left-12 top-1/4 items-center gap-3 rounded-2xl border border-white/10 bg-[#0b1322]/90 backdrop-blur px-4 py-3 shadow-2xl"
+            style={{ animation: 'float 6s ease-in-out infinite' }} aria-hidden>
+            <span className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center"><Bell className="w-4 h-4 text-amber-400" /></span>
+            <span className="text-left">
+              <span className="block text-xs font-semibold text-white">Nova intimação importada</span>
+              <span className="block text-[11px] text-[#A7B0C0]">Prazo de 15 dias úteis · vence 19/11</span>
+            </span>
+          </div>
+          <div className="lh-float hidden md:flex absolute -right-6 lg:-right-10 bottom-1/4 items-center gap-3 rounded-2xl border border-white/10 bg-[#0b1322]/90 backdrop-blur px-4 py-3 shadow-2xl"
+            style={{ animation: 'float 7s ease-in-out infinite 1.2s' }} aria-hidden>
+            <span className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center"><CheckCircle2 className="w-4 h-4 text-emerald-400" /></span>
+            <span className="text-left">
+              <span className="block text-xs font-semibold text-white">Tarefa criada e atribuída</span>
+              <span className="block text-[11px] text-[#A7B0C0]">Réplica à contestação · Dra. Helena</span>
+            </span>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ══ INTEGRAÇÕES ══ */}
+      <section aria-label="Integrações" className="relative py-10 border-y border-white/[0.06]">
+        <p className="text-center text-xs font-bold uppercase tracking-[0.14em] text-[#A7B0C0] mb-6 px-5">Conectado às fontes que o escritório já usa</p>
+        <div className="relative overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 12%, black 88%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, black 12%, black 88%, transparent)' }}>
+          <div className="lh-marquee flex w-max gap-3" style={{ animation: 'marquee 40s linear infinite' }}>
+            {[...INTEGRATIONS, ...INTEGRATIONS].map((name, i) => (
+              <span key={i} aria-hidden={i >= INTEGRATIONS.length}
+                className="flex-shrink-0 px-4 py-2 rounded-full border border-white/10 bg-white/[0.03] text-sm font-medium text-[#cfd6e2] whitespace-nowrap">
+                {name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ DOR → SOLUÇÃO ══ */}
+      <section className="relative py-20 sm:py-28 px-5 sm:px-8">
+        <div className="max-w-6xl mx-auto">
+          <SectionHeading eyebrow="Por que o LegalHub" title={<>Feito para a rotina real de quem <span className="text-[#1677FF]">advoga</span></>} />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {PAINS.map((p, i) => (
+              <Reveal key={p.title} delay={i * 90} className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 sm:p-7 flex flex-col">
+                <p.icon className="w-5 h-5 text-[#A7B0C0]" />
+                <p className="mt-4 text-sm text-[#A7B0C0] line-through decoration-white/25">{p.title}</p>
+                <p className="mt-3 text-base font-medium text-white leading-snug flex gap-2">
+                  <Zap className="w-4 h-4 text-[#1677FF] flex-shrink-0 mt-1" />{p.fix}
+                </p>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ DEMONSTRAÇÃO (tour em vídeo) ══ */}
+      <section id="demonstracao" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06]">
+        <div className="pointer-events-none absolute top-1/3 right-0 w-[30rem] h-[30rem] rounded-full blur-3xl opacity-[0.12]"
+          style={{ background: 'radial-gradient(circle, #0B5CFF, transparent 70%)' }} />
+        <div className="relative max-w-7xl mx-auto">
+          <SectionHeading
+            eyebrow="Veja funcionando"
+            title="Um tour pelo sistema, sem precisar agendar nada"
+            subtitle="Gravações reais da plataforma, narradas passo a passo. Escolha uma área e clique em “Ouvir narração”."
+          />
+          <Reveal><ProductTour /></Reveal>
+          <p className="mt-8 text-center text-[11px] text-[#A7B0C0]/70">Vídeos gravados num escritório de demonstração com dados fictícios.</p>
+        </div>
+      </section>
+
+      {/* ══ RECURSOS ══ */}
+      <section id="recursos" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06]">
+        <div className="max-w-6xl mx-auto">
+          <SectionHeading
+            eyebrow="Recursos"
+            title={<>Tudo que o escritório precisa, <span className="text-[#1677FF]">sem colar sistemas</span></>}
+            subtitle="Do primeiro atendimento ao recebimento dos honorários."
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {FEATURES.map((f, i) => (
+              <Reveal
+                key={f.title}
+                delay={(i % 4) * 60}
+                className={cn(
+                  'group relative rounded-2xl p-6 border border-white/10 bg-white/[0.02] hover:border-[#1677FF]/30 hover:bg-white/[0.035] transition-colors duration-300 overflow-hidden',
+                  f.wide && 'lg:col-span-2',
+                )}
+              >
+                <div className="pointer-events-none absolute -top-12 -right-12 w-32 h-32 rounded-full blur-2xl opacity-0 group-hover:opacity-20 transition-opacity" style={{ background: '#1677FF' }} />
+                <div className="relative w-10 h-10 rounded-xl flex items-center justify-center mb-4 bg-[#0B5CFF]/15 group-hover:bg-[#0B5CFF] transition-colors">
+                  <f.icon className="w-[18px] h-[18px] text-[#1677FF] group-hover:text-white transition-colors" />
+                </div>
+                <h3 className="relative text-base font-semibold text-white">{f.title}</h3>
+                <p className="relative mt-1.5 text-sm text-[#A7B0C0] leading-relaxed">{f.description}</p>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ RESPONSIVO ══ */}
+      <section className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06] overflow-hidden">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
+          <Reveal className="order-2 lg:order-1 flex justify-center">
+            <div className="relative w-[250px] sm:w-[280px]">
+              <div className="pointer-events-none absolute -inset-12 -z-10 rounded-full blur-3xl opacity-40" style={{ background: 'radial-gradient(circle, #0B5CFF, transparent 65%)' }} />
+              <div className="rounded-[2.6rem] border-[10px] border-[#0f1522] bg-[#0f1522] overflow-hidden shadow-[0_40px_90px_-20px_rgba(0,0,0,0.7)]">
+                <div className="relative rounded-[1.9rem] overflow-hidden">
+                  <DemoVideo src="/demo/mobile.mp4" poster="/demo/mobile.jpg" label="LegalHub no celular" aspect="390 / 844" compact />
+                  <div className="absolute top-2 left-1/2 -translate-x-1/2 w-20 h-5 rounded-full bg-black" aria-hidden />
+                </div>
+              </div>
             </div>
-            <div
-              className="hidden sm:block absolute -bottom-8 -right-6 w-36 rounded-[1.4rem] overflow-hidden border-4 border-[#0f1522]"
-              style={{ boxShadow: '0 30px 70px -15px rgba(0,0,0,0.55)' }}
-            >
-              <div className="aspect-[9/18]"><DashboardScreen compact /></div>
-            </div>
+          </Reveal>
+          <Reveal delay={120} className="order-1 lg:order-2">
+            <Eyebrow>No escritório ou no fórum</Eyebrow>
+            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">
+              O mesmo sistema no <span className="text-[#1677FF]">computador e no celular</span>
+            </h2>
+            <p className="mt-4 text-[#A7B0C0] leading-relaxed">
+              Confira a pauta do dia na porta da audiência, consulte um processo no corredor do fórum ou registre um pagamento de casa.
+              Não precisa instalar nada: o LegalHub roda no navegador e se adapta à tela.
+            </p>
+            <ul className="mt-6 space-y-3">
+              {['Layout pensado para telas pequenas', 'Login seguro em qualquer dispositivo', 'Dados sempre atualizados entre a equipe'].map(item => (
+                <li key={item} className="flex items-center gap-2.5 text-sm text-white">
+                  <Smartphone className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
+            </ul>
           </Reveal>
         </div>
       </section>
 
-      {/* ══ DEPOIMENTOS — carrossel ══ */}
-      <section id="depoimentos" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-white/[0.06]">
-        <div className="max-w-2xl mx-auto">
-          <Reveal className="text-center mb-14">
-            <Eyebrow>Depoimentos</Eyebrow>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">Quem usa, recomenda</h2>
+      {/* ══ COMO COMEÇAR ══ */}
+      <section className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06]">
+        <div className="max-w-5xl mx-auto">
+          <SectionHeading eyebrow="Como começar" title="Do cadastro ao primeiro prazo controlado no mesmo dia" />
+          <div className="relative grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-5">
+            <div className="hidden md:block absolute top-6 left-[16%] right-[16%] h-px bg-gradient-to-r from-transparent via-[#1677FF]/40 to-transparent" aria-hidden />
+            {STEPS.map((s, i) => (
+              <Reveal key={s.title} delay={i * 100} className="relative text-center px-2">
+                <span className="relative mx-auto w-12 h-12 rounded-full bg-[#020711] border border-[#1677FF]/40 flex items-center justify-center font-serif text-lg font-semibold text-[#1677FF]">
+                  <span className="sr-only">Passo </span>{i + 1}
+                </span>
+                <h3 className="mt-5 text-base font-semibold text-white">{s.title}</h3>
+                <p className="mt-2 text-sm text-[#A7B0C0] leading-relaxed max-w-xs mx-auto">{s.description}</p>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ══ SEGURANÇA ══ */}
+      <section id="seguranca" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06]">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
+          <Reveal className="lg:col-span-5 lg:sticky lg:top-28">
+            <Eyebrow>Segurança e sigilo</Eyebrow>
+            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">
+              Sigilo profissional levado a sério
+            </h2>
+            <p className="mt-4 text-[#A7B0C0] leading-relaxed">
+              Dados de clientes e processos exigem cuidado. O LegalHub foi construído com isolamento entre escritórios e controle de acesso desde a base.
+            </p>
           </Reveal>
-
-          <div className="relative">
-            {(() => {
-              const t = TESTIMONIALS[testimonialIndex]
-              return (
-                <Reveal key={testimonialIndex} className="rounded-3xl border border-white/10 bg-white/[0.03] p-8 sm:p-10 flex flex-col items-center text-center">
-                  <Quote className="w-7 h-7 text-[#1677FF] mb-4" />
-                  <p className="text-base text-white leading-relaxed">{t.quote}</p>
-                  <div className="flex items-center gap-3 mt-7 pt-6 border-t border-white/10">
-                    <div className="w-10 h-10 rounded-full bg-[#0B5CFF] flex items-center justify-center text-sm font-bold text-white flex-shrink-0">
-                      {t.name.charAt(0)}
-                    </div>
-                    <div className="min-w-0 text-left">
-                      <p className="text-sm font-semibold text-white truncate">{t.name}</p>
-                      <p className="text-xs text-[#A7B0C0] truncate">{t.role}</p>
-                    </div>
-                  </div>
-                </Reveal>
-              )
-            })()}
-
-            <div className="flex items-center justify-center gap-5 mt-7">
-              <button
-                onClick={() => setTestimonialIndex(i => (i - 1 + TESTIMONIALS.length) % TESTIMONIALS.length)}
-                className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center text-[#A7B0C0] hover:text-white hover:border-white/25 transition-colors"
-                aria-label="Depoimento anterior"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <div className="flex items-center gap-1.5">
-                {TESTIMONIALS.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setTestimonialIndex(i)}
-                    aria-label={`Ver depoimento ${i + 1}`}
-                    className={cn('h-1.5 rounded-full transition-all', i === testimonialIndex ? 'w-5 bg-[#1677FF]' : 'w-1.5 bg-white/20')}
-                  />
-                ))}
-              </div>
-              <button
-                onClick={() => setTestimonialIndex(i => (i + 1) % TESTIMONIALS.length)}
-                className="w-9 h-9 rounded-full border border-white/10 flex items-center justify-center text-[#A7B0C0] hover:text-white hover:border-white/25 transition-colors"
-                aria-label="Próximo depoimento"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
+          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {SECURITY.map((s, i) => (
+              <Reveal key={s.title} delay={i * 70} className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+                <s.icon className="w-5 h-5 text-[#1677FF]" />
+                <h3 className="mt-4 text-sm font-semibold text-white">{s.title}</h3>
+                <p className="mt-1.5 text-sm text-[#A7B0C0] leading-relaxed">{s.description}</p>
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
 
       {/* ══ PLANOS ══ */}
-      <section id="planos" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-white/[0.06]">
+      <section id="planos" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06]">
         <div className="max-w-6xl mx-auto">
-          <Reveal className="max-w-2xl mx-auto text-center mb-10">
-            <Eyebrow>Planos</Eyebrow>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">Um plano para cada tamanho de escritório</h2>
-            <p className="mt-4 text-[#A7B0C0] leading-relaxed">
-              Cobrança mensal recorrente, sem fidelidade. Faça upgrade quando o seu escritório crescer.
-            </p>
-          </Reveal>
+          <SectionHeading
+            eyebrow="Planos"
+            title="Um plano para cada tamanho de escritório"
+            subtitle={`Comece com ${TRIAL_DAYS} dias grátis. Cobrança mensal, sem fidelidade, upgrade quando o escritório crescer.`}
+          />
 
-          {PROMO_ACTIVE && <Reveal delay={80} className="max-w-3xl mx-auto mb-8 rounded-2xl border border-[#1677FF]/20 bg-[#1677FF]/[0.06] p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+          {PROMO_ACTIVE && <Reveal delay={80} className="max-w-3xl mx-auto mb-8 rounded-2xl border border-[#1677FF]/25 bg-[#1677FF]/[0.07] p-5 sm:p-6 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
             <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#0B5CFF]/15">
-              <CalendarCheck className="w-5 h-5 text-[#1677FF]" />
+              <Sparkles className="w-5 h-5 text-[#1677FF]" />
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-white">
                 Oferta de lançamento: assine até {PROMO_LAST_DAY} e pague R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, em qualquer plano
               </p>
-              <p className="mt-1 text-xs text-[#1677FF]">Bônus: você recebe o e-book completo do LegalHub direto dentro do sistema</p>
+              <p className="mt-1 text-xs text-[#1677FF]">Bônus: e-book completo do LegalHub direto dentro do sistema</p>
             </div>
           </Reveal>}
 
-          <Reveal delay={120} className="max-w-xl mx-auto mb-14 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+          <Reveal delay={120} className="max-w-xl mx-auto mb-12 rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3 mb-3">
               <label htmlFor="process-slider" className="text-sm font-semibold text-white">
-                Quantos processos ativos o seu escritório tem?
+                Quantos processos ativos o escritório tem?
               </label>
-              <span className="flex-shrink-0 text-sm font-bold text-[#1677FF]">
+              <span className="flex-shrink-0 text-sm font-bold text-[#1677FF] tabular-nums" aria-live="polite">
                 {processCount}{processCount >= 2000 ? '+' : ''}
               </span>
             </div>
@@ -815,117 +534,117 @@ export function LandingPage() {
             </p>
           </Reveal>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-            {PLANS.map((plan, i) => (
-              <Reveal
-                key={plan.id}
-                delay={i * 90}
-                className={cn(
-                  'relative rounded-3xl p-7 sm:p-8 flex flex-col h-full transition-shadow border',
-                  plan.highlight ? 'border-[#1677FF]/50 bg-white/[0.04] lg:-translate-y-3' : 'border-white/10 bg-white/[0.02]',
-                  plan.id === recommendedPlanId && !plan.highlight && 'ring-2 ring-emerald-400/40'
-                )}
-                style={plan.highlight ? { boxShadow: '0 24px 60px -16px rgba(11,92,255,0.25)' } : undefined}
-              >
-                {plan.highlight && (
-                  <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold text-white bg-[#0B5CFF]">
-                    Mais popular
-                  </span>
-                )}
-                {plan.id === recommendedPlanId && (
-                  <span className="absolute -top-3 right-5 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30">
-                    <CheckCircle2 className="w-3 h-3" /> Ideal pra você
-                  </span>
-                )}
-
-                <h3 className="text-lg font-bold text-white">{plan.name}</h3>
-                <p className="mt-1.5 text-xs text-[#A7B0C0] leading-relaxed min-h-[2.5rem]">{plan.tagline}</p>
-
-                <div className="mt-5">
-                  {PROMO_ACTIVE && plan.price > PROMO_MONTHLY_PRICE ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-[#A7B0C0] line-through">R$ {plan.price}/mês</span>
-                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-0.5">
-                          {Math.round((1 - PROMO_MONTHLY_PRICE / plan.price) * 100)}% OFF
-                        </span>
-                      </div>
-                      <div className="flex items-baseline gap-1 mt-1">
-                        <span className="text-sm text-[#A7B0C0]">R$</span>
-                        <span className="font-serif text-4xl font-semibold tracking-tight text-white">{PROMO_MONTHLY_PRICE}</span>
-                        <span className="text-sm text-[#A7B0C0]">/mês</span>
-                      </div>
-                      <p className="mt-1 text-[11px] text-[#1677FF] font-medium">nos 3 primeiros meses — depois R$ {plan.price}/mês</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-sm text-[#A7B0C0]">R$</span>
-                        <span className="font-serif text-4xl font-semibold tracking-tight text-white">{plan.price}</span>
-                        <span className="text-sm text-[#A7B0C0]">/mês</span>
-                      </div>
-                      {PROMO_ACTIVE && <p className="mt-1 text-[11px] text-[#1677FF] font-medium">já é o valor promocional dos 3 primeiros meses</p>}
-                    </>
-                  )}
-                </div>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5 w-fit">
-                    <Briefcase className="w-3.5 h-3.5" />
-                    {plan.processLimit}
-                  </div>
-                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5 w-fit">
-                    <HardDrive className="w-3.5 h-3.5" />
-                    {plan.storageLimit}
-                  </div>
-                </div>
-
-                <ul className="mt-6 space-y-3 flex-1">
-                  {plan.features.map(f => (
-                    <li key={f} className="flex items-start gap-2.5 text-sm text-[#A7B0C0] leading-snug">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-
-                <button
-                  onClick={() => goToLogin('signup')}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            {PLANS.map((plan, i) => {
+              const recommended = plan.id === recommendedPlanId
+              return (
+                <Reveal
+                  key={plan.id}
+                  delay={i * 90}
                   className={cn(
-                    'mt-8 w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]',
-                    plan.highlight ? 'text-white bg-[#0B5CFF] hover:brightness-110' : 'text-white bg-white/[0.06] hover:bg-white/[0.1]'
+                    'relative rounded-3xl p-7 sm:p-8 flex flex-col transition-all duration-300 border',
+                    plan.highlight ? 'border-[#1677FF]/50 bg-white/[0.045]' : 'border-white/10 bg-white/[0.02]',
+                    recommended && 'ring-2 ring-[#1677FF]/60 lg:-translate-y-2',
                   )}
+                  style={plan.highlight ? { boxShadow: '0 24px 60px -16px rgba(11,92,255,0.25)' } : undefined}
                 >
-                  Assinar {plan.name} <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </Reveal>
-            ))}
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                    {plan.highlight && (
+                      <span className="px-3 py-1 rounded-full text-[11px] font-bold text-white bg-[#0B5CFF] whitespace-nowrap">Mais escolhido</span>
+                    )}
+                    {recommended && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold text-[#1677FF] bg-[#020711] border border-[#1677FF]/50 whitespace-nowrap">
+                        <CheckCircle2 className="w-3 h-3" /> Ideal pra você
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="text-lg font-bold text-white">{plan.name}</h3>
+                  <p className="mt-1.5 text-xs text-[#A7B0C0] leading-relaxed min-h-[2.5rem]">{plan.tagline}</p>
+
+                  <div className="mt-5">
+                    {PROMO_ACTIVE && plan.price > PROMO_MONTHLY_PRICE ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-[#A7B0C0] line-through">R$ {plan.price}/mês</span>
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-0.5">
+                            {Math.round((1 - PROMO_MONTHLY_PRICE / plan.price) * 100)}% OFF
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-1 mt-1">
+                          <span className="text-sm text-[#A7B0C0]">R$</span>
+                          <span className="font-serif text-4xl font-semibold tracking-tight text-white">{PROMO_MONTHLY_PRICE}</span>
+                          <span className="text-sm text-[#A7B0C0]">/mês</span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-[#1677FF] font-medium">nos 3 primeiros meses, depois R$ {plan.price}/mês</p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-sm text-[#A7B0C0]">R$</span>
+                          <span className="font-serif text-4xl font-semibold tracking-tight text-white">{plan.price}</span>
+                          <span className="text-sm text-[#A7B0C0]">/mês</span>
+                        </div>
+                        {PROMO_ACTIVE && <p className="mt-1 text-[11px] text-[#1677FF] font-medium">já é o valor promocional dos 3 primeiros meses</p>}
+                      </>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5">
+                      <Briefcase className="w-3.5 h-3.5" /> {plan.processLimit}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-white/[0.06] rounded-lg px-3 py-1.5">
+                      <HardDrive className="w-3.5 h-3.5" /> {plan.storageLimit}
+                    </span>
+                  </div>
+
+                  <ul className="mt-6 space-y-3 flex-1">
+                    {plan.features.map(f => (
+                      <li key={f} className="flex items-start gap-2.5 text-sm text-[#A7B0C0] leading-snug">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <button
+                    onClick={() => goToLogin('signup')}
+                    className={cn(
+                      'mt-8 w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all active:scale-[0.98]',
+                      plan.highlight || recommended ? 'text-white bg-[#0B5CFF] hover:brightness-110' : 'text-white bg-white/[0.06] hover:bg-white/[0.1]'
+                    )}
+                  >
+                    Testar grátis e assinar o {plan.name} <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </Reveal>
+              )
+            })}
           </div>
 
           <Reveal delay={260} className="mt-10 text-center text-xs text-[#A7B0C0]">
-            Todos os planos incluem suporte, atualizações contínuas e dados isolados por escritório. Sem cartão de crédito para começar.
+            Todos os planos incluem atualizações contínuas e dados isolados por escritório. Sem cartão de crédito para começar.
           </Reveal>
         </div>
       </section>
 
       {/* ══ FAQ ══ */}
-      <section id="faq" className="relative py-24 sm:py-32 px-5 sm:px-8 border-b border-white/[0.06]">
+      <section id="faq" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-white/[0.06]">
         <div className="max-w-3xl mx-auto">
-          <Reveal className="text-center mb-12">
-            <Eyebrow>Dúvidas frequentes</Eyebrow>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-white">Antes de assinar, tire suas dúvidas</h2>
-          </Reveal>
-
+          <SectionHeading eyebrow="Dúvidas frequentes" title="Antes de começar, tire suas dúvidas" />
           <div className="space-y-3">
             {FAQS.map((item, i) => {
               const open = faqOpen === i
               return (
-                <Reveal key={item.q} delay={i * 50} className={cn('rounded-2xl border overflow-hidden transition-colors', open ? 'border-[#1677FF]/30 bg-white/[0.03]' : 'border-white/10')}>
-                  <button onClick={() => setFaqOpen(open ? null : i)} className="w-full flex items-center justify-between gap-4 px-5 sm:px-6 py-4 text-left">
-                    <span className="text-sm font-semibold text-white">{item.q}</span>
-                    <ChevronRight className={cn('w-4 h-4 flex-shrink-0 transition-transform', open ? 'rotate-90 text-[#1677FF]' : 'text-[#A7B0C0]')} />
-                  </button>
-                  <div className="grid transition-all duration-300 ease-out" style={{ gridTemplateRows: open ? '1fr' : '0fr' }}>
+                <Reveal key={item.q} delay={Math.min(i, 4) * 50} className={cn('rounded-2xl border overflow-hidden transition-colors', open ? 'border-[#1677FF]/30 bg-white/[0.03]' : 'border-white/10')}>
+                  <h3>
+                    <button onClick={() => setFaqOpen(open ? null : i)} aria-expanded={open} aria-controls={`faq-${i}`}
+                      className="w-full flex items-center justify-between gap-4 px-5 sm:px-6 py-4 text-left">
+                      <span className="text-sm font-semibold text-white">{item.q}</span>
+                      <ChevronRight className={cn('w-4 h-4 flex-shrink-0 transition-transform', open ? 'rotate-90 text-[#1677FF]' : 'text-[#A7B0C0]')} />
+                    </button>
+                  </h3>
+                  <div id={`faq-${i}`} className="grid transition-all duration-300 ease-out" style={{ gridTemplateRows: open ? '1fr' : '0fr' }}>
                     <div className="overflow-hidden">
                       <p className="px-5 sm:px-6 pb-4 text-sm text-[#A7B0C0] leading-relaxed">{item.a}</p>
                     </div>
@@ -938,102 +657,81 @@ export function LandingPage() {
       </section>
 
       {/* ══ CTA FINAL ══ */}
-      <section id="contato" className="relative py-24 sm:py-32 px-5 sm:px-8 overflow-hidden">
-        <div
-          className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[40rem] h-[40rem] rounded-full blur-3xl opacity-[0.08]"
-          style={{ background: 'radial-gradient(circle, #0B5CFF, transparent 70%)' }}
-        />
-        <Reveal className="relative max-w-4xl mx-auto rounded-3xl border border-white/10 bg-white/[0.03] px-6 py-12 sm:px-14 sm:py-14 flex flex-col sm:flex-row items-center gap-8">
-          <div className="relative flex-shrink-0 w-20 h-20 flex items-center justify-center" style={{ clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)', background: 'linear-gradient(135deg, rgba(11,92,255,0.25), rgba(22,119,255,0.05))' }}>
-            <CalendarCheck className="w-8 h-8 text-[#1677FF]" />
+      <section className="relative py-20 sm:py-28 px-5 sm:px-8">
+        <Reveal className="relative max-w-5xl mx-auto rounded-[2rem] border border-[#1677FF]/25 overflow-hidden px-6 py-14 sm:px-14 sm:py-16 text-center"
+          style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(11,92,255,0.35), rgba(2,7,17,0) 70%), rgba(255,255,255,0.02)' }}>
+          <h2 className="font-serif text-3xl sm:text-[2.6rem] leading-tight font-semibold tracking-tight text-white" style={{ textWrap: 'balance' } as React.CSSProperties}>
+            Organize o escritório ainda esta semana
+          </h2>
+          <p className="mt-4 text-[#A7B0C0] leading-relaxed max-w-xl mx-auto">
+            {TRIAL_DAYS} dias grátis com todos os recursos do plano Pro. Sem cartão de crédito e sem fidelidade.
+          </p>
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={() => goToLogin('signup')}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-4 rounded-full text-sm font-semibold text-white bg-[#0B5CFF] transition-all active:scale-[0.98] hover:brightness-110"
+              style={{ boxShadow: '0 10px 30px rgba(11,92,255,0.45)' }}
+            >
+              Criar minha conta grátis <ArrowRight className="w-4 h-4" />
+            </button>
+            <button onClick={() => goToLogin('login')} className="w-full sm:w-auto px-6 py-4 rounded-full text-sm font-semibold text-white border border-white/15 hover:bg-white/5">
+              Já tenho conta
+            </button>
           </div>
-          <div className="flex-1 text-center sm:text-left">
-            <h2 className="font-serif text-2xl sm:text-3xl font-semibold tracking-tight text-white">Pronto para transformar a gestão do seu escritório?</h2>
-            <p className="mt-3 text-[#A7B0C0] leading-relaxed">
-              Agende uma demonstração gratuita e descubra como o LegalHub pode aumentar a produtividade e organização do seu escritório.
-            </p>
-          </div>
-          <button
-            onClick={() => goToLogin('signup')}
-            className="flex-shrink-0 flex items-center justify-center gap-2 px-7 py-3.5 rounded-xl text-sm font-semibold text-white bg-[#0B5CFF] transition-all active:scale-[0.98] hover:brightness-110"
-            style={{ boxShadow: '0 10px 30px rgba(11,92,255,0.35)' }}
-          >
-            <CalendarCheck className="w-4 h-4" /> Agendar demonstração
-          </button>
         </Reveal>
       </section>
 
       {/* ══ FOOTER ══ */}
-      <footer className="relative border-t border-white/[0.06] px-5 sm:px-8 py-16">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-10">
-          <div className="lg:col-span-2 flex flex-col items-center sm:items-start gap-3 text-center sm:text-left">
+      <footer className="relative border-t border-white/[0.06] px-5 sm:px-8 pt-14 pb-24 sm:pb-12">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
+          <div className="lg:col-span-2 flex flex-col items-start gap-3">
             <BrandMark size={34} />
             <p className="text-xs text-[#A7B0C0] max-w-xs leading-relaxed">
-              O sistema completo para escritórios de advocacia que buscam eficiência, organização e resultados.
+              Sistema de gestão para escritórios de advocacia: processos, intimações, prazos, agenda, clientes e financeiro.
             </p>
-            <div className="flex items-center gap-3 mt-1">
-              {[Linkedin, Instagram, Facebook].map((Icon, i) => (
-                <a key={i} href="#" className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-[#A7B0C0] hover:text-white hover:border-white/25 transition-colors">
-                  <Icon className="w-3.5 h-3.5" />
-                </a>
-              ))}
-            </div>
           </div>
 
           <div>
             <p className="text-xs font-bold uppercase tracking-widest text-white mb-4">Produto</p>
             <ul className="space-y-2.5">
-              {[['Funcionalidades', '#funcionalidades'], ['Planos', '#planos'], ['Recursos', '#faq'], ['Segurança', '#funcionalidades']].map(([label, href]) => (
-                <li key={label}><a href={href} className="text-xs text-[#A7B0C0] hover:text-white transition-colors">{label}</a></li>
+              {NAV_LINKS.map(l => (
+                <li key={l.href}><a href={l.href} className="text-xs text-[#A7B0C0] hover:text-white transition-colors">{l.label}</a></li>
               ))}
             </ul>
           </div>
 
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-white mb-4">Empresa</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-white mb-4">Fale conosco</p>
             <ul className="space-y-2.5">
-              {['Sobre', 'Blog', 'Carreiras', 'Contato'].map(label => (
-                <li key={label}><a href="#" className="text-xs text-[#A7B0C0] hover:text-white transition-colors">{label}</a></li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-white mb-4">Suporte</p>
-            <ul className="space-y-2.5 mb-6">
-              {['Central de Ajuda', 'Tutoriais', 'Status do Sistema', 'Fale Conosco'].map(label => (
-                <li key={label}><a href="#" className="text-xs text-[#A7B0C0] hover:text-white transition-colors">{label}</a></li>
-              ))}
-            </ul>
-            <p className="text-xs font-bold uppercase tracking-widest text-white mb-3">Fale conosco</p>
-            <ul className="space-y-2">
-              <li className="flex items-center gap-2 text-xs text-[#A7B0C0]"><Mail className="w-3.5 h-3.5 flex-shrink-0 text-[#1677FF]" /> contato@legalhub.com.br</li>
-              <li className="flex items-center gap-2 text-xs text-[#A7B0C0]"><Phone className="w-3.5 h-3.5 flex-shrink-0 text-[#1677FF]" /> (83) 9 9999-9999</li>
+              <li>
+                <a href="mailto:contato@legalhub.com.br" className="flex items-center gap-2 text-xs text-[#A7B0C0] hover:text-white transition-colors">
+                  <Mail className="w-3.5 h-3.5 flex-shrink-0 text-[#1677FF]" /> contato@legalhub.com.br
+                </a>
+              </li>
               <li className="flex items-center gap-2 text-xs text-[#A7B0C0]"><MapPin className="w-3.5 h-3.5 flex-shrink-0 text-[#1677FF]" /> João Pessoa - PB, Brasil</li>
+              <li>
+                <button onClick={() => goToLogin('login')} className="text-xs text-[#A7B0C0] hover:text-white transition-colors">Entrar no sistema</button>
+              </li>
             </ul>
           </div>
         </div>
 
-        <div className="max-w-6xl mx-auto mt-12 pt-6 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-[#A7B0C0]">© 2026 LegalHub. Todos os direitos reservados.</p>
-          <div className="flex items-center gap-6">
-            <a href="#" className="text-xs text-[#A7B0C0] hover:text-white transition-colors">Política de Privacidade</a>
-            <a href="#" className="text-xs text-[#A7B0C0] hover:text-white transition-colors">Termos de Uso</a>
-          </div>
+        <div className="max-w-6xl mx-auto mt-12 pt-6 border-t border-white/[0.06]">
+          <p className="text-xs text-[#A7B0C0]">© {new Date().getFullYear()} LegalHub. Todos os direitos reservados.</p>
         </div>
       </footer>
 
       {/* ══ CTA FIXO (mobile) ══ */}
       <div
-        className={cn('sm:hidden fixed bottom-0 inset-x-0 z-40 px-4 pb-4 pt-3 transition-transform duration-300', showStickyCta ? 'translate-y-0' : 'translate-y-full')}
-        style={{ background: 'linear-gradient(to top, rgba(2,7,17,0.98) 60%, rgba(2,7,17,0))' }}
+        className={cn('sm:hidden fixed bottom-0 inset-x-0 z-40 px-4 pb-4 pt-6 transition-transform duration-300', showStickyCta && !menuOpen ? 'translate-y-0' : 'translate-y-full')}
+        style={{ background: 'linear-gradient(to top, rgba(2,7,17,0.98) 55%, rgba(2,7,17,0))' }}
       >
         <button
           onClick={() => goToLogin('signup')}
-          className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-semibold text-white bg-[#0B5CFF] active:scale-[0.98] transition-transform"
+          className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-full text-sm font-semibold text-white bg-[#0B5CFF] active:scale-[0.98] transition-transform"
           style={{ boxShadow: '0 12px 32px rgba(11,92,255,0.45)' }}
         >
-          <CalendarCheck className="w-4 h-4" /> Agendar demonstração
+          Começar {TRIAL_DAYS} dias grátis <ArrowRight className="w-4 h-4" />
         </button>
       </div>
     </div>
