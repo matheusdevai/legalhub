@@ -13,6 +13,8 @@ export interface Profile {
   oab_seccional: string | null
   oab_tribunais: string[] | null
   onboarding_completed: boolean | null
+  /** Conta criada com senha temporária: obriga a troca no primeiro acesso (FirstAccessScreen). */
+  must_change_password?: boolean | null
   subscription_status: string | null
   subscription_plan: string | null
   notification_prefs: NotificationPrefs | null
