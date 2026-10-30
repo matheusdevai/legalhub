@@ -363,3 +363,33 @@ function eventLabel(e: StartEvent): string {
     case 'data_inicial': return 'Data inicial informada'
   }
 }
+
+/**
+ * Quantos dias úteis há depois de `from` até `to` (inclusive) — 0 se `to` não
+ * for depois de `from`. Usado no painel ("vence em N dias úteis").
+ */
+export function businessDaysUntil(from: string, to: string, calendar: CalendarEntry[] = []): number {
+  if (to <= from) return 0
+  const cal = new ForensicCalendar(calendar, true)
+  let n = 0
+  for (let d = addDays(from, 1), i = 0; d <= to && i < MAX_SPAN_DAYS; d = addDays(d, 1), i++) {
+    if (cal.canEnd(d)) n++
+  }
+  return n
+}
+
+/**
+ * Prazo interno para uma data fatal informada à mão: `margin` dias úteis
+ * antes, nunca antes de `notBefore` (o primeiro dia da contagem).
+ */
+export function internalDateFor(fatal: string, margin: number, calendar: CalendarEntry[] = [], notBefore = '0000-01-01'): string {
+  const cal = new ForensicCalendar(calendar, true)
+  let internal = fatal
+  for (let k = 0; k < margin; k++) {
+    let prev = addDays(internal, -1)
+    while (!cal.canEnd(prev) && prev > notBefore) prev = addDays(prev, -1)
+    if (prev < notBefore) break
+    internal = prev
+  }
+  return internal
+}

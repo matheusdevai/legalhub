@@ -172,3 +172,11 @@ describe('entradas inválidas', () => {
     expect(() => calculateDeadline({ regime: 'civel', startEvent: 'djen', eventDate: '2026-10-29', amount: 0 })).toThrow(DeadlineInputError)
   })
 })
+
+describe('internalDateFor', () => {
+  it('conta dias úteis para trás a partir de uma data fatal ajustada', async () => {
+    const { internalDateFor } = await import('./engine')
+    expect(internalDateFor('2026-11-24', 2)).toBe('2026-11-19') // 23 (1), 20 feriado, 19 (2)
+    expect(internalDateFor('2026-11-24', 2, [], '2026-11-23')).toBe('2026-11-23')
+  })
+})

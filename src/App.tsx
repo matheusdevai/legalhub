@@ -14,6 +14,7 @@ import { FirstAccessScreen } from '@/components/auth/FirstAccessScreen'
 
 const PrivacyPolicyPage = lazy(() => import('@/pages/legal/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })))
 const TermsPage        = lazy(() => import('@/pages/legal/TermsPage').then(m => ({ default: m.TermsPage })))
+const PrazosPage       = lazy(() => import('@/pages/prazos/PrazosPage').then(m => ({ default: m.PrazosPage })))
 const Dashboard        = lazy(() => import('@/pages/dashboard/Dashboard').then(m => ({ default: m.Dashboard })))
 const ClientsPage      = lazy(() => import('@/pages/clients/ClientsPage').then(m => ({ default: m.ClientsPage })))
 const ProcessesPage    = lazy(() => import('@/pages/processes/ProcessesPage').then(m => ({ default: m.ProcessesPage })))
@@ -100,6 +101,7 @@ function AppRoutes() {
       <Route path="/documentos" element={<PrivateRoute><DocumentsPage /></PrivateRoute>} />
       <Route path="/escritorio-digital" element={<PrivateRoute><EscritorioDigitalPage /></PrivateRoute>} />
       <Route path="/publicacoes" element={<PrivateRoute><PublicacoesPage /></PrivateRoute>} />
+      <Route path="/prazos" element={<PrivateRoute><PrazosPage /></PrivateRoute>} />
       <Route path="/ia-juridica" element={<PrivateRoute><AiJuridicaPage /></PrivateRoute>} />
       {/* Assistente IA (/assistente-ia): rota desativada temporariamente a pedido do usuário
           (2026-09-16), para reconfigurar/reativar depois. Código de AssistantPage e da Edge
