@@ -4,11 +4,12 @@ import {
   Calendar, UserCheck,
   Shield, BarChart2, X, UserCog,
   FileText, Newspaper, ChevronLeft, ChevronRight, Target, FolderOpen,
-  Sparkles, Bot,
+  Sparkles, Bot, CalendarClock,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { fetchDeadlineSettings } from '@/lib/deadlines/api'
 
 const navGroups = [
   {
@@ -28,6 +29,7 @@ const navGroups = [
       { to: '/clientes',    icon: Users,      label: 'Clientes' },
       { to: '/processos',   icon: Briefcase,  label: 'Processos' },
       { to: '/publicacoes', icon: Newspaper,  label: 'Intimações' },
+      { to: '/prazos',      icon: CalendarClock, label: 'Prazos', requires: 'deadlines' },
       { to: '/documentos',  icon: FileText,   label: 'Documentos' },
       { to: '/ia-juridica', icon: Sparkles,   label: 'Excelência' },
       { to: '/escritorio-digital', icon: FolderOpen, label: 'Escritório Digital' },
@@ -54,6 +56,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { profile } = useAuth()
   const [collapsed, setCollapsed] = useState(false)
   const isSuperAdmin = profile?.role === 'super_admin'
+  // "Prazos" só aparece com o Controle de Prazos ligado para o escritório (piloto); super_admin sempre vê.
+  const [deadlinesEnabled, setDeadlinesEnabled] = useState(false)
+  useEffect(() => {
+    if (!profile?.tenant_id) return
+    fetchDeadlineSettings(profile.tenant_id).then(s => setDeadlinesEnabled(s.enabled))
+  }, [profile?.tenant_id])
+  const visible = (item: { requires?: string }) => item.requires !== 'deadlines' || deadlinesEnabled || isSuperAdmin
 
   return (
     <aside
@@ -122,7 +131,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
               </p>
             )}
             <div className="space-y-0.5">
-              {group.items.map(({ to, icon: Icon, label, disabled }: { to: string; icon: React.ElementType; label: string; disabled?: boolean }) =>
+              {(group.items as { to: string; icon: React.ElementType; label: string; disabled?: boolean; requires?: string }[]).filter(visible).map(({ to, icon: Icon, label, disabled }) =>
                 disabled ? (
                   <div
                     key={to}
