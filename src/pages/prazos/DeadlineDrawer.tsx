@@ -5,7 +5,7 @@ import { toast } from '@/components/ui/Toast'
 import { cn, formatDate, toLocalISODate } from '@/lib/utils'
 import { courtLabel } from '@/lib/deadlines/courts'
 import { fetchDeadlineEvents, setDeadlineStatus, updateDeadline, uploadProtocolFile, type DeadlineEventRow, type DeadlineSettings, type ProcessOption, type TeamMember } from '@/lib/deadlines/api'
-import { availableActions, reviewBlockedReason, STATUS_COLORS, STATUS_LABELS, validateClose, validateProtocol, type DeadlineAction, type DeadlineRow } from '@/lib/deadlines/workflow'
+import { availableActions, reviewBlockedReason, STATUS_COLORS, STATUS_LABELS, UNIT_LABELS, validateClose, validateProtocol, type DeadlineAction, type DeadlineRow } from '@/lib/deadlines/workflow'
 import { MemoryView } from './MemoryView'
 
 const EVENT_LABELS: Record<string, string> = {
@@ -24,6 +24,31 @@ const EVENT_LABELS: Record<string, string> = {
   'triagem:deadline': 'Triada: gera prazo',
   'triagem:no_deadline': 'Triada: não gera prazo',
   'triagem:duplicate': 'Triada: duplicada',
+}
+
+const ALERT_LABELS: Record<string, string> = {
+  criado: 'novo prazo',
+  sem_conferencia_1: 'sem conferência há 1 dia útil',
+  sem_conferencia_2: 'sem conferência há 2 dias úteis',
+  d5: 'vence em até 5 dias úteis',
+  interno: 'prazo interno chegou',
+  d1: 'vence amanhã',
+  fatal_7h: 'vence hoje (7h)',
+  fatal_escalonamento: 'vence hoje, escalonado ao administrador',
+  pos_fatal: 'vencido sem protocolo',
+  recalculo_mais_cedo: 'prazo antecipado por recálculo',
+  triagem_1: 'intimação sem triagem',
+  triagem_2: 'intimação sem triagem, escalonado ao administrador',
+}
+
+/** "Alerta enviado: vence amanhã → Helena, Rafael (app, e-mail)" — prova de que o aviso existiu. */
+function eventLabel(ev: DeadlineEventRow): string {
+  if (!ev.kind.startsWith('alerta:')) return EVENT_LABELS[ev.kind] || ev.kind
+  const rule = ev.kind.slice('alerta:'.length)
+  const after = (ev.after || {}) as { destinatarios?: string[]; canais?: string[] }
+  const to = after.destinatarios?.length ? ` → ${after.destinatarios.join(', ')}` : ''
+  const via = after.canais?.length ? ` (${after.canais.map(c => (c === 'email' ? 'e-mail' : c)).join(', ')})` : ''
+  return `Alerta: ${ALERT_LABELS[rule] || rule}${to}${via}`
 }
 
 interface Props {
@@ -92,7 +117,7 @@ export function DeadlineDrawer({ deadline: d, onClose, onChanged, onRecalculate,
             <dl className="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1.5 text-sm">
               <dt className="text-slate-400">Processo</dt><dd className="text-slate-800 dark:text-slate-100">{proc ? `${proc.number} — ${proc.client_name || proc.title}` : '—'}</dd>
               <dt className="text-slate-400">Tribunal</dt><dd className="text-slate-800 dark:text-slate-100">{courtLabel(d.court)}{d.county ? ` · ${d.county}` : ''}</dd>
-              <dt className="text-slate-400">Contagem</dt><dd className="text-slate-800 dark:text-slate-100">{d.amount} {d.unit.replace('_', ' ')}{d.doubled ? ` (em dobro: ${d.doubled_reason})` : ''}</dd>
+              <dt className="text-slate-400">Contagem</dt><dd className="text-slate-800 dark:text-slate-100">{d.amount} {UNIT_LABELS[d.unit]}{d.doubled ? ` (em dobro: ${d.doubled_reason})` : ''}</dd>
               <dt className="text-slate-400">Responsável</dt><dd className="text-slate-800 dark:text-slate-100">{name(d.responsible_id)}</dd>
               <dt className="text-slate-400">Conferente</dt><dd className="text-slate-800 dark:text-slate-100">{name(d.reviewer_id)}{d.reviewed_at ? ` · conferido em ${formatDate(d.reviewed_at, 'dd/MM/yyyy HH:mm')}` : ''}</dd>
               {d.protocol_at && <><dt className="text-slate-400">Protocolo</dt><dd className="text-slate-800 dark:text-slate-100">{formatDate(d.protocol_at, 'dd/MM/yyyy HH:mm')}{d.protocol_number ? ` · nº ${d.protocol_number}` : ''}{d.protocol_file_url && <a href={d.protocol_file_url} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 text-primary-600 underline">comprovante <ExternalLink className="w-3 h-3" /></a>}</dd></>}
@@ -128,7 +153,7 @@ export function DeadlineDrawer({ deadline: d, onClose, onChanged, onRecalculate,
                 {events.map(ev => (
                   <li key={ev.id} className="flex gap-2">
                     <span className="w-28 flex-shrink-0 text-slate-400 tabular-nums">{formatDate(ev.created_at, 'dd/MM/yy HH:mm')}</span>
-                    <span className="text-slate-700 dark:text-slate-200">{EVENT_LABELS[ev.kind] || ev.kind}<span className="text-slate-400"> · {ev.actor_id ? name(ev.actor_id) : 'sistema'}</span></span>
+                    <span className="text-slate-700 dark:text-slate-200">{eventLabel(ev)}<span className="text-slate-400"> · {ev.actor_id ? name(ev.actor_id) : 'sistema'}</span></span>
                   </li>
                 ))}
                 {events.length === 0 && <li className="text-slate-400">Sem registros.</li>}

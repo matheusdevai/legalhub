@@ -442,6 +442,7 @@ Deno.serve(async (req: Request) => {
 
     let imported = 0, updated = 0
     const errors: string[] = []
+    let pjeErrors: string[] = []
 
     try {
       const r = await syncCnjForProfile(supabase, profile, tribunais)
@@ -450,8 +451,8 @@ Deno.serve(async (req: Request) => {
 
     try {
       const r = await syncPjeForProfile(supabase, profile)
-      imported += r.imported; updated += r.updated; errors.push(...r.errors)
-    } catch (e: any) { errors.push(`PJe: ${e.message}`) }
+      imported += r.imported; updated += r.updated; errors.push(...r.errors); pjeErrors = r.errors
+    } catch (e: any) { errors.push(`PJe: ${e.message}`); pjeErrors = [`PJe: ${e.message}`] }
 
     if (escToken) {
       try {
@@ -480,6 +481,16 @@ Deno.serve(async (req: Request) => {
         })
       }
     }
+
+    // Vigilância do Controle de Prazos (faixa de saúde): a sincronização de cada
+    // OAB precisa deixar rastro diário — foi a falta disso que deixou o cron das
+    // 5h falhando em silêncio por semanas. "ok" olha o DJEN, que alimenta a
+    // caixa A triar; erros das outras fontes vão só no detalhe.
+    await supabase.from('health_checks').upsert({
+      tenant_id: profile.tenant_id, check_key: `sync_oab:${profile.user_id}`,
+      ok: pjeErrors.length === 0,
+      detail: `OAB ${profile.oab_number}/${profile.oab_seccional}: ${imported} novo(s), ${updated} atualizado(s)` + (errors.length ? ` · ${errors.slice(0, 3).join(' | ')}` : ''),
+    }, { onConflict: 'tenant_id,check_key,checked_on' })
 
     results.push({ tenant_id: profile.tenant_id, oab: `${profile.oab_number}/${profile.oab_seccional}`, imported, updated, errors })
 

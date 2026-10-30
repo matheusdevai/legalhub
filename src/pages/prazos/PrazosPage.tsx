@@ -1,38 +1,56 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarPlus, ClipboardCheck, Inbox, LayoutGrid, RefreshCw, ShieldCheck } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
+import { Activity, AlertTriangle, CalendarPlus, ClipboardCheck, Inbox, LayoutGrid, RefreshCw, Settings2, ShieldCheck } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Badge, Button, EmptyState, Spinner } from '@/components/ui'
 import { toast } from '@/components/ui/Toast'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn, formatDate, toLocalISODate } from '@/lib/utils'
 import {
-  DEFAULT_SETTINGS, fetchCourtCalendar, fetchDeadlines, fetchDeadlineSettings, fetchPendingCommunications, fetchProcessOptions, fetchTeam,
-  importDjenCommunications, setDeadlinesEnabled, type CommunicationRow, type DeadlineSettings, type ProcessOption, type TeamMember,
+  DEFAULT_SETTINGS, fetchCourtCalendar, fetchDeadlines, fetchDeadlineSettings, fetchHealth, fetchPendingCommunications, fetchProcessOptions, fetchTeam,
+  importDjenCommunications, setDeadlinesEnabled, type CommunicationRow, type DeadlineSettings, type HealthSnapshot, type ProcessOption, type TeamMember,
 } from '@/lib/deadlines/api'
 import type { CourtCalendarRow } from '@/lib/deadlines/courtCalendar'
 import { deadlineFlags, groupBoard, isClosed, STATUS_COLORS, STATUS_LABELS, type DeadlineRow } from '@/lib/deadlines/workflow'
 import { DeadlineBoard } from './DeadlineBoard'
 import { DeadlineDrawer } from './DeadlineDrawer'
 import { DeadlineFormModal } from './DeadlineFormModal'
+import { DeadlineSettingsModal } from './DeadlineSettingsModal'
+import { HealthStrip } from './HealthStrip'
+import { OfficesHealth } from './OfficesHealth'
 import { TriageInbox } from './TriageInbox'
 
-type Tab = 'painel' | 'triar' | 'conferencia'
+type Tab = 'painel' | 'triar' | 'conferencia' | 'saude'
+const TABS: Tab[] = ['painel', 'triar', 'conferencia', 'saude']
 
 export function PrazosPage() {
   const { profile } = useAuth()
   const me = profile?.id || ''
   const isSuperAdmin = profile?.role === 'super_admin'
+  const isAdmin = isSuperAdmin || profile?.role === 'admin'
+  const [params, setParams] = useSearchParams()
   const [settings, setSettings] = useState<DeadlineSettings>(DEFAULT_SETTINGS)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<Tab>('painel')
+  const [tab, setTab] = useState<Tab>(() => (TABS as string[]).includes(params.get('aba') || '') ? params.get('aba') as Tab : 'painel')
   const [deadlines, setDeadlines] = useState<DeadlineRow[]>([])
   const [pending, setPending] = useState<CommunicationRow[]>([])
   const [team, setTeam] = useState<TeamMember[]>([])
   const [processes, setProcesses] = useState<ProcessOption[]>([])
   const [calendarRows, setCalendarRows] = useState<CourtCalendarRow[]>([])
   const [form, setForm] = useState<{ communication?: CommunicationRow | null; existing?: DeadlineRow | null } | null>(null)
-  const [openId, setOpenId] = useState<string | null>(null)
+  // Links dos alertas: /prazos?prazo=<id> abre a ficha; /prazos?aba=triar abre a caixa A triar.
+  const [openId, setOpenId] = useState<string | null>(() => params.get('prazo'))
   const [importing, setImporting] = useState(false)
+  const [health, setHealth] = useState<HealthSnapshot | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+
+  useEffect(() => {
+    if (params.has('prazo') || params.has('aba')) setParams({}, { replace: true })
+  }, [params, setParams])
+
+  const loadHealth = useCallback(async () => {
+    if (profile?.tenant_id) setHealth(await fetchHealth(profile.tenant_id).catch(() => null))
+  }, [profile?.tenant_id])
 
   const loadData = useCallback(async () => {
     const [d, p] = await Promise.all([fetchDeadlines(), fetchPendingCommunications()])
@@ -65,12 +83,13 @@ export function PrazosPage() {
         if (!alive) return
         setTeam(t); setProcesses(pr); setCalendarRows(cal)
         try { await loadData() } catch (e) { toast(e instanceof Error ? e.message : 'Erro ao carregar prazos', 'error') }
+        void loadHealth()
         void importNew(s, true)
       }
       setLoading(false)
     })()
     return () => { alive = false }
-  }, [profile?.tenant_id, loadData, importNew])
+  }, [profile?.tenant_id, loadData, importNew, loadHealth])
 
   const today = toLocalISODate()
   const open = useMemo(() => deadlines.filter(d => !isClosed(d.status)), [deadlines])
@@ -114,6 +133,7 @@ export function PrazosPage() {
   return (
     <Layout title="Prazos">
       <div className="space-y-5">
+        {health && <HealthStrip snapshot={health} onChanged={loadHealth} />}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {counters.map(c => (
             <button key={c.label} onClick={c.onClick}
@@ -126,7 +146,7 @@ export function PrazosPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 rounded-xl bg-slate-100 dark:bg-dark-800 p-1" role="tablist">
-            {([['painel', 'Painel', LayoutGrid], ['triar', 'A triar', Inbox], ['conferencia', 'Conferência', ClipboardCheck]] as const).map(([id, label, Icon]) => (
+            {([['painel', 'Painel', LayoutGrid], ['triar', 'A triar', Inbox], ['conferencia', 'Conferência', ClipboardCheck], ...(isSuperAdmin ? [['saude', 'Saúde (todos)', Activity] as const] : [])] as const).map(([id, label, Icon]) => (
               <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                 className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium', tab === id ? 'bg-white dark:bg-dark-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}>
                 <Icon className="w-4 h-4" /> {label}
@@ -136,12 +156,14 @@ export function PrazosPage() {
             ))}
           </div>
           <div className="flex gap-2">
+            {isAdmin && <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)} aria-label="Configurações de prazos"><Settings2 className="w-4 h-4" /></Button>}
             <Button variant="secondary" size="sm" onClick={() => importNew(settings, false)} loading={importing}><RefreshCw className="w-4 h-4" /> Buscar intimações</Button>
             <Button size="sm" onClick={() => setForm({})}><CalendarPlus className="w-4 h-4" /> Novo prazo</Button>
           </div>
         </div>
 
         {tab === 'painel' && <DeadlineBoard deadlines={open} team={team} processes={processes} calendar={[]} onOpen={d => setOpenId(d.id)} />}
+        {tab === 'saude' && isSuperAdmin && <OfficesHealth calendarRows={calendarRows} />}
         {tab === 'triar' && <TriageInbox items={pending} processes={processes} onCreateDeadline={c => setForm({ communication: c })} onChanged={loadData} />}
         {tab === 'conferencia' && (
           <div className="space-y-2">
@@ -166,6 +188,10 @@ export function PrazosPage() {
         <DeadlineFormModal open onClose={() => setForm(null)} onSaved={() => { setForm(null); setOpenId(null); loadData() }}
           me={me} team={team} processes={processes} calendarRows={calendarRows} settings={settings}
           communication={form.communication} existing={form.existing} />
+      )}
+      {settingsOpen && profile?.tenant_id && (
+        <DeadlineSettingsModal tenantId={profile.tenant_id} settings={settings} team={team} onClose={() => setSettingsOpen(false)}
+          onSaved={s => { setSettings(s); setSettingsOpen(false) }} />
       )}
       {openDeadline && !form && (
         <DeadlineDrawer deadline={openDeadline} onClose={() => setOpenId(null)} onChanged={loadData}

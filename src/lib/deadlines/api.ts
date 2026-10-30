@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { toLocalISODate } from '@/lib/utils'
 import { communicationsToImport, type ProcessWithMovements } from './communicationsImport'
 import type { CourtCalendarRow } from './courtCalendar'
+import type { HealthCheckRow } from './health'
 import type { DeadlineRow, DeadlineStatus } from './workflow'
 
 export interface DeadlineSettings {
@@ -136,4 +137,66 @@ export async function uploadProtocolFile(tenantId: string, deadlineId: string, f
   const { error } = await supabase.storage.from('documents').upload(path, file)
   if (error) throw error
   return supabase.storage.from('documents').getPublicUrl(path).data.publicUrl
+}
+
+// ── Fase 3: configurações, vigilância e conferência das fontes ─────────────
+
+/** Margem, horário do escalonamento, responsável de triagem e modo solo (administrador). Ligar/desligar fica com a equipe do LegalHub. */
+export async function updateDeadlineSettings(tenantId: string, patch: Partial<Omit<DeadlineSettings, 'enabled'>>) {
+  return supabase.from('deadline_settings').update(patch).eq('tenant_id', tenantId)
+}
+
+export interface HealthSnapshot {
+  checks: HealthCheckRow[]
+  sourceCheckedToday: { by: string } | null
+  lawyersWithoutOab: string[]
+  hasOabProfiles: boolean
+}
+
+const today = () => toLocalISODate()
+const yesterday = () => toLocalISODate(new Date(Date.now() - 86_400_000))
+
+export async function fetchHealth(tenantId: string): Promise<HealthSnapshot> {
+  const [{ data: checks }, { data: src }, { data: lawyers }] = await Promise.all([
+    supabase.from('health_checks').select('check_key, checked_on, ok, detail, updated_at').eq('tenant_id', tenantId).gte('checked_on', yesterday()),
+    supabase.from('source_checks').select('checked_by, created_at').eq('tenant_id', tenantId).eq('checked_on', today()).order('created_at', { ascending: false }).limit(1),
+    supabase.from('profiles').select('name, display_name, oab_number, role').eq('tenant_id', tenantId).in('role', ['lawyer', 'admin']),
+  ])
+  let by: string | null = null
+  if (src?.[0]) {
+    const { data: p } = await supabase.from('profiles').select('name, display_name').eq('id', src[0].checked_by).maybeSingle()
+    by = p?.display_name || p?.name || 'alguém do escritório'
+  }
+  return {
+    checks: (checks || []) as HealthCheckRow[],
+    sourceCheckedToday: by ? { by } : null,
+    // Administrador sem OAB costuma ser o sócio-gestor; só cobra OAB de quem é advogado.
+    lawyersWithoutOab: (lawyers || []).filter(l => l.role === 'lawyer' && !l.oab_number?.trim()).map(l => l.display_name || l.name),
+    hasOabProfiles: (lawyers || []).some(l => !!l.oab_number?.trim()),
+  }
+}
+
+/** "Conferi as fontes oficiais hoje" — registra quem e quando (o banco carimba a data de hoje). */
+export async function registerSourceCheck(note?: string) {
+  return supabase.from('source_checks').insert({ note: note?.trim() || null })
+}
+
+export interface OfficeHealth { tenantId: string; name: string; snapshot: HealthSnapshot; openDeadlines: number }
+
+/** Painel interno (super_admin): saúde de todos os escritórios com o Controle de Prazos ligado. */
+export async function fetchAllOfficesHealth(): Promise<OfficeHealth[]> {
+  const { data: settings } = await supabase.from('deadline_settings').select('tenant_id').eq('enabled', true)
+  const ids = (settings || []).map(s => s.tenant_id)
+  if (!ids.length) return []
+  const [{ data: tenants }, snapshots, { data: open }] = await Promise.all([
+    supabase.from('tenants').select('id, name').in('id', ids),
+    Promise.all(ids.map(id => fetchHealth(id))),
+    supabase.from('deadlines').select('tenant_id').in('tenant_id', ids).is('deleted_at', null).not('status', 'in', '(protocolado,cancelado,perdido)'),
+  ])
+  return ids.map((id, i) => ({
+    tenantId: id,
+    name: tenants?.find(t => t.id === id)?.name || id,
+    snapshot: snapshots[i],
+    openDeadlines: (open || []).filter(o => o.tenant_id === id).length,
+  }))
 }
