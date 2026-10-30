@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import type { Task } from '@/types'
+import { toLocalISODate } from '@/lib/utils'
 
 vi.mock('@/lib/supabase', () => ({ supabase: { from: vi.fn() } }))
 
@@ -46,7 +47,8 @@ describe('timeAgo', () => {
 })
 
 describe('taskTime', () => {
-  const today = new Date().toISOString().slice(0, 10)
+  // Dia LOCAL (como taskTime usa): em UTC, depois das 21h no Brasil já seria amanhã
+  const today = toLocalISODate()
 
   it('sem due_date, usa timeAgo(created_at) e nunca marca como atrasada', () => {
     const createdAt = new Date(Date.now() - 2 * 3_600_000).toISOString()
