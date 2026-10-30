@@ -10,6 +10,7 @@ import { PageLoadingProvider } from '@/contexts/PageLoadingContext'
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal'
 import { ConfirmDialogHost } from '@/components/ui/ConfirmDialog'
 import { ToastHost } from '@/components/ui/Toast'
+import { FirstAccessScreen } from '@/components/auth/FirstAccessScreen'
 
 const PrivacyPolicyPage = lazy(() => import('@/pages/legal/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })))
 const TermsPage        = lazy(() => import('@/pages/legal/TermsPage').then(m => ({ default: m.TermsPage })))
@@ -42,7 +43,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!session || loading || !profile) return
     const skipped = localStorage.getItem('lawfy_onboarding_skipped')
-    if (!skipped && !profile.onboarding_completed && !profile.oab_number) {
+    if (!skipped && !profile.onboarding_completed && !profile.oab_number && !profile.must_change_password) {
       setShowOnboarding(true)
     }
   }, [session, loading, profile])
@@ -50,6 +51,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   if (loading) return <LoadingScreen />
   if (!session) return <Navigate to="/login" replace />
   if (profile?.role === 'client') return <Navigate to="/portal" replace />
+  // Conta criada com senha temporária: nada do app antes de trocar a senha
+  if (profile?.must_change_password) return <FirstAccessScreen />
   return (
     <Suspense fallback={<LoadingScreen />}>
       {children}
@@ -70,6 +73,7 @@ function ClientPortalRoute({ children }: { children: React.ReactNode }) {
   if (loading) return <LoadingScreen />
   if (!session) return <Navigate to="/login" replace />
   if (profile?.role !== 'client') return <Navigate to="/dashboard" replace />
+  if (profile.must_change_password) return <FirstAccessScreen />
   return <Suspense fallback={<LoadingScreen />}>{children}</Suspense>
 }
 
