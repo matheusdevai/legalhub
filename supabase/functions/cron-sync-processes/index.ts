@@ -16,15 +16,16 @@ import { createClient } from "jsr:@supabase/supabase-js@2"
 // Autenticação: segredo fixo no header (não é chamada de usuário, é pg_cron →
 // Edge Function server-to-server), mesmo padrão já usado neste projeto para o
 // job "licitahub-verificar-vencimentos".
-const CRON_SECRET = Deno.env.get('CRON_SECRET')
 
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a)
-  const bBytes = new TextEncoder().encode(b)
-  if (aBytes.length !== bBytes.length) return false
-  let diff = 0
-  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
-  return diff === 0
+// O segredo vive só no Vault do banco ('lawfy_cron_secret'), o mesmo que os
+// crons mandam via lawfy_cron_headers() — nada de env var para manter em
+// sincronia à mão. A comparação (por hash) é feita no banco.
+async function isCronAuthorized(req: Request, supabase: ReturnType<typeof createClient>): Promise<boolean> {
+  const secret = req.headers.get('x-cron-secret') || ''
+  if (!secret) return false
+  const { data, error } = await supabase.rpc('lawfy_cron_secret_matches', { p_secret: secret })
+  if (error) console.error('lawfy_cron_secret_matches:', error.message)
+  return !error && data === true
 }
 
 const CNJ_BASE = "https://api-publica.datajud.cnj.jus.br"
@@ -416,9 +417,8 @@ async function syncPjeForProfile(supabase: any, profile: Profile): Promise<SyncO
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-  if (!CRON_SECRET || !timingSafeEqual(req.headers.get('x-cron-secret') || '', CRON_SECRET)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
-
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  if (!(await isCronAuthorized(req, supabase))) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
   const jusToken = Deno.env.get('JUSBRASIL_TOKEN') ?? ''
   const escToken = Deno.env.get('ESCAVADOR_API_KEY') ?? ''
 

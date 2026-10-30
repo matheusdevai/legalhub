@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
+import { createClient } from "jsr:@supabase/supabase-js@2"
 
 // Envia lembrete de pagamento por e-mail para o CLIENTE do escritório (não o
 // time interno — isso já é coberto por lawfy_generate_notifications()).
@@ -8,17 +9,18 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 // Autenticação por segredo fixo: quem chama é Postgres/pg_cron, não um usuário
 // logado, e sem esse segredo qualquer um poderia usar este endpoint como
 // relay pra mandar e-mail "em nome" do LegalHub pra qualquer destinatário.
-const CRON_SECRET = Deno.env.get('CRON_SECRET')
 
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
 
-function timingSafeEqual(a: string, b: string): boolean {
-  const aBytes = new TextEncoder().encode(a)
-  const bBytes = new TextEncoder().encode(b)
-  if (aBytes.length !== bBytes.length) return false
-  let diff = 0
-  for (let i = 0; i < aBytes.length; i++) diff |= aBytes[i] ^ bBytes[i]
-  return diff === 0
+// O segredo vive só no Vault do banco ('lawfy_cron_secret'), o mesmo que os
+// crons mandam via lawfy_cron_headers() — nada de env var para manter em
+// sincronia à mão. A comparação (por hash) é feita no banco.
+async function isCronAuthorized(req: Request, supabase: ReturnType<typeof createClient>): Promise<boolean> {
+  const secret = req.headers.get('x-cron-secret') || ''
+  if (!secret) return false
+  const { data, error } = await supabase.rpc('lawfy_cron_secret_matches', { p_secret: secret })
+  if (error) console.error('lawfy_cron_secret_matches:', error.message)
+  return !error && data === true
 }
 
 function emailHtml(opts: { clientName: string; tenantName: string; description: string; amountStr: string; dueDateStr: string }) {
@@ -46,7 +48,8 @@ function emailHtml(opts: { clientName: string; tenantName: string; description: 
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-  if (!CRON_SECRET || !timingSafeEqual(req.headers.get('x-cron-secret') || '', CRON_SECRET)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+  const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  if (!(await isCronAuthorized(req, supabase))) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
 
   try {
     const { to, client_name, tenant_name, description, amount, due_date } = await req.json()
