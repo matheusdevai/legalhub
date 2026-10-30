@@ -1,5 +1,5 @@
 import { usePageLoadingState } from '@/contexts/PageLoadingContext'
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   CheckSquare, Target, RefreshCw,
@@ -17,11 +17,12 @@ import { Modal, Button, Input, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent, toLocalISODate } from '@/lib/utils'
-import { Task } from '@/types'
+import { CalendarEvent, Task } from '@/types'
 import { cn } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
 import { completionDayKey, completionMonthKey, startOfLocalDayISO } from '@/lib/dashboardDates'
+import { CALENDAR_TYPE_DOT, CALENDAR_TYPE_LABELS, dayAgenda, daysWithEvents } from '@/lib/calendarEvents'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 
 type DashTab = 'visao' | 'lista' | 'quadro' | 'desempenho' | 'ia' | 'configuracoes'
@@ -40,8 +41,15 @@ const TABS: { id: DashTab; label: string; icon: React.ElementType }[] = [
 
 function MiniCalendar() {
   const navigate = useNavigate()
+  const { profile } = useAuth()
+  // Mesmo filtro da página Agenda: eventos do próprio usuário
+  const uid = profile?.user_id || profile?.id || ''
   const [current, setCurrent] = useState(new Date())
+  const [selected, setSelected] = useState(() => toLocalISODate())
+  const [events, setEvents] = useState<CalendarEvent[]>([])
+  const [loadingEvents, setLoadingEvents] = useState(true)
   const today = new Date()
+  const todayStr = toLocalISODate(today)
   const year = current.getFullYear()
   const month = current.getMonth()
   const monthNames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
@@ -50,18 +58,48 @@ function MiniCalendar() {
   const days: (number | null)[] = Array(firstDay).fill(null)
   for (let i = 1; i <= daysInMonth; i++) days.push(i)
 
+  useEffect(() => {
+    if (!uid) return
+    let cancelled = false
+    setLoadingEvents(true)
+    const from = toLocalISODate(new Date(year, month, 1))
+    const to = toLocalISODate(new Date(year, month + 1, 0))
+    supabase.from('calendar_events').select('*').is('deleted_at', null).eq('user_id', uid)
+      .gte('date', from).lte('date', to).order('date').order('time')
+      .then(({ data }) => {
+        if (cancelled) return
+        setEvents((data || []) as CalendarEvent[])
+        setLoadingEvents(false)
+      })
+    return () => { cancelled = true }
+  }, [uid, year, month])
+
+  const marked = useMemo(() => daysWithEvents(events), [events])
+  const dayEvents = useMemo(() => dayAgenda(events, selected), [events, selected])
+  const selectedDate = new Date(`${selected}T12:00:00`)
+  const dayTitle = selected === todayStr
+    ? 'Compromissos de hoje'
+    : `Compromissos de ${selectedDate.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })}`
+
+  function goMonth(delta: number) {
+    const next = new Date(year, month + delta, 1)
+    setCurrent(next)
+    // Volta para hoje se for o mês atual; senão, dia 1 do mês aberto
+    setSelected(next.getFullYear() === today.getFullYear() && next.getMonth() === today.getMonth() ? todayStr : toLocalISODate(next))
+  }
+
   return (
-    <div className="bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-4">
+    <div className="bg-white dark:bg-dark-800 rounded-2xl border border-slate-100 dark:border-dark-700/50 shadow-card p-4 flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-bold text-slate-800 dark:text-white">
           {monthNames[month]} {year}
         </span>
         <div className="flex gap-1">
-          <button onClick={() => setCurrent(new Date(year, month - 1, 1))}
+          <button onClick={() => goMonth(-1)} aria-label="Mês anterior"
             className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-400 hover:text-slate-700 transition-colors">
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
-          <button onClick={() => setCurrent(new Date(year, month + 1, 1))}
+          <button onClick={() => goMonth(1)} aria-label="Próximo mês"
             className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-400 hover:text-slate-700 transition-colors">
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
@@ -74,19 +112,69 @@ function MiniCalendar() {
       </div>
       <div className="grid grid-cols-7 gap-0.5">
         {days.map((d, i) => {
-          const isToday = d === today.getDate() && month === today.getMonth() && year === today.getFullYear()
+          if (!d) return <div key={i} className="h-7" />
+          const dateStr = toLocalISODate(new Date(year, month, d))
+          const isToday = dateStr === todayStr
+          const isSelected = dateStr === selected
           return (
-            <div key={i} className={`
-              flex items-center justify-center text-[11px] h-6 w-6 rounded-full mx-auto cursor-default transition-colors
-              ${!d ? '' : isToday
-                ? 'bg-primary-600 text-white font-bold'
-                : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-dark-700'}
-            `}>
+            <button key={i} onClick={() => setSelected(dateStr)}
+              aria-label={`${d} de ${monthNames[month]}${marked.has(dateStr) ? ', com compromissos' : ''}`}
+              aria-pressed={isSelected}
+              className={cn(
+                'relative flex items-center justify-center text-[11px] h-7 w-7 rounded-full mx-auto transition-colors',
+                isToday ? 'bg-primary-600 text-white font-bold'
+                  : isSelected ? 'bg-slate-200 dark:bg-dark-600 text-slate-900 dark:text-white font-semibold'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-dark-700',
+                isToday && isSelected && 'ring-2 ring-offset-1 ring-slate-300 dark:ring-dark-500 dark:ring-offset-dark-800',
+              )}>
               {d}
-            </div>
+              {marked.has(dateStr) && (
+                <span className={cn('absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full', isToday ? 'bg-white' : 'bg-primary-500 dark:bg-primary-300')} />
+              )}
+            </button>
           )
         })}
       </div>
+
+      <div className="mt-4 pt-3 border-t border-slate-100 dark:border-dark-700/50 flex-1 flex flex-col min-h-[10rem]">
+        <p className="text-xs font-bold text-slate-700 dark:text-slate-200 mb-2">{dayTitle}</p>
+        <div className="relative flex-1">
+          <div className="lg:absolute lg:inset-0 overflow-y-auto max-h-72 lg:max-h-none -mx-1 px-1">
+            {loadingEvents ? (
+              <div className="space-y-2">
+                {[0, 1].map(i => <div key={i} className="h-10 rounded-lg bg-slate-100 dark:bg-dark-700 animate-pulse" />)}
+              </div>
+            ) : dayEvents.length === 0 ? (
+              <p className="text-xs text-slate-400 py-3 text-center">Nenhum compromisso neste dia.</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {dayEvents.map(e => {
+                  const done = e.status === 'completed' || e.status === 'cancelled'
+                  return (
+                    <li key={e.id}>
+                      <button onClick={() => navigate('/agenda')}
+                        className={cn('w-full text-left flex gap-2.5 rounded-lg px-2 py-1.5 hover:bg-slate-50 dark:hover:bg-dark-700 transition-colors', done && 'opacity-60')}>
+                        <span className={cn('mt-1.5 w-2 h-2 rounded-full flex-shrink-0', CALENDAR_TYPE_DOT[e.type || 'meeting'] || 'bg-slate-400')} />
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block text-xs font-medium text-slate-800 dark:text-slate-100 truncate', done && 'line-through')}>{e.title}</span>
+                          <span className="block text-[11px] text-slate-400 truncate">
+                            {e.time ? e.time.slice(0, 5) : 'Dia todo'}
+                            {' · '}{CALENDAR_TYPE_LABELS[e.type || 'meeting'] || 'Compromisso'}
+                            {e.status === 'cancelled' ? ' · cancelado' : e.status === 'completed' ? ' · realizado' : ''}
+                            {e.client_name ? ` · ${e.client_name}` : ''}
+                            {e.location ? ` · ${e.location}` : ''}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
       <button
         onClick={() => navigate('/agenda')}
         className="mt-3 text-xs text-primary-600 dark:text-primary-400 hover:underline w-full text-right"

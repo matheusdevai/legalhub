@@ -351,7 +351,7 @@ const filtered = useMemo(() => clients.filter(c => {
 ## Dashboard — tabs
 | Tab | Conteúdo |
 |---|---|
-| visao | Stats (concluídas/hoje/pendentes/vencidas), lista de tasks, mini-calendário |
+| visao | Stats (concluídas/hoje/pendentes/vencidas), lista de tasks, mini-calendário (`MiniCalendar`) com os compromissos do dia selecionado logo abaixo — mesma fonte da Agenda (`calendar_events` do próprio usuário), regra em `src/lib/calendarEvents.ts` |
 | lista | Tabela de tasks com seções "Não lidas" / "Todas as demais" |
 | quadro | Kanban: Todas / Hoje / Próximos / Fazendo / Concluídas hoje |
 | desempenho | Stats + Taskscore (gráfico) + Atividades concluídas + calendário completo |
