@@ -726,7 +726,13 @@ export function LandingPage() {
         </div>
 
         <div className="max-w-6xl mx-auto mt-12 pt-6 border-t border-[color:var(--lh-divider)]">
-          <p className="text-xs text-[color:var(--lh-muted)]">© {new Date().getFullYear()} LegalHub. Todos os direitos reservados.</p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-xs text-[color:var(--lh-muted)]">© {new Date().getFullYear()} LegalHub. Todos os direitos reservados.</p>
+            <div className="flex items-center gap-5">
+              <a href="/privacidade" className="text-xs text-[color:var(--lh-muted)] hover:text-white transition-colors">Política de Privacidade</a>
+              <a href="/termos" className="text-xs text-[color:var(--lh-muted)] hover:text-white transition-colors">Termos de Uso</a>
+            </div>
+          </div>
         </div>
       </footer>
 

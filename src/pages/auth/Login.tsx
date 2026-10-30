@@ -302,6 +302,11 @@ export function Login() {
                     ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     : <span className="text-base">→</span>}
                 </button>
+                <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                  Ao criar sua conta, você concorda com os{' '}
+                  <a href="/termos" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">Termos de Uso</a> e a{' '}
+                  <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">Política de Privacidade</a>.
+                </p>
                 <div className="grid grid-cols-2 gap-2 pt-0.5">
                   <button type="button" onClick={loginWithGoogle}
                     className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all">

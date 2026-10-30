@@ -75,6 +75,8 @@ src/
 | /admin | AdminPage | super_admin |
 | /portal | ClientPortalPage | role 'client' — vê só os próprios processos/financeiro/documentos (filtrados por profile.client_id) |
 | /reset-password | ResetPassword | pública, só funcional com link de recuperação de senha válido |
+| /privacidade | PrivacyPolicyPage | pública — `src/pages/legal/` (texto reflete hospedagem/integrações/retenção reais: ao mudar uma integração, a região do banco ou a lixeira, atualizar o texto e `LEGAL_UPDATED_AT`) |
+| /termos | TermsPage | pública — mesmas regras; regras comerciais espelham `billingStatus.ts` e os limites de `plans` |
 
 ## Roles
 `'admin' | 'lawyer' | 'intern' | 'financial' | 'super_admin' | 'client'`

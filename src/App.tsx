@@ -11,6 +11,8 @@ import { OnboardingModal } from '@/components/onboarding/OnboardingModal'
 import { ConfirmDialogHost } from '@/components/ui/ConfirmDialog'
 import { ToastHost } from '@/components/ui/Toast'
 
+const PrivacyPolicyPage = lazy(() => import('@/pages/legal/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })))
+const TermsPage        = lazy(() => import('@/pages/legal/TermsPage').then(m => ({ default: m.TermsPage })))
 const Dashboard        = lazy(() => import('@/pages/dashboard/Dashboard').then(m => ({ default: m.Dashboard })))
 const ClientsPage      = lazy(() => import('@/pages/clients/ClientsPage').then(m => ({ default: m.ClientsPage })))
 const ProcessesPage    = lazy(() => import('@/pages/processes/ProcessesPage').then(m => ({ default: m.ProcessesPage })))
@@ -77,6 +79,8 @@ function AppRoutes() {
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<LandingPage />} />
+      <Route path="/privacidade" element={<Suspense fallback={<LoadingScreen />}><PrivacyPolicyPage /></Suspense>} />
+      <Route path="/termos" element={<Suspense fallback={<LoadingScreen />}><TermsPage /></Suspense>} />
       <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
       <Route path="/clientes" element={<PrivateRoute><ClientsPage /></PrivateRoute>} />
       <Route path="/processos" element={<PrivateRoute><ProcessesPage /></PrivateRoute>} />
