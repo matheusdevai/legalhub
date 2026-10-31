@@ -13,9 +13,9 @@
 // Corpus Christi e feriados locais vêm do calendário do tribunal, com fonte.
 // ============================================================================
 
-export const RULES_VERSION = '2026.1'
+export const RULES_VERSION = '2026.2'
 
-export type Regime = 'civel' | 'juizado' | 'trabalhista' | 'administrativo' | 'fixado_juiz'
+export type Regime = 'civel' | 'juizado' | 'trabalhista' | 'administrativo' | 'fixado_juiz' | 'penal'
 
 /** Como o ato chegou ao advogado — define o marco inicial da contagem. */
 export type StartEvent =
@@ -221,10 +221,14 @@ class ForensicCalendar {
 const DEFAULT_UNIT: Record<Regime, Unit> = {
   civel: 'dias_uteis', juizado: 'dias_uteis', trabalhista: 'dias_uteis',
   administrativo: 'dias_corridos', fixado_juiz: 'dias_uteis',
+  // CPP, art. 798: prazos contínuos (dias corridos)
+  penal: 'dias_corridos',
 }
 
 const DEFAULT_RECESS: Record<Regime, boolean> = {
   civel: true, juizado: false, trabalhista: true, administrativo: false, fixado_juiz: true,
+  // CPP, art. 798-A — exceto réu preso e medidas urgentes (parágrafo único)
+  penal: true,
 }
 
 const fmt = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
@@ -293,7 +297,11 @@ export function calculateDeadline(input: DeadlineInput): DeadlineResult {
   } else if (unit === 'dias_corridos') {
     // Exclui o dia do começo e conta os seguintes, inclusive não úteis (Lei 9.784/1999, art. 66; CPC, art. 224)
     let n = 0
-    let cur = addDays(reference, 1)
+    // Penal: exclui o dia do começo e só começa a correr em dia útil — intimação
+    // na sexta (ou véspera de dia sem expediente) começa no 1º dia útil seguinte
+    // (CPP, art. 798, § 1º; STF, Súmula 310). Depois corre direto, inclusive em
+    // feriados e fins de semana.
+    let cur = input.regime === 'penal' ? nextDay(reference, 'start', true) : addDays(reference, 1)
     startDate = cur
     for (let i = 0; i < MAX_SPAN_DAYS; i++, cur = addDays(cur, 1)) {
       if (cal.countsAsCalendarDay(cur)) {
@@ -341,6 +349,9 @@ export function calculateDeadline(input: DeadlineInput): DeadlineResult {
   }
   if (margin > 0 && internal === fatal) warnings.push('Não há dias úteis suficientes para a margem do prazo interno: o prazo interno coincide com o fatal.')
 
+  if (input.regime === 'penal') {
+    warnings.push('Regime penal em validação: confira a data com a fonte oficial. Com réu preso ou medida urgente, o prazo NÃO se suspende no recesso (CPP, art. 798-A, parágrafo único) — desmarque o recesso.')
+  }
   if (input.regime === 'juizado' && input.applyRecess === undefined) {
     warnings.push('Juizados: o recesso não foi aplicado. Se o tribunal suspende os prazos no recesso, marque essa opção.')
   }

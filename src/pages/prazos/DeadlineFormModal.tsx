@@ -18,6 +18,7 @@ const REGIMES: { value: Regime; label: string }[] = [
   { value: 'trabalhista', label: 'Trabalhista (CLT) — dias úteis' },
   { value: 'administrativo', label: 'Administrativo — dias corridos' },
   { value: 'fixado_juiz', label: 'Fixado pelo juiz' },
+  { value: 'penal', label: 'Penal (CPP) — dias corridos, em validação' },
 ]
 
 const START_EVENTS: { value: StartEvent; label: string; dateLabel: string }[] = [
@@ -36,8 +37,8 @@ const UNITS: { value: Unit; label: string }[] = [
   { value: 'anos', label: 'anos' },
 ]
 
-const DEFAULT_UNIT: Record<Regime, Unit> = { civel: 'dias_uteis', juizado: 'dias_uteis', trabalhista: 'dias_uteis', administrativo: 'dias_corridos', fixado_juiz: 'dias_uteis' }
-const DEFAULT_RECESS: Record<Regime, boolean> = { civel: true, juizado: false, trabalhista: true, administrativo: false, fixado_juiz: true }
+const DEFAULT_UNIT: Record<Regime, Unit> = { civel: 'dias_uteis', juizado: 'dias_uteis', trabalhista: 'dias_uteis', administrativo: 'dias_corridos', fixado_juiz: 'dias_uteis', penal: 'dias_corridos' }
+const DEFAULT_RECESS: Record<Regime, boolean> = { civel: true, juizado: false, trabalhista: true, administrativo: false, fixado_juiz: true, penal: true }
 
 function regimeForCourt(court: string): Regime {
   if (court.startsWith('trt') || court === 'tst') return 'trabalhista'
@@ -78,6 +79,7 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
   const [adjust, setAdjust] = useState(false)
   const [adjustedFatal, setAdjustedFatal] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
+  const [pilotRef, setPilotRef] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<TextSuggestion | null>(null)
@@ -98,6 +100,7 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
       setUnit(existing.unit); setDoubled(existing.doubled); setDoubledReason(existing.doubled_reason || ''); setApplyRecess(existing.apply_recess)
       setResponsibleId(existing.responsible_id); setReviewerId(existing.reviewer_id || '')
       setAdjust(existing.manually_adjusted); setAdjustedFatal(existing.manually_adjusted ? existing.fatal_date : ''); setAdjustReason(existing.adjust_reason || '')
+      setPilotRef(existing.pilot_reference_date || '')
       return
     }
     setProcessId(communication?.process_id || ''); setActType(''); setCourt(''); setCounty('')
@@ -105,7 +108,7 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
     setEventDate(communication?.made_available_at || ''); setAmount('15'); setUnit('dias_uteis')
     setDoubled(false); setDoubledReason(''); setApplyRecess(true)
     setResponsibleId(communication?.assigned_to || me); setReviewerId('')
-    setAdjust(false); setAdjustedFatal(''); setAdjustReason('')
+    setAdjust(false); setAdjustedFatal(''); setAdjustReason(''); setPilotRef('')
     setAiSuggestion(null)
     // Leitura clara ou razoável já preenche o formulário; incerta não preenche nada.
     if (communication) {
@@ -154,6 +157,8 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
       manually_adjusted: adjust, adjust_reason: adjust ? adjustReason.trim() : null,
       calc_memory: result.memory, rules_version: result.rulesVersion, calendar_version: calendarVersion(calendarRows),
       responsible_id: responsibleId, reviewer_id: reviewerId,
+      // Piloto: só envia o campo com o piloto ligado (a coluna é da fase 4).
+      ...(settings.pilot_mode ? { pilot_reference_date: pilotRef || null } : {}),
       ...(existing ? { review_note: null } : {}),
     }
     const { error: err } = existing ? await updateDeadline(existing.id, payload) : await createDeadline(payload)
@@ -272,6 +277,15 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
                 <p className="text-xs font-medium text-red-600">Atenção: a data informada é DEPOIS da calculada. Só ajuste com base na fonte oficial.</p>
               )}
               <Textarea label="Justificativa (obrigatória)" value={adjustReason} onChange={e => setAdjustReason(e.target.value)} rows={2} placeholder="Ex.: Portaria nº … suspendeu o expediente em …" />
+            </div>
+          )}
+          {settings.pilot_mode && (
+            <div className="space-y-1 rounded-xl border border-violet-200 bg-violet-50/50 dark:border-violet-900/40 dark:bg-violet-900/10 p-3">
+              <Input label="Piloto: data fatal no controle atual do escritório" type="date" value={pilotRef} onChange={e => setPilotRef(e.target.value)} />
+              <p className="text-[11px] text-slate-500">
+                Anote a data que o controle de vocês (planilha, agenda, outro sistema) tem para este prazo, calculada sem olhar a do LegalHub.
+                {pilotRef && fatal && pilotRef !== fatal && <span className="block font-semibold text-violet-700 dark:text-violet-300">Diverge da data do sistema — o administrador será avisado para investigar.</span>}
+              </p>
             </div>
           )}
         </div>

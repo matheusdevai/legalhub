@@ -12,10 +12,12 @@ export interface DeadlineSettings {
   internal_margin_days: number
   escalation_hour: number
   solo_mode: boolean
+  /** Piloto: compara cada prazo com o controle atual do escritório (só a equipe do LegalHub liga). */
+  pilot_mode: boolean
   triage_owner_id: string | null
 }
 
-export const DEFAULT_SETTINGS: DeadlineSettings = { enabled: false, internal_margin_days: 2, escalation_hour: 14, solo_mode: false, triage_owner_id: null }
+export const DEFAULT_SETTINGS: DeadlineSettings = { enabled: false, internal_margin_days: 2, escalation_hour: 14, solo_mode: false, triage_owner_id: null, pilot_mode: false }
 
 export interface CommunicationRow {
   id: string
@@ -49,7 +51,7 @@ export interface ProcessOption { id: string; number: string; title: string; clie
 
 /** Configuração do escritório. Sem a tabela (migration não aplicada) ou sem linha = desligado. */
 export async function fetchDeadlineSettings(tenantId: string): Promise<DeadlineSettings> {
-  const { data, error } = await supabase.from('deadline_settings').select('enabled, internal_margin_days, escalation_hour, solo_mode, triage_owner_id').eq('tenant_id', tenantId).maybeSingle()
+  const { data, error } = await supabase.from('deadline_settings').select('*').eq('tenant_id', tenantId).maybeSingle()
   if (error || !data) return DEFAULT_SETTINGS
   return { ...DEFAULT_SETTINGS, ...data }
 }
@@ -144,7 +146,7 @@ export async function uploadProtocolFile(tenantId: string, deadlineId: string, f
 // ── Fase 3: configurações, vigilância e conferência das fontes ─────────────
 
 /** Margem, horário do escalonamento, responsável de triagem e modo solo (administrador). Ligar/desligar fica com a equipe do LegalHub. */
-export async function updateDeadlineSettings(tenantId: string, patch: Partial<Omit<DeadlineSettings, 'enabled'>>) {
+export async function updateDeadlineSettings(tenantId: string, patch: Partial<Omit<DeadlineSettings, 'enabled' | 'pilot_mode'>>) {
   return supabase.from('deadline_settings').update(patch).eq('tenant_id', tenantId)
 }
 
@@ -183,11 +185,11 @@ export async function registerSourceCheck(note?: string) {
   return supabase.from('source_checks').insert({ note: note?.trim() || null })
 }
 
-export interface OfficeHealth { tenantId: string; name: string; snapshot: HealthSnapshot; openDeadlines: number }
+export interface OfficeHealth { tenantId: string; name: string; snapshot: HealthSnapshot; openDeadlines: number; pilotMode: boolean }
 
 /** Painel interno (super_admin): saúde de todos os escritórios com o Controle de Prazos ligado. */
 export async function fetchAllOfficesHealth(): Promise<OfficeHealth[]> {
-  const { data: settings } = await supabase.from('deadline_settings').select('tenant_id').eq('enabled', true)
+  const { data: settings } = await supabase.from('deadline_settings').select('*').eq('enabled', true)
   const ids = (settings || []).map(s => s.tenant_id)
   if (!ids.length) return []
   const [{ data: tenants }, snapshots, { data: open }] = await Promise.all([
@@ -200,6 +202,7 @@ export async function fetchAllOfficesHealth(): Promise<OfficeHealth[]> {
     name: tenants?.find(t => t.id === id)?.name || id,
     snapshot: snapshots[i],
     openDeadlines: (open || []).filter(o => o.tenant_id === id).length,
+    pilotMode: !!(settings || []).find(s => s.tenant_id === id)?.pilot_mode,
   }))
 }
 
@@ -226,4 +229,22 @@ export async function fetchReportInputs(month: string): Promise<{ communications
     supabase.from('source_checks').select('checked_on').gte('checked_on', first).lt('checked_on', next),
   ])
   return { communications: (comms || []) as ReportCommunication[], sourceCheckDays: [...new Set((checks || []).map(c => c.checked_on as string))] }
+}
+
+/** Liga/desliga o modo piloto de um escritório (só super_admin — o banco recusa os demais). */
+export async function setPilotMode(tenantId: string, pilot: boolean) {
+  return supabase.from('deadline_settings').update({ pilot_mode: pilot }).eq('tenant_id', tenantId)
+}
+
+export interface PilotDeadline extends Pick<DeadlineRow, 'id' | 'tenant_id' | 'act_type' | 'regime' | 'start_event' | 'start_date' | 'amount' | 'unit' | 'court' | 'county' | 'fatal_date' | 'status'> {
+  pilot_reference_date: string
+  pilot_divergence_note: string | null
+}
+
+/** Painel interno: prazos do piloto com a data do controle atual (todos os escritórios, super_admin). */
+export async function fetchPilotDeadlines(): Promise<PilotDeadline[]> {
+  const { data } = await supabase.from('deadlines')
+    .select('id, tenant_id, act_type, regime, start_event, start_date, amount, unit, court, county, fatal_date, status, pilot_reference_date, pilot_divergence_note')
+    .not('pilot_reference_date', 'is', null).is('deleted_at', null).order('fatal_date', { ascending: false }).limit(1000)
+  return (data || []) as PilotDeadline[]
 }

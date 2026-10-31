@@ -1,4 +1,5 @@
 import type { CalendarEntry, DeadlineInput } from './engine'
+import casos from './casosReais.data.json'
 
 /**
  * Bateria de casos REAIS — critério de saída da Fase 1 do Controle de Prazos:
@@ -6,10 +7,10 @@ import type { CalendarEntry, DeadlineInput } from './engine'
  * com a data fatal conferida por advogado. Toda mudança futura no motor ou no
  * calendário precisa continuar acertando todos (casosReais.test.ts).
  *
- * Como incluir um caso: preencha a planilha "Bateria de casos — Controle de
- * Prazos.csv" (uma linha por intimação real, anonimizada) e converta para o
- * formato abaixo. `calendar` = os dias especiais do tribunal/comarca naquele
- * período, com a fonte, exatamente como estariam em `court_calendar`.
+ * Como incluir casos: preencha a planilha "Bateria de casos — Controle de
+ * Prazos.csv" (uma linha por intimação real, anonimizada) e rode
+ *   node scripts/prazos/importar-casos.ts "<caminho do CSV>"
+ * que valida cada linha e grava casosReais.data.json. Nunca editar o JSON à mão.
  */
 export interface RealCase {
   id: string
@@ -24,16 +25,8 @@ export interface RealCase {
   calendar?: CalendarEntry[]
 }
 
-export const CASOS_REAIS: RealCase[] = [
-  // Exemplo do formato (substituir pelos casos reais):
-  // {
-  //   id: 'tjpb-001',
-  //   descricao: 'TJPB, 1ª Vara Cível de João Pessoa — contestação',
-  //   input: { regime: 'civel', startEvent: 'djen', eventDate: '2026-10-29', amount: 15 },
-  //   fatalEsperada: '2026-11-24',
-  //   justificativa: 'Publicação 30/10; início 03/11 (02/11 Finados); 20/11 feriado; 15º dia útil 24/11.',
-  //   conferidoPor: 'Dr. Fulano (OAB/PB 00000)',
-  // },
-]
+export const CASOS_REAIS: RealCase[] = casos as RealCase[]
 
 export const MINIMO_CASOS_FASE_1 = 50
+/** O regime penal tem bateria própria (especificação, fase 5). */
+export const MINIMO_CASOS_PENAL = 20

@@ -42,6 +42,9 @@ export interface DeadlineRow {
   created_by: string
   created_at: string
   updated_at: string
+  /** Piloto (fase 4): data fatal anotada no controle atual do escritório e, se diferente, por quê. */
+  pilot_reference_date?: string | null
+  pilot_divergence_note?: string | null
 }
 
 export const UNIT_LABELS: Record<Unit, string> = { dias_uteis: 'dias úteis', dias_corridos: 'dias corridos', meses: 'meses', anos: 'anos' }

@@ -141,3 +141,57 @@ export function indicatorsByLawyer(deadlines: ReportDeadline[], month: string, t
   }
   return [...rows.values()].sort((a, b) => b.total - a.total)
 }
+
+// ── Piloto (fase 4) ─────────────────────────────────────────────────────────
+
+export interface PilotItem {
+  id: string
+  act_type: string
+  regime: string
+  start_event: string
+  start_date: string
+  amount: number
+  unit: string
+  court: string | null
+  county: string | null
+  status: string
+  fatal_date: string
+  pilot_reference_date?: string | null
+  pilot_divergence_note?: string | null
+}
+
+export interface PilotSummary { compared: number; equal: number; divergent: number; unexplained: number }
+
+/** Critério de saída do piloto: zero divergência sem explicação. */
+export function pilotSummary(items: PilotItem[]): PilotSummary {
+  const compared = items.filter(i => i.pilot_reference_date && i.status !== 'cancelado')
+  const divergent = compared.filter(i => i.pilot_reference_date !== i.fatal_date)
+  return {
+    compared: compared.length,
+    equal: compared.length - divergent.length,
+    divergent: divergent.length,
+    unexplained: divergent.filter(i => !i.pilot_divergence_note?.trim()).length,
+  }
+}
+
+const br = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+const csvCell = (s: string) => (/[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
+
+export const BATTERY_HEADER = 'id;tribunal;comarca;tipo do ato;regime (civel/juizado/trabalhista/administrativo/fixado_juiz/penal);como chegou (djen/sistema_ciencia/sistema_tacita/juntada/audiencia/data_inicial);data do evento (dd/mm/aaaa);prazo (número);unidade (dias_uteis/dias_corridos/meses/anos);prazo em dobro? (sim/não + motivo);recesso se aplica? (sim/não);feriados ou suspensões no período (data + motivo + fonte);DATA FATAL CORRETA (dd/mm/aaaa);como chegou nessa data (resumo);conferido por (nome + OAB)'
+
+/**
+ * Cada divergência do piloto vira uma linha da planilha da bateria, com a
+ * "DATA FATAL CORRETA" em branco: quem decide é o advogado (o importador
+ * recusa a linha até ela ser preenchida e conferida).
+ */
+export function divergencesAsBatteryCsv(items: PilotItem[], officeOf: (i: PilotItem) => string = () => ''): string {
+  const rows = items
+    .filter(i => i.pilot_reference_date && i.pilot_reference_date !== i.fatal_date && i.status !== 'cancelado')
+    .map(i => [
+      `piloto-${i.id.slice(0, 8)}`, (i.court || '').toUpperCase(), i.county || '', i.act_type, i.regime, i.start_event,
+      br(i.start_date), String(i.amount), i.unit, '', '', '', '',
+      `Sistema: ${br(i.fatal_date)}; controle do escritório: ${br(i.pilot_reference_date!)}${i.pilot_divergence_note ? `; explicação: ${i.pilot_divergence_note}` : ''}${officeOf(i) ? `; escritório: ${officeOf(i)}` : ''}`,
+      '',
+    ].map(csvCell).join(';'))
+  return [BATTERY_HEADER, ...rows].join('\n')
+}

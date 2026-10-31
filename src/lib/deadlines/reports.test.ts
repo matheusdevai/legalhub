@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { indicatorsByLawyer, monthlyIndicators, type ReportDeadline } from './reports'
+import { BATTERY_HEADER, divergencesAsBatteryCsv, indicatorsByLawyer, monthlyIndicators, pilotSummary, type ReportDeadline } from './reports'
+import { parseCasesCsv, splitCsvLine } from './casosImport'
 
 // Novembro/2026: dias úteis nacionais = 19 (feriados: 02, 15 dom, 20).
 const d = (over: Partial<ReportDeadline>): ReportDeadline => ({
@@ -56,5 +57,32 @@ describe('indicatorsByLawyer', () => {
     ], '2026-11', '2026-11-25')
     expect(rows[0]).toMatchObject({ responsibleId: 'helena', total: 3, early: 1, sameDay: 1, open: 1, lost: 0 })
     expect(rows[1]).toMatchObject({ responsibleId: 'rafael', lost: 1 })
+  })
+})
+
+describe('piloto', () => {
+  const base = { act_type: 'Réplica', regime: 'civel', start_event: 'djen', start_date: '2026-10-26', amount: 15, unit: 'dias_uteis', court: 'tjpb', county: 'João Pessoa', status: 'conferido', fatal_date: '2026-11-18' }
+  const items = [
+    { ...base, id: 'aaaaaaaa-1', pilot_reference_date: '2026-11-18' },
+    { ...base, id: 'bbbbbbbb-2', pilot_reference_date: '2026-11-19', pilot_divergence_note: 'Escritório não considerou o feriado de 20/11' },
+    { ...base, id: 'cccccccc-3', pilot_reference_date: '2026-11-17' },
+    { ...base, id: 'dddddddd-4', pilot_reference_date: '2026-11-01', status: 'cancelado' },
+    { ...base, id: 'eeeeeeee-5', pilot_reference_date: null },
+  ]
+  it('resume comparados, iguais, divergentes e sem explicação (cancelados fora)', () => {
+    expect(pilotSummary(items)).toEqual({ compared: 3, equal: 1, divergent: 2, unexplained: 1 })
+  })
+  it('exporta só as divergências, no formato da bateria, com a data correta em branco', () => {
+    const csv = divergencesAsBatteryCsv(items, () => 'Escritório Demo').split('\n')
+    expect(csv[0]).toBe(BATTERY_HEADER)
+    expect(csv).toHaveLength(3)
+    const cols = splitCsvLine(csv[1])
+    expect(cols).toHaveLength(15)
+    expect(cols[0]).toBe('piloto-bbbbbbbb')
+    expect(cols[6]).toBe('26/10/2026')
+    expect(cols[12]).toBe('')
+    expect(cols[13]).toContain('controle do escritório: 19/11/2026')
+    // A linha volta para o importador e é recusada até o advogado preencher a data e a assinatura.
+    expect(parseCasesCsv(csv.join('\n')).errors).toHaveLength(2)
   })
 })
