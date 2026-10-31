@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { BarChart3, Bell, CalendarDays, CheckCircle2, DollarSign, FolderOpen, HardDrive, LayoutDashboard, Sparkles, Target, Users } from 'lucide-react'
+import { BarChart3, Bell, CalendarClock, CalendarDays, CheckCircle2, DollarSign, FolderOpen, HardDrive, LayoutDashboard, Sparkles, Target, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { BrowserFrame, DemoVideo } from './DemoVideo'
 import { TOUR, tourVideo, type TourId } from './landingData'
@@ -7,6 +7,7 @@ import { TOUR, tourVideo, type TourId } from './landingData'
 const ICONS: Record<TourId, typeof BarChart3> = {
   painel: LayoutDashboard,
   intimacoes: Bell,
+  prazos: CalendarClock,
   processos: FolderOpen,
   clientes: Users,
   agenda: CalendarDays,

@@ -13,7 +13,7 @@ export const TRIAL_DAYS = 14
 // Vídeos narrados gravados no app real, num escritório de demonstração com
 // dados fictícios (public/demo/<id>.mp4/.webm + legenda .vtt + pôster .jpg).
 // Para regravar, ver scripts/demo-videos/README.md.
-export type TourId = 'painel' | 'intimacoes' | 'processos' | 'clientes' | 'agenda' | 'financeiro' | 'ia' | 'documentos' | 'relatorios' | 'leads'
+export type TourId = 'painel' | 'intimacoes' | 'prazos' | 'processos' | 'clientes' | 'agenda' | 'financeiro' | 'ia' | 'documentos' | 'relatorios' | 'leads'
 
 export interface TourItem {
   id: TourId
@@ -40,6 +40,14 @@ export const TOUR: TourItem[] = [
     description: 'Sincronização diária pelo Diário de Justiça Eletrônico Nacional (DJEN) usando só a sua OAB. O prazo já vira tarefa e entra na agenda.',
     bullets: ['Tribunais estaduais e federais, sem senha do PJe', 'Contagem em dias úteis ou corridos', 'Teor completo da publicação para leitura'],
     path: '/publicacoes',
+  },
+  {
+    id: 'prazos',
+    label: 'Prazos',
+    title: 'Controle de prazos com conferência dupla',
+    description: 'Prazos organizados pela urgência, com a memória de cálculo dia a dia e os feriados de cada tribunal. Ninguém protocola sem que outra pessoa confira, e os alertas sobem até o administrador no dia do vencimento. Em liberação gradual para os escritórios.',
+    bullets: ['Sugestão do ato e do prazo lida da própria intimação', 'Calendário forense do TJPB, TRT13 e TRF5 com a portaria de cada feriado', 'Alertas no D-1, no dia do fatal e escalonamento ao administrador'],
+    path: '/prazos',
   },
   {
     id: 'processos',
