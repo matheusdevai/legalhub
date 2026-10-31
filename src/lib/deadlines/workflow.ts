@@ -44,6 +44,8 @@ export interface DeadlineRow {
   updated_at: string
 }
 
+export const UNIT_LABELS: Record<Unit, string> = { dias_uteis: 'dias úteis', dias_corridos: 'dias corridos', meses: 'meses', anos: 'anos' }
+
 export const STATUS_LABELS: Record<DeadlineStatus, string> = {
   calculado: 'Aguardando conferência',
   conferido: 'Conferido',
