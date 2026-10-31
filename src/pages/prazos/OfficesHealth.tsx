@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, Building2 } from 'lucide-react'
-import { EmptyState, Spinner } from '@/components/ui'
-import { cn } from '@/lib/utils'
-import { fetchAllOfficesHealth, type OfficeHealth } from '@/lib/deadlines/api'
+import { useCallback, useEffect, useState } from 'react'
+import { AlertTriangle, Building2, Download } from 'lucide-react'
+import { Button, EmptyState, Spinner } from '@/components/ui'
+import { toast } from '@/components/ui/Toast'
+import { cn, toLocalISODate } from '@/lib/utils'
+import { fetchAllOfficesHealth, fetchPilotDeadlines, setPilotMode, type OfficeHealth, type PilotDeadline } from '@/lib/deadlines/api'
 import { healthItems, overallLevel } from '@/lib/deadlines/health'
+import { divergencesAsBatteryCsv, pilotSummary } from '@/lib/deadlines/reports'
 import { brasiliaNow } from '@/lib/deadlines/alerts'
 import type { CourtCalendarRow } from '@/lib/deadlines/courtCalendar'
 
@@ -18,7 +20,32 @@ const COVERED_COURTS = ['tjpb', 'trt13', 'trf5']
  */
 export function OfficesHealth({ calendarRows }: { calendarRows: CourtCalendarRow[] }) {
   const [rows, setRows] = useState<OfficeHealth[] | null>(null)
-  useEffect(() => { fetchAllOfficesHealth().then(setRows).catch(() => setRows([])) }, [])
+  const [pilot, setPilot] = useState<PilotDeadline[]>([])
+  const load = useCallback(() => {
+    fetchAllOfficesHealth().then(setRows).catch(() => setRows([]))
+    fetchPilotDeadlines().then(setPilot).catch(() => setPilot([]))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function togglePilot(o: OfficeHealth) {
+    const { error } = await setPilotMode(o.tenantId, !o.pilotMode)
+    if (error) { toast(`Não foi possível mudar o piloto: ${error.message}`, 'error'); return }
+    toast(o.pilotMode ? `Piloto desligado em ${o.name}.` : `Piloto ligado em ${o.name}: cada prazo pede a data do controle atual.`, 'success')
+    load()
+  }
+
+  // As divergências viram linhas da planilha da bateria (data correta em branco: o advogado decide).
+  function exportDivergences() {
+    const officeName = (tenantId: string) => rows?.find(r => r.tenantId === tenantId)?.name || ''
+    const csv = divergencesAsBatteryCsv(pilot, i => officeName((i as PilotDeadline).tenant_id))
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `divergencias-piloto-${toLocalISODate()}.csv`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  const pilotTotals = pilotSummary(pilot)
   const now = brasiliaNow(new Date())
   const nextYear = Number(now.date.slice(0, 4)) + 1
   const missingNextYear = now.date.slice(5) >= '11-01'
@@ -34,6 +61,14 @@ export function OfficesHealth({ calendarRows }: { calendarRows: CourtCalendarRow
           Calendário de {nextYear} ainda não carregado para: {missingNextYear.map(c => c.toUpperCase()).join(', ')}. Cadastre as portarias assim que os tribunais publicarem.
         </div>
       )}
+      {pilotTotals.compared > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 p-3 text-sm dark:border-violet-900/50 dark:bg-violet-900/15">
+          <p className="text-slate-700 dark:text-slate-200">
+            <span className="font-semibold">Piloto:</span> {pilotTotals.compared} prazo(s) comparado(s), {pilotTotals.divergent} divergência(s), {pilotTotals.unexplained} sem explicação.
+          </p>
+          <Button size="sm" variant="secondary" onClick={exportDivergences} disabled={!pilotTotals.divergent}><Download className="w-4 h-4" /> Divergências como casos da bateria (CSV)</Button>
+        </div>
+      )}
       {rows.length === 0 && <EmptyState icon={Building2} title="Nenhum escritório com o Controle de Prazos ligado" description="Os escritórios do piloto aparecem aqui." />}
       {rows.map(o => {
         const items = healthItems({ now, ...o.snapshot })
@@ -44,6 +79,7 @@ export function OfficesHealth({ calendarRows }: { calendarRows: CourtCalendarRow
               <span className={cn('w-2.5 h-2.5 rounded-full', DOT[level])} />
               <p className="text-sm font-semibold text-slate-900 dark:text-white">{o.name}</p>
               <span className="ml-auto text-xs text-slate-500">{o.openDeadlines} prazo(s) aberto(s)</span>
+              <Button size="sm" variant={o.pilotMode ? 'secondary' : 'ghost'} onClick={() => togglePilot(o)}>{o.pilotMode ? 'Piloto ligado · desligar' : 'Ligar piloto'}</Button>
             </div>
             <ul className="mt-2 space-y-0.5 text-xs">
               {items.map(i => (

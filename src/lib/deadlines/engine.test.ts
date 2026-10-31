@@ -180,3 +180,37 @@ describe('internalDateFor', () => {
     expect(internalDateFor('2026-11-24', 2, [], '2026-11-23')).toBe('2026-11-23')
   })
 })
+
+describe('regime penal (CPP, art. 798; STF, Súmula 310; art. 798-A)', () => {
+  const penal = (eventDate: string, amount: number, extra: Partial<Parameters<typeof calculateDeadline>[0]> = {}) =>
+    calculateDeadline({ regime: 'penal', startEvent: 'data_inicial', eventDate, amount, ...extra })
+
+  it('conta em dias corridos, inclusive fim de semana e feriado', () => {
+    // Intimação terça 03/11/2026, 5 dias: 04, 05, 06, 07 (sáb), 08 (dom) → vence domingo → prorroga para segunda 09/11
+    const r = penal('2026-11-03', 5)
+    expect(r.unit).toBe('dias_corridos')
+    expect(r.fatalDate).toBe('2026-11-09')
+    expect(r.memory.some(m => m.kind === 'conta' && m.date === '2026-11-07')).toBe(true)
+  })
+
+  it('intimação na sexta começa no 1º dia útil seguinte (Súmula 310), pulando feriado', () => {
+    // Sexta 30/10/2026; 02/11 é Finados → começa terça 03/11: 03..07 = 5 dias → sábado → segunda 09/11
+    const r = penal('2026-10-30', 5)
+    expect(r.startDate).toBe('2026-11-03')
+    expect(r.fatalDate).toBe('2026-11-09')
+  })
+
+  it('suspende no recesso de 20/12 a 20/01 (art. 798-A)', () => {
+    // 15/12/2026 (terça), 10 dias: 16, 17, 18, 19 (4) · recesso · 21/01..26/01 (10) → 26/01/2027
+    expect(penal('2026-12-15', 10).fatalDate).toBe('2027-01-26')
+  })
+
+  it('réu preso: sem suspensão no recesso (recesso desmarcado)', () => {
+    // 16..25/12 = 10 dias → 25/12 Natal → 26 sáb, 27 dom → segunda 28/12
+    expect(penal('2026-12-15', 10, { applyRecess: false }).fatalDate).toBe('2026-12-28')
+  })
+
+  it('sempre avisa que o regime penal está em validação', () => {
+    expect(penal('2026-11-03', 5).warnings.join(' ')).toMatch(/penal em validação/)
+  })
+})

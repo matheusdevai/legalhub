@@ -24,6 +24,7 @@ const EVENT_LABELS: Record<string, string> = {
   'triagem:deadline': 'Triada: gera prazo',
   'triagem:no_deadline': 'Triada: não gera prazo',
   'triagem:duplicate': 'Triada: duplicada',
+  piloto: 'Piloto: data do controle atual ou explicação registrada',
 }
 
 const ALERT_LABELS: Record<string, string> = {
@@ -39,12 +40,13 @@ const ALERT_LABELS: Record<string, string> = {
   recalculo_mais_cedo: 'prazo antecipado por recálculo',
   triagem_1: 'intimação sem triagem',
   triagem_2: 'intimação sem triagem, escalonado ao administrador',
+  divergencia_piloto: 'piloto — data diferente do controle atual',
 }
 
 /** "Alerta enviado: vence amanhã → Helena, Rafael (app, e-mail)" — prova de que o aviso existiu. */
 function eventLabel(ev: DeadlineEventRow): string {
   if (!ev.kind.startsWith('alerta:')) return EVENT_LABELS[ev.kind] || ev.kind
-  const rule = ev.kind.slice('alerta:'.length)
+  const rule = ev.kind.slice('alerta:'.length).split(':')[0]
   const after = (ev.after || {}) as { destinatarios?: string[]; canais?: string[] }
   const to = after.destinatarios?.length ? ` → ${after.destinatarios.join(', ')}` : ''
   const via = after.canais?.length ? ` (${after.canais.map(c => (c === 'email' ? 'e-mail' : c)).join(', ')})` : ''
@@ -127,6 +129,7 @@ export function DeadlineDrawer({ deadline: d, onClose, onChanged, onRecalculate,
               <p className="flex gap-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/15 p-3 text-xs text-amber-800 dark:text-amber-300"><RotateCcw className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />Devolvido pelo conferente: {d.review_note}</p>
             )}
             {blocked && <p className="flex gap-1.5 text-xs text-slate-500"><AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />{blocked}</p>}
+            {(settings.pilot_mode || d.pilot_reference_date) && <PilotCompare deadline={d} onChanged={onChanged} />}
 
             {actions.length > 0 && (
               <div className="flex flex-wrap gap-2 pt-2">
@@ -253,5 +256,36 @@ function ReasonDialog({ kind, deadline, onClose, onDone }: { kind: 'devolver' | 
         </div>
       </div>
     </Modal>
+  )
+}
+
+/** Piloto (fase 4): data do sistema x data do controle atual do escritório. Divergência pede explicação — mesmo depois de encerrado. */
+function PilotCompare({ deadline: d, onChanged }: { deadline: DeadlineRow; onChanged: () => void }) {
+  const [note, setNote] = useState(d.pilot_divergence_note || '')
+  const [saving, setSaving] = useState(false)
+  const ref = d.pilot_reference_date
+  const diverges = !!ref && ref !== d.fatal_date
+  async function save() {
+    if (note.trim().length < 5) { toast('Explique a divergência (o que cada lado considerou).', 'error'); return }
+    setSaving(true)
+    const { error } = await updateDeadline(d.id, { pilot_divergence_note: note.trim() })
+    setSaving(false)
+    if (error) { toast(error.message, 'error'); return }
+    toast('Explicação registrada.', 'success')
+    onChanged()
+  }
+  return (
+    <div className={cn('rounded-xl border p-3 text-xs space-y-2', diverges ? 'border-violet-300 bg-violet-50 dark:border-violet-900/50 dark:bg-violet-900/15' : 'border-slate-100 dark:border-dark-700')}>
+      <p className="font-semibold text-slate-800 dark:text-slate-100">
+        Piloto · controle atual do escritório: {ref ? formatDate(ref) : 'não informado'}
+        {ref && <span className={cn('ml-2 rounded-full px-2 py-0.5', diverges ? 'bg-violet-200 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200' : 'bg-emerald-100 text-emerald-700')}>{diverges ? 'diverge' : 'igual'}</span>}
+      </p>
+      {diverges && (
+        <>
+          <Textarea label="Por que as datas diferem? Qual está certa?" value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="Ex.: o controle do escritório não considerou a suspensão da Portaria nº …" />
+          <Button size="sm" variant="secondary" onClick={save} loading={saving}>Salvar explicação</Button>
+        </>
+      )}
+    </div>
   )
 }

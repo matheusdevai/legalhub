@@ -4,7 +4,7 @@ import { Button, Input, Spinner } from '@/components/ui'
 import { cn, toLocalISODate } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { fetchReportInputs, type TeamMember } from '@/lib/deadlines/api'
-import { indicatorsByLawyer, monthlyIndicators, type Indicator, type ReportCommunication } from '@/lib/deadlines/reports'
+import { indicatorsByLawyer, monthlyIndicators, pilotSummary, type Indicator, type ReportCommunication } from '@/lib/deadlines/reports'
 import type { DeadlineRow } from '@/lib/deadlines/workflow'
 
 const fmtValue = (i: Indicator) => (i.value === null ? '—' : i.kind === 'percent' ? `${String(i.value).replace('.', ',')}%` : String(i.value))
@@ -27,6 +27,7 @@ export function ReportsTab({ deadlines, team }: { deadlines: DeadlineRow[]; team
   const indicators = useMemo(() => (inputs ? monthlyIndicators({ month, today, deadlines, ...inputs }) : []), [inputs, month, today, deadlines])
   const byLawyer = useMemo(() => indicatorsByLawyer(deadlines, month, today), [deadlines, month, today])
   const name = (id: string) => team.find(t => t.id === id)?.name || '—'
+  const pilot = useMemo(() => pilotSummary(deadlines), [deadlines])
 
   function exportReport() {
     openExportWindow({
@@ -64,6 +65,17 @@ export function ReportsTab({ deadlines, team }: { deadlines: DeadlineRow[]; team
               <p className="mt-0.5 text-[11px] text-slate-400">Meta: {i.goal}{i.kind === 'percent' && i.base ? ` · base ${i.base}` : ''}</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {pilot.compared > 0 && (
+        <div className={cn('rounded-2xl border p-4 text-sm', pilot.unexplained ? 'border-violet-300 bg-violet-50 dark:border-violet-900/50 dark:bg-violet-900/15' : 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/40 dark:bg-emerald-900/15')}>
+          <p className="font-semibold text-slate-800 dark:text-slate-100">Piloto — comparação com o controle atual (todo o período)</p>
+          <p className="mt-1 text-slate-600 dark:text-slate-300">
+            {pilot.compared} prazo(s) comparado(s): {pilot.equal} com a mesma data, {pilot.divergent} com data diferente
+            {pilot.divergent > 0 && <> — <span className={cn('font-semibold', pilot.unexplained ? 'text-violet-700 dark:text-violet-300' : 'text-emerald-700')}>{pilot.unexplained ? `${pilot.unexplained} sem explicação` : 'todas explicadas'}</span></>}.
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Critério de saída do piloto: zero divergência sem explicação. Explique cada uma na ficha do prazo.</p>
         </div>
       )}
 
