@@ -1,0 +1,143 @@
+// Relatório mensal do Controle de Prazos (especificação, seção 9): indicadores
+// do escritório e por advogado, para o sócio ver onde há sobrecarga antes que
+// ela vire prazo perdido. Lógica pura; a tela só busca os dados e desenha.
+
+import { addDays, businessDaysUntil, type CalendarEntry } from './engine'
+import { brasiliaNow } from './alerts'
+
+export interface ReportDeadline {
+  id: string
+  status: string
+  responsible_id: string
+  fatal_date: string
+  internal_date: string
+  reviewed_at: string | null
+  protocol_at: string | null
+  manually_adjusted: boolean
+  deleted_at?: string | null
+}
+
+export interface ReportCommunication {
+  created_at: string
+  triage_status: string
+  triaged_at: string | null
+}
+
+export type IndicatorKey = 'triagem' | 'conferencia' | 'folga' | 'no_dia' | 'ajustes' | 'perdidos' | 'sem_fontes'
+
+export interface Indicator {
+  key: IndicatorKey
+  label: string
+  goal: string
+  /** Percentual (0–100) ou contagem, conforme `kind`. null = sem base no mês. */
+  value: number | null
+  kind: 'percent' | 'count'
+  /** Base do percentual (quantos itens entraram na conta). */
+  base: number
+  ok: boolean | null
+}
+
+const localDay = (iso: string) => brasiliaNow(new Date(iso)).date
+const pct = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : null)
+
+function monthBounds(month: string) {
+  const first = `${month}-01`
+  const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 10)
+  return { first, last: addDays(next, -1) }
+}
+
+/** Dias úteis do mês até `upTo` (inclusive). */
+function businessDaysOfMonth(month: string, upTo: string, calendar: CalendarEntry[]) {
+  const { first, last } = monthBounds(month)
+  const end = upTo < last ? upTo : last
+  if (end < first) return [] as string[]
+  const days: string[] = []
+  for (let d = first; d <= end; d = addDays(d, 1)) {
+    if (businessDaysUntil(addDays(d, -1), d, calendar) === 1) days.push(d)
+  }
+  return days
+}
+
+/**
+ * Indicadores de um mês (AAAA-MM). Prazos entram pelo mês do FATAL; intimações,
+ * pelo mês em que chegaram. `today` limita o que ainda não aconteceu (um prazo
+ * que vence amanhã não conta como perdido nem como protocolado no dia).
+ */
+export function monthlyIndicators(input: {
+  month: string
+  today: string
+  deadlines: ReportDeadline[]
+  communications: ReportCommunication[]
+  sourceCheckDays: string[]
+  calendar?: CalendarEntry[]
+}): Indicator[] {
+  const { month, today, calendar = [] } = input
+  const { first, last } = monthBounds(month)
+  const inMonth = (d: string) => d >= first && d <= last
+
+  // Triagem em até 1 dia útil (as ainda pendentes há mais de 1 dia útil contam como fora da meta)
+  const comms = input.communications.filter(c => inMonth(localDay(c.created_at)))
+  const triageBase = comms.filter(c => c.triage_status !== 'pending' || businessDaysUntil(localDay(c.created_at), today, calendar) > 1)
+  const triagedInTime = triageBase.filter(c => c.triaged_at && businessDaysUntil(localDay(c.created_at), localDay(c.triaged_at), calendar) <= 1).length
+
+  const ds = input.deadlines.filter(d => !d.deleted_at && inMonth(d.fatal_date) && d.status !== 'cancelado')
+  // Conferidos antes do prazo interno (só os que já chegaram ao interno ou já foram conferidos)
+  const reviewBase = ds.filter(d => d.reviewed_at || d.internal_date <= today)
+  const reviewedInTime = reviewBase.filter(d => d.reviewed_at && localDay(d.reviewed_at) <= d.internal_date).length
+  // Protocolo: com folga x no dia do fatal (base: os protocolados)
+  const protocoled = ds.filter(d => d.status === 'protocolado' && d.protocol_at)
+  const early = protocoled.filter(d => localDay(d.protocol_at!) < d.fatal_date).length
+  const sameDay = protocoled.filter(d => localDay(d.protocol_at!) === d.fatal_date).length
+  // Perdidos: marcados como perdidos ou fatal já passou sem protocolo
+  const lost = ds.filter(d => d.status === 'perdido' || (d.status !== 'protocolado' && d.fatal_date < today)).length
+  const adjusted = ds.filter(d => d.manually_adjusted).length
+  // Dias úteis do mês (até hoje) sem a conferência diária das fontes
+  const checked = new Set(input.sourceCheckDays)
+  const noSources = businessDaysOfMonth(month, today, calendar).filter(d => !checked.has(d)).length
+
+  const triagePct = pct(triagedInTime, triageBase.length)
+  const reviewPct = pct(reviewedInTime, reviewBase.length)
+  const earlyPct = pct(early, protocoled.length)
+  const sameDayPct = pct(sameDay, protocoled.length)
+  return [
+    { key: 'triagem', label: 'Intimações triadas em até 1 dia útil', goal: '100%', value: triagePct, kind: 'percent', base: triageBase.length, ok: triagePct === null ? null : triagePct === 100 },
+    { key: 'conferencia', label: 'Prazos conferidos antes do prazo interno', goal: '100%', value: reviewPct, kind: 'percent', base: reviewBase.length, ok: reviewPct === null ? null : reviewPct === 100 },
+    { key: 'folga', label: 'Protocolados com folga (antes do fatal)', goal: 'acima de 90%', value: earlyPct, kind: 'percent', base: protocoled.length, ok: earlyPct === null ? null : earlyPct > 90 },
+    { key: 'no_dia', label: 'Protocolados no dia do fatal', goal: 'abaixo de 10%', value: sameDayPct, kind: 'percent', base: protocoled.length, ok: sameDayPct === null ? null : sameDayPct < 10 },
+    { key: 'ajustes', label: 'Datas ajustadas manualmente', goal: 'acompanhar', value: adjusted, kind: 'count', base: ds.length, ok: null },
+    { key: 'perdidos', label: 'Prazos perdidos', goal: '0', value: lost, kind: 'count', base: ds.length, ok: lost === 0 },
+    { key: 'sem_fontes', label: 'Dias sem conferência das fontes oficiais', goal: '0', value: noSources, kind: 'count', base: 0, ok: noSources === 0 },
+  ]
+}
+
+export interface LawyerRow {
+  responsibleId: string
+  total: number
+  open: number
+  protocoled: number
+  early: number
+  sameDay: number
+  lost: number
+  adjusted: number
+}
+
+/** Por advogado (responsável), no mês do fatal — onde está a sobrecarga. */
+export function indicatorsByLawyer(deadlines: ReportDeadline[], month: string, today: string): LawyerRow[] {
+  const { first, last } = monthBounds(month)
+  const rows = new Map<string, LawyerRow>()
+  for (const d of deadlines) {
+    if (d.deleted_at || d.status === 'cancelado' || d.fatal_date < first || d.fatal_date > last) continue
+    const r = rows.get(d.responsible_id) || { responsibleId: d.responsible_id, total: 0, open: 0, protocoled: 0, early: 0, sameDay: 0, lost: 0, adjusted: 0 }
+    r.total++
+    if (d.manually_adjusted) r.adjusted++
+    if (d.status === 'protocolado' && d.protocol_at) {
+      r.protocoled++
+      const p = localDay(d.protocol_at)
+      if (p < d.fatal_date) r.early++
+      else if (p === d.fatal_date) r.sameDay++
+    } else if (d.status === 'perdido' || d.fatal_date < today) r.lost++
+    else r.open++
+    rows.set(d.responsible_id, r)
+  }
+  return [...rows.values()].sort((a, b) => b.total - a.total)
+}

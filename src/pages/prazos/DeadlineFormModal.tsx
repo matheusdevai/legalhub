@@ -6,9 +6,11 @@ import { formatDate } from '@/lib/utils'
 import { calculateDeadline, internalDateFor, type DeadlineResult, type Regime, type StartEvent, type Unit } from '@/lib/deadlines/engine'
 import { calendarForProcess, calendarVersion, type CourtCalendarRow } from '@/lib/deadlines/courtCalendar'
 import { COURTS } from '@/lib/deadlines/courts'
-import { createDeadline, triageCommunication, updateDeadline, type CommunicationRow, type DeadlineSettings, type ProcessOption, type TeamMember } from '@/lib/deadlines/api'
+import { askAiSuggestion, createDeadline, triageCommunication, updateDeadline, type CommunicationRow, type DeadlineSettings, type ProcessOption, type TeamMember } from '@/lib/deadlines/api'
+import { suggestFromText, type TextSuggestion } from '@/lib/deadlines/suggest'
 import type { DeadlineRow } from '@/lib/deadlines/workflow'
 import { MemoryView } from './MemoryView'
+import { SuggestionBox } from './SuggestionBox'
 
 const REGIMES: { value: Regime; label: string }[] = [
   { value: 'civel', label: 'Cível (CPC) — dias úteis' },
@@ -78,6 +80,14 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
   const [adjustReason, setAdjustReason] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [aiSuggestion, setAiSuggestion] = useState<TextSuggestion | null>(null)
+  const [askingAi, setAskingAi] = useState(false)
+
+  function applySuggestion(sg: TextSuggestion) {
+    if (sg.actType) setActType(sg.actType)
+    if (sg.amount !== null) setAmount(String(sg.amount))
+    if (sg.unit) setUnit(sg.unit)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -96,6 +106,12 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
     setDoubled(false); setDoubledReason(''); setApplyRecess(true)
     setResponsibleId(communication?.assigned_to || me); setReviewerId('')
     setAdjust(false); setAdjustedFatal(''); setAdjustReason('')
+    setAiSuggestion(null)
+    // Leitura clara ou razoável já preenche o formulário; incerta não preenche nada.
+    if (communication) {
+      const sg = suggestFromText([communication.title, communication.content].filter(Boolean).join('\n'))
+      if (sg.confidence !== 'baixa') applySuggestion(sg)
+    }
   }, [open, existing, communication, me])
 
   function changeRegime(r: Regime) { setRegime(r); setUnit(DEFAULT_UNIT[r]); setApplyRecess(DEFAULT_RECESS[r]) }
@@ -150,6 +166,18 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
 
   const proc = processes.find(p => p.id === processId)
 
+  // Fase 5: leitura da intimação. Por regras sempre; pela IA só se a pessoa pedir (leitura incerta).
+  const communicationText = communication ? [communication.title, communication.content].filter(Boolean).join('\n') : ''
+  const ruleSuggestion = useMemo(() => (communication && !existing ? suggestFromText(communicationText, { regime }) : null), [communication, existing, communicationText, regime])
+
+  async function askAi() {
+    if (!communication) return
+    setAskingAi(true)
+    try { setAiSuggestion(await askAiSuggestion(communication.id)) }
+    catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível consultar a IA.', 'error') }
+    finally { setAskingAi(false) }
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={existing ? 'Recalcular prazo' : 'Calcular prazo'} size="xl">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -160,6 +188,8 @@ export function DeadlineFormModal({ open, onClose, onSaved, me, team, processes,
               <p className="mt-2 whitespace-pre-wrap max-h-40 overflow-y-auto">{communication.content}</p>
             </details>
           )}
+          {ruleSuggestion && !aiSuggestion && <SuggestionBox suggestion={ruleSuggestion} source="regras" onApply={() => applySuggestion(ruleSuggestion)} onAskAi={askAi} askingAi={askingAi} />}
+          {aiSuggestion && <SuggestionBox suggestion={aiSuggestion} source="ia" onApply={() => applySuggestion(aiSuggestion)} />}
           <Select label="Processo" value={processId} onChange={e => setProcessId(e.target.value)}>
             <option value="">Sem processo vinculado</option>
             {processes.map(p => <option key={p.id} value={p.id}>{p.number} — {p.client_name || p.title}</option>)}

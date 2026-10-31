@@ -3,6 +3,8 @@ import { toLocalISODate } from '@/lib/utils'
 import { communicationsToImport, type ProcessWithMovements } from './communicationsImport'
 import type { CourtCalendarRow } from './courtCalendar'
 import type { HealthCheckRow } from './health'
+import type { TextSuggestion } from './suggest'
+import type { ReportCommunication } from './reports'
 import type { DeadlineRow, DeadlineStatus } from './workflow'
 
 export interface DeadlineSettings {
@@ -199,4 +201,29 @@ export async function fetchAllOfficesHealth(): Promise<OfficeHealth[]> {
     snapshot: snapshots[i],
     openDeadlines: (open || []).filter(o => o.tenant_id === id).length,
   }))
+}
+
+/** Segunda leitura da intimação pela IA (Edge Function deadline-suggest) — só quando as regras ficaram em dúvida. */
+export async function askAiSuggestion(communicationId: string): Promise<TextSuggestion> {
+  const { data, error } = await supabase.functions.invoke('deadline-suggest', { body: { communication_id: communicationId } })
+  if (error) {
+    const ctx = (error as { context?: Response }).context
+    const msg = ctx && typeof ctx.json === 'function' ? (await ctx.json().catch(() => null))?.error : null
+    throw new Error(msg || error.message)
+  }
+  return (data as { suggestion: TextSuggestion }).suggestion
+}
+
+/** Dados do relatório mensal (o que a lista de prazos da tela não traz): intimações que chegaram no mês e dias com conferência das fontes. */
+export async function fetchReportInputs(month: string): Promise<{ communications: ReportCommunication[]; sourceCheckDays: string[] }> {
+  const first = `${month}-01`
+  const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 10)
+  // Margem de 1 dia nas pontas: created_at é UTC e o mês é contado em Brasília (monthlyIndicators recorta).
+  const from = new Date(Date.parse(`${first}T00:00:00Z`) - 86_400_000).toISOString()
+  const to = new Date(Date.parse(`${next}T00:00:00Z`) + 86_400_000).toISOString()
+  const [{ data: comms }, { data: checks }] = await Promise.all([
+    supabase.from('communications').select('created_at, triage_status, triaged_at').is('deleted_at', null).gte('created_at', from).lt('created_at', to),
+    supabase.from('source_checks').select('checked_on').gte('checked_on', first).lt('checked_on', next),
+  ])
+  return { communications: (comms || []) as ReportCommunication[], sourceCheckDays: [...new Set((checks || []).map(c => c.checked_on as string))] }
 }

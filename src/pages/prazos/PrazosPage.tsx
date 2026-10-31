@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Activity, AlertTriangle, CalendarPlus, ClipboardCheck, Inbox, LayoutGrid, RefreshCw, Settings2, ShieldCheck } from 'lucide-react'
+import { Activity, AlertTriangle, BarChart3, CalendarPlus, ClipboardCheck, Inbox, LayoutGrid, RefreshCw, Settings2, ShieldCheck } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
 import { Badge, Button, EmptyState, Spinner } from '@/components/ui'
 import { toast } from '@/components/ui/Toast'
@@ -18,10 +18,11 @@ import { DeadlineFormModal } from './DeadlineFormModal'
 import { DeadlineSettingsModal } from './DeadlineSettingsModal'
 import { HealthStrip } from './HealthStrip'
 import { OfficesHealth } from './OfficesHealth'
+import { ReportsTab } from './ReportsTab'
 import { TriageInbox } from './TriageInbox'
 
-type Tab = 'painel' | 'triar' | 'conferencia' | 'saude'
-const TABS: Tab[] = ['painel', 'triar', 'conferencia', 'saude']
+type Tab = 'painel' | 'triar' | 'conferencia' | 'relatorios' | 'saude'
+const TABS: Tab[] = ['painel', 'triar', 'conferencia', 'relatorios', 'saude']
 
 export function PrazosPage() {
   const { profile } = useAuth()
@@ -146,7 +147,7 @@ export function PrazosPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex gap-1 rounded-xl bg-slate-100 dark:bg-dark-800 p-1" role="tablist">
-            {([['painel', 'Painel', LayoutGrid], ['triar', 'A triar', Inbox], ['conferencia', 'Conferência', ClipboardCheck], ...(isSuperAdmin ? [['saude', 'Saúde (todos)', Activity] as const] : [])] as const).map(([id, label, Icon]) => (
+            {([['painel', 'Painel', LayoutGrid], ['triar', 'A triar', Inbox], ['conferencia', 'Conferência', ClipboardCheck], ['relatorios', 'Relatórios', BarChart3], ...(isSuperAdmin ? [['saude', 'Saúde (todos)', Activity] as const] : [])] as const).map(([id, label, Icon]) => (
               <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}
                 className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium', tab === id ? 'bg-white dark:bg-dark-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500')}>
                 <Icon className="w-4 h-4" /> {label}
@@ -164,6 +165,7 @@ export function PrazosPage() {
 
         {tab === 'painel' && <DeadlineBoard deadlines={open} team={team} processes={processes} calendar={[]} onOpen={d => setOpenId(d.id)} />}
         {tab === 'saude' && isSuperAdmin && <OfficesHealth calendarRows={calendarRows} />}
+        {tab === 'relatorios' && <ReportsTab deadlines={deadlines} team={team} />}
         {tab === 'triar' && <TriageInbox items={pending} processes={processes} onCreateDeadline={c => setForm({ communication: c })} onChanged={loadData} />}
         {tab === 'conferencia' && (
           <div className="space-y-2">
