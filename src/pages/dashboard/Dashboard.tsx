@@ -13,7 +13,7 @@ const TaskscoreBarChart = lazy(() => import('./DashboardCharts').then(m => ({ de
 const ChartFallback = () => <div className="h-full min-h-[160px] animate-pulse bg-slate-100 dark:bg-dark-700 rounded-xl" />
 import { Layout } from '@/components/layout/Layout'
 import { AiCopilotoTab } from '@/components/ai/AiCopilotoTab'
-import { Modal, Button, Input, Select, EmptyState } from '@/components/ui'
+import { Modal, Button, Input, Select, EmptyState, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { formatDate, formatCurrency, PRIORITY_COLORS, PRIORITY_LABELS, TASK_STATUS_LABELS, computeMonthlyChangePercent, toLocalISODate } from '@/lib/utils'
@@ -645,7 +645,7 @@ export function Dashboard() {
     })
   }
 
-  if (loading) return null
+  if (loading) return <Layout title="Meu Painel"><div className="flex justify-center py-20"><Spinner /></div></Layout>
 
   return (
     <Layout title="Meu Painel">

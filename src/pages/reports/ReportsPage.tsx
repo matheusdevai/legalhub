@@ -6,7 +6,7 @@ import {
   Filter, Search, ArrowUpDown, Zap, Clock, AlertCircle, X,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Card, Badge, EmptyState } from '@/components/ui'
+import { Card, Badge, EmptyState, Spinner } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { Colaborador, Process, Profile, Client, Task } from '@/types'
 import { cn, formatDate } from '@/lib/utils'
@@ -223,7 +223,7 @@ export function ReportsPage() {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  if (loading) return null
+  if (loading) return <Layout title="Relatórios"><div className="flex justify-center py-20"><Spinner /></div></Layout>
 
   return (
     <Layout

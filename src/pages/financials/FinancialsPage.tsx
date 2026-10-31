@@ -12,7 +12,7 @@ import {
   LineChart as LineChartIcon, Repeat,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
-import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState } from '@/components/ui'
+import { Button, Card, Badge, Modal, Input, Select, Textarea, EmptyState, Spinner } from '@/components/ui'
 import { FinancialDrawer, type FinancialDrawerForm, DRAWER_EMPTY_FORM, computeInstallmentAmounts } from '@/components/financials/FinancialDrawer'
 import { ReconcileExpensesModal } from '@/components/financials/ReconcileExpensesModal'
 import { FinancialSheet, type SheetPatch, type QuickAddInput } from '@/components/financials/FinancialSheet'
@@ -983,7 +983,7 @@ export function FinancialsPage() {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
-  if (loading) return null
+  if (loading) return <Layout title="Financeiro"><div className="flex justify-center py-20"><Spinner /></div></Layout>
 
   const pctReceita = prevMonthReceitas > 0 ? Math.round(((receitaMensalPrevista - prevMonthReceitas) / prevMonthReceitas) * 100) : 0
   const pctDespesa = prevMonthDespesas > 0 ? Math.round(((despesaMensalPrevista - prevMonthDespesas) / prevMonthDespesas) * 100) : 0

@@ -313,6 +313,11 @@ async function save() {
 }
 ```
 
+### Carregamento de página (sem logomarca na troca de tela)
+- `LoadingScreen` (logomarca em tela cheia) só aparece na ABERTURA do app, enquanto o login é verificado. Nunca usar em troca de tela nem em busca de dados.
+- Busca de dados da página: `usePageLoadingState()` (`src/contexts/PageLoadingContext.tsx`) mostra uma barrinha fina no topo, só se passar de 150 ms. Página que precisa esconder o conteúdo enquanto carrega renderiza o `Layout` com `<Spinner />` dentro — nunca `return null` (some a barra lateral).
+- Troca de tela: `BrowserRouter future={{ v7_startTransition: true }}` mantém a tela atual visível enquanto a próxima carrega, e `prefetchPages()` (`App.tsx`) baixa o código de todas as telas no tempo ocioso após o login. Tela nova: incluir em `pages` no `App.tsx`.
+
 ### Paginação
 ```ts
 const PAGE_SIZE = 15
