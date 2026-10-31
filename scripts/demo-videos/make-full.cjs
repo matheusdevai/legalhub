@@ -21,6 +21,7 @@ const LOGO = 'data:image/png;base64,' + fs.readFileSync(path.join(__dirname, '..
 const PARTS = [
   ['painel', 'Painel', 'O dia do escritório em uma tela'],
   ['intimacoes', 'Intimações', 'Chegam sozinhas, com o prazo calculado'],
+  ['prazos', 'Prazos', 'Conferência dupla e alertas até o vencimento'],
   ['processos', 'Processos', 'Todos os casos, por fase e por cliente'],
   ['clientes', 'Clientes', 'Cada cliente com o histórico completo'],
   ['agenda', 'Agenda', 'Audiências, prazos e reuniões no mesmo calendário'],

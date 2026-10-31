@@ -35,6 +35,63 @@ const CLIPS = {
     await h.moveTo('text=Vencimento', { duration: 1000 }).catch(() => {})
   },
 
+  async prazos(h) {
+    // Faixa de saúde como num escritório já configurado: o demo não tem e-mail
+    // (RESEND_API_KEY) nem advogado com OAB (ver README). Só no navegador da
+    // gravação, como o aviso de teste grátis — nada é gravado no banco.
+    await h.page.route('**/rest/v1/health_checks*', async route => {
+      const res = await route.fetch()
+      const rows = (await res.json()).map(r => r.check_key === 'email' ? { ...r, ok: true, detail: 'Envio de e-mail configurado' } : r)
+      await route.fulfill({ response: res, json: rows })
+    })
+    await h.page.route('**/rest/v1/profiles*oab_number*', async route => {
+      const res = await route.fetch()
+      await route.fulfill({ response: res, json: (await res.json()).filter(p => p.oab_number) })
+    })
+    // Regravações no mesmo dia: até o clique, a tela acha que ninguém conferiu as fontes hoje.
+    let fontesConferidas = false
+    await h.page.route('**/rest/v1/source_checks*', route =>
+      route.request().method() === 'GET' && !fontesConferidas ? route.fulfill({ json: [] }) : route.continue())
+    const field = label => h.page.locator(`xpath=(//label[normalize-space()="${label}"])[last()]/following::*[self::input or self::select][1]`)
+    await h.goto('/prazos')
+    const dia = h.page.locator('button:has-text("Começar o dia")')
+    if (await dia.count()) { await dia.first().click(); await h.wait(600) }
+    await h.page.locator('[role=status]').first().waitFor({ timeout: 10000 }).catch(() => {})
+    await h.start()
+    await h.say('O controle de prazos reúne todos os prazos do escritório em um painel, organizado pela urgência do vencimento.')
+    await h.moveTo('section[aria-label="Próximos 3 dias úteis"]', { duration: 1200 })
+    await h.moveTo('section[aria-label="Depois"]', { duration: 1200 })
+    await h.say('Todo dia, alguém confere as fontes oficiais com um clique. A faixa no topo mostra se as intimações e os alertas estão funcionando.')
+    fontesConferidas = true
+    await h.click('button:has-text("Conferi as fontes oficiais hoje")', { after: 1400 })
+    await h.say('Cada prazo traz a memória de cálculo, dia a dia: o que contou, o que não contou, e por quê.')
+    await h.click('section button:has-text("Contestação")', { after: 1500 })
+    await h.scroll(420, { el: 'text=Memória de cálculo' })
+    await h.moveTo('text=Dia do Servidor Público', { duration: 900 }).catch(() => {})
+    await h.wait(1200)
+    await h.click('h2:has-text("Prazo: Contestação") + button', { after: 800 })
+    await h.say('As intimações do Diário Eletrônico chegam na caixa A triar. O sistema lê o texto e já sugere o ato e o prazo.')
+    await h.click('[role=tab]:has-text("A triar")', { after: 900 })
+    await h.click('main button:has-text("Mariana Albuquerque")', { after: 900 })
+    await h.click('button:has-text("Gera prazo")', { after: 1500 })
+    await h.moveTo('text=Lido da intimação', { duration: 900 })
+    const tribunal = field('Tribunal')
+    await h.moveTo(tribunal)
+    await tribunal.selectOption('trf5')
+    await h.say('O cálculo sai na hora, com a data fatal e o prazo interno. E nenhum prazo segue sem a conferência de outra pessoa.')
+    await h.moveTo('text=Prazo fatal', { duration: 900 })
+    const conferente = field('Conferente')
+    await h.moveTo(conferente)
+    await conferente.selectOption({ label: 'Dr. Rafael Lima' })
+    await h.wait(900)
+    await h.click('button:has-text("Cancelar")', { after: 800 })
+    await h.say('Os alertas avisam o responsável e o conferente antes do vencimento. No dia do prazo, se não houver protocolo, o administrador também é avisado.')
+    await h.click('[role=tab]:has-text("Painel")', { after: 900 })
+    await h.moveTo('section button:has-text("Embargos de declaração")', { duration: 1000 })
+    await h.say('Assim, nenhum prazo do escritório passa despercebido.')
+    await h.moveTo('section[aria-label="Próximos 3 dias úteis"]', { duration: 1200 })
+  },
+
   async processos(h) {
     await h.goto('/processos')
     await h.start()

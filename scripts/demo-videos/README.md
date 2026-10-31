@@ -28,7 +28,7 @@ npm i --no-save playwright ffmpeg-static       # dependências só da gravação
 npx playwright install chromium                # se ainda não tiver
 swiftc -O tts.swift -o tts                     # gerador de voz (AVSpeechSynthesizer)
 DEMO_EMAIL=... DEMO_PASSWORD=... node clips.cjs painel processos   # ou sem argumentos = todos
-./publish.sh painel intimacoes processos clientes agenda financeiro ia documentos relatorios leads mobile
+./publish.sh painel intimacoes prazos processos clientes agenda financeiro ia documentos relatorios leads mobile
 ```
 
 `clips.cjs` tem um roteiro por vídeo: falas (`h.say`) intercaladas com
@@ -49,6 +49,15 @@ Gerenciar Vozes → Português (Brasil) → Luciana Premium); senão, a compacta
 Para forçar outra voz, use `VOICE_ID=<identificador>`, e `VOICE_RATE` (padrão
 0.52) para a velocidade. O áudio fica em cache em `tts-cache/` por
 texto + voz + velocidade.
+
+O clipe `prazos` precisa do Controle de Prazos ligado no escritório demo
+(`deadline_settings.enabled`, com `pilot_mode` desligado) e de prazos e
+intimações fictícios abertos. Só no navegador da gravação, ele mostra a faixa
+de saúde como num escritório configurado: e-mail ligado (o demo não tem
+`RESEND_API_KEY`) e sem o aviso de advogado sem OAB (o demo não tem OAB de
+propósito). Também simula que ninguém conferiu as fontes no dia até o clique
+em "Conferi as fontes oficiais hoje", para dar para regravar no mesmo dia.
+Nada disso é gravado no banco.
 
 A Excelência (clipe `ia`) faz uma geração real no Gemini. Se a API responder
 "alta demanda", o roteiro tenta de novo até 5 vezes, num trecho cortado do
