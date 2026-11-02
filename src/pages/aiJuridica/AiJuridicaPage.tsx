@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  Sparkles, AlertCircle, FileSearch, Gavel, FileText,
+  AlertCircle, FileSearch, Gavel, FileText,
   ScrollText, ClipboardCheck, ShieldAlert, Scale,
 } from 'lucide-react'
 import { Layout } from '@/components/layout/Layout'
@@ -67,21 +67,6 @@ export function AiJuridicaPage() {
   return (
     <Layout title="Excelência">
       <div className="space-y-4 animate-fade-in">
-        {/* Header */}
-        <Card className="p-5 bg-gradient-to-r from-primary-700 via-primary-600 to-primary-500 border-0">
-          <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center flex-shrink-0">
-              <Sparkles className="text-white w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-white">Excelência</h1>
-              <p className="text-sm text-white/75">
-                Análises, petições e peças processuais geradas com apoio de inteligência artificial.
-              </p>
-            </div>
-          </div>
-        </Card>
-
         {/* Seletor de processo (opcional — nem toda ação depende de um processo já cadastrado) */}
         <Card className="p-4">
           {loadingProcessos ? (
