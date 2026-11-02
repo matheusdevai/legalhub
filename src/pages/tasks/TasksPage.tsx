@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow, openMultiDocumentPrintWindow } from '@/lib/exportUtils'
 import { mergeTemplateVariables } from '@/lib/documentTemplateUtils'
-import { markTaskDone, displayTaskDescription } from '@/lib/taskActions'
+import { markTaskDone, displayTaskDescription, isJudicializacaoTask } from '@/lib/taskActions'
 import { inferGrupoETipoAcao } from '@/lib/areaUtils'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { toast } from '@/components/ui/Toast'
@@ -728,7 +728,8 @@ export function TasksPage() {
       // Ação previdenciária quase sempre é contra o INSS — mesmo default aplicado
       // ao selecionar manualmente o tipo de ação em ProcessFormFields.
       counterparty: grupoAcao === 'Previdenciário' ? INSS_COUNTERPARTY : '',
-      modalidade: (client as any)?.modalidade || '',
+      // "PROTOCOLAR JFPB" nasce do administrativo indeferido: o processo a criar é o judicial.
+      modalidade: isJudicializacaoTask(t.title) ? 'judicial' : ((client as any)?.modalidade || ''),
       description: notasExtras.join('\n'),
       data_protocolo: new Date().toISOString().slice(0, 10),
     })

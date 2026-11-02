@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { nextRecurrenceDueDate, RECURRENCE_LABELS, displayTaskDescription } from './taskActions'
+import { nextRecurrenceDueDate, RECURRENCE_LABELS, displayTaskDescription, isJudicializacaoTask } from './taskActions'
 import type { Task } from '@/types'
 
 describe('nextRecurrenceDueDate', () => {
@@ -154,5 +154,16 @@ describe('displayTaskDescription', () => {
     expect(displayTaskDescription(null)).toBe('')
     expect(displayTaskDescription(undefined)).toBe('')
     expect(displayTaskDescription('')).toBe('')
+  })
+})
+
+describe('isJudicializacaoTask', () => {
+  it('reconhece a tarefa criada pelo indeferimento', () => {
+    expect(isJudicializacaoTask('PROTOCOLAR JFPB - MARIA DA SILVA')).toBe(true)
+    expect(isJudicializacaoTask('  protocolar jfpb - Maria')).toBe(true)
+  })
+  it('não confunde com a tarefa de protocolar do cadastro de cliente', () => {
+    expect(isJudicializacaoTask('Protocolar processo de Maria')).toBe(false)
+    expect(isJudicializacaoTask(null)).toBe(false)
   })
 })
