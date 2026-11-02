@@ -20,6 +20,16 @@ export function displayTaskDescription(description: string | null | undefined): 
   return description.replace(/^client_id:[a-f0-9-]{36}\s*\|\s*/, '')
 }
 
+// ─── Judicializar administrativo indeferido ──────────────────────────────────
+// Ao marcar um administrativo como indeferido, o trigger processes_indeferido_task
+// (banco) cria "PROTOCOLAR JFPB - <CLIENTE>" em Atividades. Ao concluir essa
+// tarefa, o processo a criar é judicial (o administrativo já existe).
+export const JFPB_TASK_PREFIX = 'PROTOCOLAR JFPB - '
+
+export function isJudicializacaoTask(title: string | null | undefined): boolean {
+  return !!title && title.trim().toUpperCase().startsWith(JFPB_TASK_PREFIX.trim())
+}
+
 // ─── Recorrência ──────────────────────────────────────────────────────────────
 export function nextRecurrenceDueDate(dueDate: string, interval: string | null): string | null {
   if (interval !== 'weekly' && interval !== 'monthly' && interval !== 'yearly') return null

@@ -453,7 +453,9 @@ export function ProcessesPage() {
         processNumber: p.number || p.numero_protocolo || '', nextDeadline: patch.next_deadline, nextHearing: p.next_hearing,
       })
     }
-    toast(`Situação: ${ADMIN_STATUS_LABELS[status]}`, 'success')
+    toast(status === 'indeferido' && p.admin_status !== 'indeferido'
+      ? `Indeferido. Tarefa "PROTOCOLAR JFPB - ${(p.client_name || 'cliente').toUpperCase()}" criada em Atividades.`
+      : `Situação: ${ADMIN_STATUS_LABELS[status]}`, 'success')
   }
 
   async function deleteProcess(id: string) {

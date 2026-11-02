@@ -104,6 +104,9 @@ export function AdminStatusPicker({ process: p, onChange, compact }: {
                   : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-dark-700')}>
               {ADMIN_STATUS_LABELS[st]}
               {p.admin_status === st && <Check className="w-3.5 h-3.5" />}
+              {st === 'indeferido' && p.admin_status !== st && (
+                <span className="text-[10px] font-normal text-gray-400">+ tarefa JFPB</span>
+              )}
             </button>
           ))}
 
