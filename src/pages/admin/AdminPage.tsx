@@ -8,8 +8,15 @@ import { Tenant, Profile, SystemAnnouncement, SupportTicket } from '@/types'
 import { formatDate, ROLE_LABELS } from '@/lib/utils'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { withErrorFeedback } from '@/lib/errorFeedback'
+import { useAuth } from '@/contexts/AuthContext'
+
+const EMPTY_ANNOUNCEMENT = {
+  title: '', message: '', type: 'info', category: 'novidade' as 'novidade' | 'aviso',
+  link: '', link_label: '', audience: 'all', requires_feature: '', published_at: '',
+}
 
 export function AdminPage() {
+  const { profile } = useAuth()
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [users, setUsers] = useState<Profile[]>([])
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([])
@@ -17,7 +24,7 @@ export function AdminPage() {
   const [loading, setLoading] = usePageLoadingState()
   const [tab, setTab] = useState<'overview' | 'tenants' | 'users' | 'announcements' | 'tickets'>('overview')
   const [announcementModal, setAnnouncementModal] = useState(false)
-  const [announcementForm, setAnnouncementForm] = useState({ title: '', message: '', type: 'info' })
+  const [announcementForm, setAnnouncementForm] = useState(EMPTY_ANNOUNCEMENT)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -41,17 +48,26 @@ export function AdminPage() {
   async function saveAnnouncement() {
     if (!announcementForm.title || !announcementForm.message) return
     setSaving(true)
-    const { error } = await withErrorFeedback(supabase.from('system_announcements').insert(announcementForm), 'Erro ao criar anúncio')
+    const f = announcementForm
+    const { error } = await withErrorFeedback(supabase.from('system_announcements').insert({
+      title: f.title.trim(), message: f.message.trim(), type: f.type, category: f.category,
+      link: f.link.trim() || null, link_label: f.link_label.trim() || null,
+      audience_roles: f.audience === 'admins' ? ['admin', 'super_admin'] : null,
+      requires_feature: f.requires_feature || null,
+      published_at: f.published_at ? new Date(f.published_at).toISOString() : new Date().toISOString(),
+      created_by: profile?.user_id || null,
+    }), 'Erro ao publicar')
     setSaving(false)
     if (error) return
     setAnnouncementModal(false)
-    setAnnouncementForm({ title: '', message: '', type: 'info' })
+    setAnnouncementForm(EMPTY_ANNOUNCEMENT)
     load()
   }
 
+  // Encerra (deixa de aparecer para todos) em vez de apagar — o histórico de leitura fica.
   async function deleteAnnouncement(id: string) {
-    if (!(await confirmDialog('Excluir este anúncio?'))) return
-    const { error } = await withErrorFeedback(supabase.from('system_announcements').delete().eq('id', id), 'Erro ao excluir anúncio')
+    if (!(await confirmDialog('Encerrar esta publicação? Ela deixa de aparecer para os usuários.'))) return
+    const { error } = await withErrorFeedback(supabase.from('system_announcements').update({ expires_at: new Date().toISOString() }).eq('id', id), 'Erro ao encerrar publicação')
     if (error) return
     load()
   }
@@ -66,7 +82,7 @@ export function AdminPage() {
     { key: 'overview', label: 'Visão Geral' },
     { key: 'tenants', label: `Escritórios (${tenants.length})` },
     { key: 'users', label: `Usuários (${users.length})` },
-    { key: 'announcements', label: `Avisos (${announcements.length})` },
+    { key: 'announcements', label: `Novidades e avisos (${announcements.length})` },
     { key: 'tickets', label: `Suporte (${tickets.filter(t => t.status === 'open').length} abertos)` },
   ]
 
@@ -81,7 +97,7 @@ export function AdminPage() {
       title="Painel Administrativo"
       actions={
         tab === 'announcements'
-          ? <Button onClick={() => setAnnouncementModal(true)}><Plus className="w-4 h-4" /> Novo Aviso</Button>
+          ? <Button onClick={() => setAnnouncementModal(true)}><Plus className="w-4 h-4" /> Publicar novidade</Button>
           : undefined
       }
     >
@@ -215,14 +231,25 @@ export function AdminPage() {
                         <Badge className={a.type === 'warning' ? 'bg-yellow-100 text-yellow-700' : a.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}>
                           {a.type}
                         </Badge>
+                        <Badge className={a.category === 'aviso' ? 'bg-amber-100 text-amber-800' : 'bg-primary-50 text-primary-700'}>
+                          {a.category === 'aviso' ? 'Aviso' : 'Novidade'}
+                        </Badge>
                         <span className="font-semibold text-gray-900">{a.title}</span>
+                        {a.expires_at && new Date(a.expires_at) <= new Date() && <Badge className="bg-gray-100 text-gray-500">encerrada</Badge>}
                       </div>
-                      <p className="text-sm text-gray-600">{a.message}</p>
-                      <p className="text-xs text-gray-400 mt-1">{formatDate(a.created_at, 'dd/MM/yyyy HH:mm')}</p>
+                      <p className="text-sm text-gray-600 whitespace-pre-line">{a.message}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {formatDate(a.published_at || a.created_at, 'dd/MM/yyyy HH:mm')}
+                        {a.link && <> · leva para <span className="font-mono">{a.link}</span></>}
+                        {a.audience_roles?.length ? <> · só {a.audience_roles.join(', ')}</> : null}
+                        {a.requires_feature && <> · só com {a.requires_feature} ligado</>}
+                      </p>
                     </div>
-                    <button onClick={() => deleteAnnouncement(a.id)} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!(a.expires_at && new Date(a.expires_at) <= new Date()) && (
+                      <button onClick={() => deleteAnnouncement(a.id)} title="Encerrar" className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </Card>
               ))}
@@ -272,20 +299,42 @@ export function AdminPage() {
         </>
       )}
 
-      <Modal open={announcementModal} onClose={() => setAnnouncementModal(false)} title="Novo Aviso do Sistema" size="md">
+      <Modal open={announcementModal} onClose={() => setAnnouncementModal(false)} title="Publicar novidade ou aviso" size="md">
         <div className="space-y-4">
+          <p className="text-xs text-gray-500">Aparece numa janela para a equipe dos escritórios ao entrar (uma vez por pessoa) e fica no botão "Novidades" do topo.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Select label="Categoria" value={announcementForm.category} onChange={e => setAnnouncementForm({ ...announcementForm, category: e.target.value as 'novidade' | 'aviso' })}>
+              <option value="novidade">Novidade (funcionalidade)</option>
+              <option value="aviso">Aviso (comunicado)</option>
+            </Select>
+            <Select label="Para quem" value={announcementForm.audience} onChange={e => setAnnouncementForm({ ...announcementForm, audience: e.target.value })}>
+              <option value="all">Toda a equipe</option>
+              <option value="admins">Só administradores</option>
+            </Select>
+          </div>
           <Input label="Título" value={announcementForm.title} onChange={e => setAnnouncementForm({ ...announcementForm, title: e.target.value })} />
-          <Select label="Tipo" value={announcementForm.type} onChange={e => setAnnouncementForm({ ...announcementForm, type: e.target.value })}>
-            <option value="info">Informação</option>
-            <option value="warning">Aviso</option>
-            <option value="error">Erro</option>
-            <option value="success">Sucesso</option>
-          </Select>
           <Textarea label="Mensagem" value={announcementForm.message} onChange={e => setAnnouncementForm({ ...announcementForm, message: e.target.value })} rows={4} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input label="Link (rota do app)" placeholder="/processos" value={announcementForm.link} onChange={e => setAnnouncementForm({ ...announcementForm, link: e.target.value })} />
+            <Input label="Texto do botão" placeholder="Ver agora" value={announcementForm.link_label} onChange={e => setAnnouncementForm({ ...announcementForm, link_label: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Select label="Só para escritórios com" value={announcementForm.requires_feature} onChange={e => setAnnouncementForm({ ...announcementForm, requires_feature: e.target.value })}>
+              <option value="">Todos os escritórios</option>
+              <option value="prazos">Controle de Prazos ligado</option>
+            </Select>
+            <Input label="Publicar em (opcional)" type="datetime-local" value={announcementForm.published_at} onChange={e => setAnnouncementForm({ ...announcementForm, published_at: e.target.value })} />
+          </div>
+          <Select label="Tom" value={announcementForm.type} onChange={e => setAnnouncementForm({ ...announcementForm, type: e.target.value })}>
+            <option value="info">Informação</option>
+            <option value="success">Sucesso</option>
+            <option value="warning">Atenção</option>
+            <option value="error">Problema</option>
+          </Select>
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <Button variant="outline" onClick={() => setAnnouncementModal(false)}>Cancelar</Button>
-          <Button onClick={saveAnnouncement} loading={saving}>Publicar</Button>
+          <Button onClick={saveAnnouncement} loading={saving}>{announcementForm.published_at ? 'Agendar' : 'Publicar agora'}</Button>
         </div>
       </Modal>
     </Layout>

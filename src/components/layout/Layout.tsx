@@ -2,6 +2,7 @@ import { ReactNode, useState, useRef, useEffect, useCallback } from 'react'
 import { SupportChatWidget } from '@/components/support/SupportChatWidget'
 import { AiAssistantWidget } from '@/components/ai/AiAssistantWidget'
 import { DailyAgendaModal } from '@/components/agenda/DailyAgendaModal'
+import { WhatsNew } from '@/components/announcements/WhatsNew'
 import { useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { useAuth } from '@/contexts/AuthContext'
@@ -434,6 +435,9 @@ export function Layout({ children }: LayoutProps) {
               <Moon className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Novidades (abre sozinho com novidade não lida, depois da agenda do dia) */}
+          <WhatsNew blocked={agendaOpen} />
 
           {/* Bell */}
           <div ref={notifRef} className="relative">

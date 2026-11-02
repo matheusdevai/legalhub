@@ -368,7 +368,19 @@ export interface SystemAnnouncement {
   id: string
   title: string
   message: string
+  /** Tom visual: info | warning | error | success */
   type: string
+  /** 'novidade' (funcionalidade nova) ou 'aviso' (manutenção, comunicado) */
+  category: 'novidade' | 'aviso'
+  /** Rota do app para "ver agora" (ex.: /processos) */
+  link: string | null
+  link_label: string | null
+  /** Papéis que veem; nulo = toda a equipe (portal do cliente nunca vê) */
+  audience_roles: string[] | null
+  /** Recurso que o escritório precisa ter ligado (ex.: 'prazos') */
+  requires_feature: string | null
+  published_at: string | null
+  expires_at: string | null
   created_by: string | null
   created_at: string | null
 }
