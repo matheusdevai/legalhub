@@ -45,6 +45,9 @@ export default {
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         serif: ['Fraunces', 'Georgia', 'serif'],
+        // Landing page e login: fonte de sistema da Apple (SF Pro), como fullstorecg.com.br.
+        // Fora do Mac/iPhone cai na Inter (já carregada), a mais parecida com a SF.
+        display: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Display"', '"SF Pro Text"', 'Inter', '"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'],
       },
       boxShadow: {
         'sidebar':    '1px 0 0 0 #e2e8f0',

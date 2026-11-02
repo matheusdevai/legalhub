@@ -2,7 +2,7 @@ import { useState, FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { Eye, EyeOff, Mail, Check, Settings, ShieldCheck, X, Send, MessageCircle, Layers, LineChart, Lock } from 'lucide-react'
+import { Eye, EyeOff, Mail, Check, ShieldCheck, X, Send, MessageCircle, Lock, ArrowLeft, ArrowRight, Scale, CalendarClock } from 'lucide-react'
 
 function GoogleIcon() {
   return (
@@ -140,10 +140,76 @@ export function Login() {
     setChatName(''); setChatEmail(''); setChatMsg('')
   }
 
+  // Mesma família visual da landing: tinta quase preta, um único azul de destaque
+  // (#1677FF) usado com parcimônia, sem brilhos desfocados.
   const inputCls =
-    'w-full px-4 py-3 text-sm border border-slate-200 rounded-xl bg-white ' +
-    'text-slate-800 placeholder-slate-400 outline-none ' +
-    'focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all'
+    'w-full h-11 px-3.5 text-[15px] border border-slate-300 rounded-[10px] bg-white ' +
+    'text-slate-900 placeholder-slate-400 outline-none ' +
+    'focus:border-[#1677FF] focus:ring-4 focus:ring-[#1677FF]/10 transition-[border-color,box-shadow]'
+  const labelCls = 'block text-[13px] font-medium text-slate-700 mb-1.5'
+  const primaryBtnCls =
+    'w-full h-11 flex items-center justify-center gap-2 rounded-[10px] text-[15px] font-semibold text-white ' +
+    'bg-[#0b1220] hover:bg-black transition-colors active:scale-[0.99] disabled:opacity-60'
+  const socialBtnCls =
+    'flex items-center justify-center gap-2 h-11 rounded-[10px] text-[14px] font-medium text-slate-700 ' +
+    'border border-slate-300 bg-white hover:bg-slate-50 hover:border-slate-400 transition-colors'
+  const linkCls = 'text-[13px] font-medium text-[#1677FF] hover:text-[#0958d9]'
+  const errorBox = (msg: string) => (
+    <p role="alert" className="text-[13px] text-red-700 bg-red-50 border border-red-200 rounded-[10px] px-3.5 py-2.5">{msg}</p>
+  )
+  const spinner = <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+
+  function Divider() {
+    return (
+      <div className="flex items-center gap-3 my-5" aria-hidden>
+        <span className="h-px flex-1 bg-slate-200" />
+        <span className="text-[12px] text-slate-400">ou continue com</span>
+        <span className="h-px flex-1 bg-slate-200" />
+      </div>
+    )
+  }
+
+  function SocialButtons() {
+    return (
+      <div className="grid grid-cols-2 gap-2.5">
+        <button type="button" onClick={loginWithGoogle} className={socialBtnCls}><GoogleIcon /> Google</button>
+        <button type="button" onClick={loginWithMicrosoft} className={socialBtnCls}><MicrosoftIcon /> Microsoft</button>
+      </div>
+    )
+  }
+
+  function BackButton() {
+    return (
+      <button type="button" onClick={() => switchMode('login')}
+        className="mb-6 inline-flex items-center gap-1.5 text-[13px] text-slate-500 hover:text-slate-900 transition-colors">
+        <ArrowLeft className="w-3.5 h-3.5" /> Voltar ao login
+      </button>
+    )
+  }
+
+  function Heading({ title, subtitle }: { title: string; subtitle: string }) {
+    return (
+      <div className="mb-7">
+        <h2 className="text-[28px] font-bold tracking-[-0.03em] text-slate-950 leading-tight">{title}</h2>
+        <p className="text-[15px] text-slate-500 mt-1.5">{subtitle}</p>
+      </div>
+    )
+  }
+
+  function PasswordInput({ id, value, onChange, placeholder, shown, onToggle, autoComplete }: {
+    id: string; value: string; onChange: (v: string) => void; placeholder: string; shown: boolean; onToggle: () => void; autoComplete: string
+  }) {
+    return (
+      <div className="relative">
+        <input id={id} type={shown ? 'text' : 'password'} placeholder={placeholder} required autoComplete={autoComplete}
+          value={value} onChange={e => onChange(e.target.value)} className={inputCls + ' pr-11'} />
+        <button type="button" tabIndex={-1} onClick={onToggle} aria-label={shown ? 'Ocultar senha' : 'Mostrar senha'}
+          className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700">
+          {shown ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+    )
+  }
 
   // ── Conteúdo do formulário (chamado como função pura, nunca como <FormContent />) ─
   function FormContent() {
@@ -152,171 +218,98 @@ export function Login() {
         {/* LOGIN */}
         {mode === 'login' && (
           <>
-            <div className="mb-7">
-              <h2 className="text-[26px] font-bold text-slate-900 leading-tight">
-                Bem-vindo de volta
-              </h2>
-              <p className="text-[13px] text-slate-500 mt-1.5">Acesse sua conta para continuar</p>
-            </div>
+            <Heading title="Bem-vindo de volta" subtitle="Entre para acessar o seu escritório." />
 
-            <form onSubmit={handleLogin} className="space-y-5">
+            <form onSubmit={handleLogin} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">
-                  E-mail
-                </label>
-                <input type="email" placeholder="seu@email.com.br" required
-                  value={email} onChange={e => setEmail(e.target.value)}
-                  className={inputCls} />
+                <label htmlFor="login-email" className={labelCls}>E-mail</label>
+                <input id="login-email" type="email" placeholder="voce@escritorio.com.br" required autoComplete="email"
+                  value={email} onChange={e => setEmail(e.target.value)} className={inputCls} />
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-600 tracking-wide uppercase">
-                    Senha
-                  </label>
-                  <button type="button" onClick={() => switchMode('forgot')}
-                    className="text-xs text-sky-600 hover:text-sky-700 font-medium">
-                    Esqueceu sua senha?
+                  <label htmlFor="login-password" className="text-[13px] font-medium text-slate-700">Senha</label>
+                  <button type="button" onClick={() => switchMode('forgot')} className={linkCls}>
+                    Esqueceu a senha?
                   </button>
                 </div>
-                <div className="relative">
-                  <input type={showPwd ? 'text' : 'password'} placeholder="••••••••••••" required
-                    value={password} onChange={e => setPassword(e.target.value)}
-                    className={inputCls + ' pr-11'} />
-                  <button type="button" tabIndex={-1} onClick={() => setShowPwd(v => !v)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                <div>
+                  {PasswordInput({ id: 'login-password', value: password, onChange: setPassword, placeholder: 'Sua senha', shown: showPwd, onToggle: () => setShowPwd(v => !v), autoComplete: 'current-password' })}
                 </div>
               </div>
 
-              {error && (
-                <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">{error}</p>
-              )}
+              {error && errorBox(error)}
 
-              <button type="submit" disabled={loading}
-                className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-60"
-                style={{ background: '#0f172a', boxShadow: '0 4px 14px rgba(15,23,42,0.25)' }}>
-                <span>{loading ? 'Entrando...' : 'Entrar'}</span>
-                {loading
-                  ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : <span className="text-base">→</span>}
+              <button type="submit" disabled={loading} className={primaryBtnCls}>
+                {loading ? <>{spinner} Entrando…</> : <>Entrar <ArrowRight className="w-4 h-4" /></>}
               </button>
             </form>
 
-            <div className="mt-4 space-y-2.5">
-              <button onClick={loginWithGoogle}
-                className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl text-[13px] text-slate-600 font-medium border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] transition-all">
-                <ShieldCheck className="w-4 h-4 text-slate-400" />
-                Entrar com autenticação segura
-              </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={loginWithGoogle}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all">
-                  <GoogleIcon /> Google
-                </button>
-                <button onClick={loginWithMicrosoft}
-                  className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all">
-                  <MicrosoftIcon /> Microsoft
-                </button>
-              </div>
-            </div>
+            {Divider()}
+            {SocialButtons()}
 
+            <p className="mt-8 text-center text-[14px] text-slate-500">
+              Ainda não tem conta?{' '}
+              <button type="button" onClick={() => switchMode('signup')} className="font-semibold text-slate-900 hover:text-[#1677FF]">
+                Teste grátis por 14 dias
+              </button>
+            </p>
           </>
         )}
 
         {/* CRIAR CONTA */}
         {mode === 'signup' && (
           <>
-            <div className="mb-5">
-              <button onClick={() => switchMode('login')}
-                className="text-xs text-slate-400 hover:text-slate-600 mb-3 flex items-center gap-1">
-                ← Voltar
-              </button>
-              <h2 className="text-[26px] font-bold text-slate-900 leading-tight">
-                Criar conta
-              </h2>
-              <p className="text-[13px] text-slate-500 mt-1.5">14 dias grátis no plano Pro, sem cartão de crédito</p>
-            </div>
+            {BackButton()}
+            <Heading title="Criar conta" subtitle="14 dias grátis no plano Pro, sem cartão de crédito." />
             {signupDone ? (
-              <div className="bg-green-50 border border-green-100 rounded-2xl p-5 text-center">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                  <Check className="w-5 h-5 text-green-600" />
+              <div className="border border-emerald-200 bg-emerald-50 rounded-2xl p-6 text-center">
+                <div className="w-11 h-11 bg-white border border-emerald-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Check className="w-5 h-5 text-emerald-600" />
                 </div>
-                <p className="font-semibold text-green-800 text-sm">Conta criada!</p>
-                <p className="text-xs text-green-700 mt-1">Verifique seu e-mail para confirmar.</p>
-                <button onClick={() => switchMode('login')} className="mt-3 text-xs text-sky-600 font-semibold hover:underline">
-                  Ir para o login
-                </button>
+                <p className="font-semibold text-slate-900 text-[15px]">Conta criada</p>
+                <p className="text-[14px] text-slate-600 mt-1">Enviamos um link de confirmação para o seu e-mail.</p>
+                <button onClick={() => switchMode('login')} className={'mt-4 ' + linkCls}>Ir para o login</button>
               </div>
             ) : (
               <form onSubmit={handleSignup} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">Nome completo</label>
-                  <input type="text" placeholder="Dr. João Silva" required
-                    value={signupName} onChange={e => setSignupName(e.target.value)}
-                    className={inputCls} />
+                  <label htmlFor="su-name" className={labelCls}>Nome completo</label>
+                  <input id="su-name" type="text" placeholder="Dra. Ana Souza" required autoComplete="name"
+                    value={signupName} onChange={e => setSignupName(e.target.value)} className={inputCls} />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">Nome do escritório</label>
-                  <input type="text" placeholder="Silva & Associados Advocacia"
-                    value={signupOffice} onChange={e => setSignupOffice(e.target.value)}
-                    className={inputCls} />
+                  <label htmlFor="su-office" className={labelCls}>Nome do escritório</label>
+                  <input id="su-office" type="text" placeholder="Souza & Associados Advocacia" autoComplete="organization"
+                    value={signupOffice} onChange={e => setSignupOffice(e.target.value)} className={inputCls} />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">E-mail</label>
-                  <input type="email" placeholder="seu@email.com.br" required
-                    value={signupEmail} onChange={e => setSignupEmail(e.target.value)}
-                    className={inputCls} />
+                  <label htmlFor="su-email" className={labelCls}>E-mail</label>
+                  <input id="su-email" type="email" placeholder="voce@escritorio.com.br" required autoComplete="email"
+                    value={signupEmail} onChange={e => setSignupEmail(e.target.value)} className={inputCls} />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">Senha</label>
-                  <div className="relative">
-                    <input type={showPwd ? 'text' : 'password'} placeholder="Mínimo 8 caracteres" required
-                      value={signupPwd} onChange={e => setSignupPwd(e.target.value)}
-                      className={inputCls + ' pr-11'} />
-                    <button type="button" tabIndex={-1} onClick={() => setShowPwd(v => !v)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="su-pwd" className={labelCls}>Senha</label>
+                    {PasswordInput({ id: 'su-pwd', value: signupPwd, onChange: setSignupPwd, placeholder: 'Mínimo 8 caracteres', shown: showPwd, onToggle: () => setShowPwd(v => !v), autoComplete: 'new-password' })}
+                  </div>
+                  <div>
+                    <label htmlFor="su-pwd2" className={labelCls}>Confirmar senha</label>
+                    {PasswordInput({ id: 'su-pwd2', value: signupPwd2, onChange: setSignupPwd2, placeholder: 'Repita a senha', shown: showPwd2, onToggle: () => setShowPwd2(v => !v), autoComplete: 'new-password' })}
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">Confirmar senha</label>
-                  <div className="relative">
-                    <input type={showPwd2 ? 'text' : 'password'} placeholder="Repita a senha" required
-                      value={signupPwd2} onChange={e => setSignupPwd2(e.target.value)}
-                      className={inputCls + ' pr-11'} />
-                    <button type="button" tabIndex={-1} onClick={() => setShowPwd2(v => !v)}
-                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                      {showPwd2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-                {error && <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">{error}</p>}
-                <button type="submit" disabled={loading}
-                  className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-60"
-                  style={{ background: '#0f172a', boxShadow: '0 4px 14px rgba(15,23,42,0.25)' }}>
-                  <span>{loading ? 'Criando...' : 'Criar minha conta'}</span>
-                  {loading
-                    ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <span className="text-base">→</span>}
+                {error && errorBox(error)}
+                <button type="submit" disabled={loading} className={primaryBtnCls}>
+                  {loading ? <>{spinner} Criando…</> : <>Criar minha conta <ArrowRight className="w-4 h-4" /></>}
                 </button>
-                <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+                <p className="text-[12px] text-slate-500 text-center leading-relaxed">
                   Ao criar sua conta, você concorda com os{' '}
-                  <a href="/termos" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">Termos de Uso</a> e a{' '}
-                  <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">Política de Privacidade</a>.
+                  <a href="/termos" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-slate-900">Termos de Uso</a> e a{' '}
+                  <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-slate-900">Política de Privacidade</a>.
                 </p>
-                <div className="grid grid-cols-2 gap-2 pt-0.5">
-                  <button type="button" onClick={loginWithGoogle}
-                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all">
-                    <GoogleIcon /> Google
-                  </button>
-                  <button type="button" onClick={loginWithMicrosoft}
-                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs text-slate-500 border border-slate-200 bg-white hover:bg-slate-50 transition-all">
-                    <MicrosoftIcon /> Microsoft
-                  </button>
-                </div>
+                {Divider()}
+                {SocialButtons()}
               </form>
             )}
           </>
@@ -325,43 +318,27 @@ export function Login() {
         {/* ESQUECI SENHA */}
         {mode === 'forgot' && (
           <>
-            <div className="mb-5">
-              <button onClick={() => switchMode('login')}
-                className="text-xs text-slate-400 hover:text-slate-600 mb-3 flex items-center gap-1">
-                ← Voltar
-              </button>
-              <h2 className="text-[26px] font-bold text-slate-900 leading-tight">
-                Recuperar senha
-              </h2>
-              <p className="text-[13px] text-slate-500 mt-1.5">Enviaremos um link de redefinição.</p>
-            </div>
+            {BackButton()}
+            <Heading title="Recuperar senha" subtitle="Enviaremos um link para você criar uma nova senha." />
             {forgotDone ? (
-              <div className="bg-sky-50 border border-sky-100 rounded-2xl p-5 text-center">
-                <div className="w-10 h-10 bg-sky-100 rounded-full flex items-center justify-center mx-auto mb-2">
-                  <Mail className="w-5 h-5 text-sky-600" />
+              <div className="border border-slate-200 bg-slate-50 rounded-2xl p-6 text-center">
+                <div className="w-11 h-11 bg-white border border-slate-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Mail className="w-5 h-5 text-[#1677FF]" />
                 </div>
-                <p className="font-semibold text-slate-900 text-sm">E-mail enviado!</p>
-                <p className="text-xs text-sky-700 mt-1">Verifique sua caixa de entrada.</p>
-                <button onClick={() => switchMode('login')} className="mt-3 text-xs text-sky-600 font-semibold hover:underline">Voltar ao login</button>
+                <p className="font-semibold text-slate-900 text-[15px]">E-mail enviado</p>
+                <p className="text-[14px] text-slate-600 mt-1">Confira sua caixa de entrada e o spam.</p>
+                <button onClick={() => switchMode('login')} className={'mt-4 ' + linkCls}>Voltar ao login</button>
               </div>
             ) : (
-              <form onSubmit={handleForgot} className="space-y-5">
+              <form onSubmit={handleForgot} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5 tracking-wide uppercase">E-mail cadastrado</label>
-                  <input type="email" placeholder="seu@email.com.br" required
-                    value={forgotEmail} onChange={e => setForgotEmail(e.target.value)}
-                    className={inputCls} />
+                  <label htmlFor="fg-email" className={labelCls}>E-mail cadastrado</label>
+                  <input id="fg-email" type="email" placeholder="voce@escritorio.com.br" required autoComplete="email"
+                    value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} className={inputCls} />
                 </div>
-                {error && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-xl px-3.5 py-2.5">{error}</p>
-                )}
-                <button type="submit" disabled={forgotLoading}
-                  className="w-full flex items-center justify-between px-5 py-3.5 rounded-xl text-sm font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-60"
-                  style={{ background: '#0f172a', boxShadow: '0 4px 14px rgba(15,23,42,0.25)' }}>
-                  <span>{forgotLoading ? 'Enviando...' : 'Enviar link de recuperação'}</span>
-                  {forgotLoading
-                    ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <span className="text-base">→</span>}
+                {error && errorBox(error)}
+                <button type="submit" disabled={forgotLoading} className={primaryBtnCls}>
+                  {forgotLoading ? <>{spinner} Enviando…</> : 'Enviar link de recuperação'}
                 </button>
               </form>
             )}
@@ -371,151 +348,104 @@ export function Login() {
     )
   }
 
+  const year = new Date().getFullYear()
+
   return (
-    <div className="h-screen overflow-hidden bg-white">
+    <div className="font-display min-h-screen bg-white text-slate-900 antialiased">
+      <div className="min-h-screen flex">
 
-      {/* ══ DESKTOP ══ */}
-      <div className="hidden lg:flex h-screen overflow-hidden">
+        {/* ══ Painel de marca (desktop) ══ */}
+        <aside className="hidden lg:flex relative w-[44%] xl:w-[42%] flex-shrink-0 flex-col justify-between overflow-hidden bg-[#05070c] text-white px-12 xl:px-16 py-12">
+          {/* filete de luz no topo — único detalhe de cor, nítido */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#1677FF]/70 to-transparent" />
+          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,#0b111c_0%,#05070c_55%)]" />
 
-        {/* Painel de marca — mesma direção visual da landing page (navy + dourado) */}
-        <div
-          className="relative w-[42%] xl:w-[38%] flex-shrink-0 overflow-hidden flex flex-col"
-          style={{ background: 'linear-gradient(160deg, #0a1628 0%, #162540 100%)' }}
-        >
-          <div
-            className="pointer-events-none absolute inset-0 opacity-[0.06]"
-            style={{
-              backgroundImage: 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)',
-              backgroundSize: '48px 48px',
-            }}
-          />
-          <div
-            className="pointer-events-none absolute -top-28 -left-28 w-[26rem] h-[26rem] rounded-full blur-3xl opacity-[0.22]"
-            style={{ background: 'radial-gradient(circle, #38bdf8, transparent 70%)' }}
-          />
-          <div
-            className="pointer-events-none absolute -bottom-28 -right-16 w-[24rem] h-[24rem] rounded-full blur-3xl opacity-25"
-            style={{ background: 'radial-gradient(circle, #283d5e, transparent 70%)' }}
-          />
+          <a href="/" className="relative flex items-center gap-2.5 w-fit" aria-label="LegalHub, página inicial">
+            <span className="rounded-[10px] overflow-hidden flex-shrink-0 ring-1 ring-white/10" style={{ width: 36, height: 36 }}>
+              <img src="/logomarca.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
+            </span>
+            <span className="font-bold text-[19px] tracking-[-0.02em]">LegalHub</span>
+          </a>
 
-          <div className="relative flex-1 flex flex-col justify-between px-12 xl:px-16 py-12">
-            <div className="flex items-center gap-2.5">
-              <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 38, height: 38 }}>
-                <img src="/logomarca.png" alt="LegalHub"
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
-              </div>
-              <span className="font-bold text-xl text-white tracking-tight">LegalHub</span>
-            </div>
-
-            <div>
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold text-white border border-white/15 bg-white/[0.06] mb-6">
-                <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
-                Gestão jurídica em um só lugar
-              </div>
-              <h1 className="font-serif text-3xl xl:text-4xl font-semibold text-white leading-tight" style={{ textWrap: 'balance' } as React.CSSProperties}>
-                Tecnologia e inteligência para transformar a gestão do{' '}
-                <span
-                  className="italic bg-clip-text text-transparent bg-[length:200%_auto] animate-gradient-x"
-                  style={{ backgroundImage: 'linear-gradient(90deg, #38bdf8, #818cf8, #38bdf8)' }}
-                >
-                  seu escritório
-                </span>.
-              </h1>
-              <p className="mt-4 text-sm text-slate-300 leading-relaxed max-w-sm">
-                Centralize processos, automatize tarefas e tome decisões com segurança e dados.
-              </p>
-
-              <div className="mt-9 grid grid-cols-3 gap-4">
-                {[
-                  { icon: ShieldCheck, label: 'Segurança avançada' },
-                  { icon: Layers, label: 'Gestão centralizada' },
-                  { icon: LineChart, label: 'Decisões inteligentes' },
-                ].map(item => (
-                  <div key={item.label}>
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/10 mb-2.5">
-                      <item.icon className="w-4 h-4 text-sky-400" />
-                    </div>
-                    <p className="text-xs text-slate-300 leading-snug">{item.label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <Lock className="w-3.5 h-3.5 flex-shrink-0 text-sky-500/80" />
-              Seus dados estão protegidos com criptografia de ponta a ponta.
-            </div>
-          </div>
-        </div>
-
-        {/* Painel do formulário */}
-        <div className="relative flex-1 flex flex-col bg-white">
-          <div className="absolute top-4 right-4 z-10">
-            <Settings className="w-4 h-4 text-slate-300" />
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-10 pt-10 pb-2" style={{ minHeight: 0 }}>
-            <div className="flex items-center justify-center min-h-full">
-              <div style={{ width: '100%', maxWidth: '360px' }}>
-                {FormContent()}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-shrink-0 text-center py-3 border-t border-slate-100">
-            <p className="text-[11px] text-slate-400">
-              © 2026 LegalHub · Todos os direitos reservados
+          <div className="relative max-w-md">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#8fb8ff]">Gestão jurídica</p>
+            <h1 className="mt-4 text-[40px] xl:text-[46px] font-bold leading-[1.04] tracking-[-0.045em]" style={{ textWrap: 'balance' } as React.CSSProperties}>
+              O escritório inteiro em um só lugar.
+            </h1>
+            <p className="mt-5 text-[17px] leading-relaxed text-[#a1a1a6]">
+              Processos, prazos, clientes e financeiro organizados — com as intimações chegando sozinhas.
             </p>
-          </div>
-        </div>
-      </div>
 
-      {/* ══ MOBILE ══ */}
-      <div className="lg:hidden h-screen overflow-auto flex flex-col items-center justify-center bg-slate-50 px-5 py-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="rounded-xl overflow-hidden flex-shrink-0" style={{ width: 44, height: 44 }}>
-            <img src="/logomarca.png" alt="LegalHub"
-              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
+            <ul className="mt-10 space-y-4">
+              {[
+                { icon: Scale, title: 'Intimações do DJEN no painel', text: 'Processos judiciais sincronizados pela OAB.' },
+                { icon: CalendarClock, title: 'Agenda, tarefas e financeiro juntos', text: 'Prazos e audiências viram tarefa e evento sozinhos.' },
+                { icon: ShieldCheck, title: 'Dados isolados por escritório', text: 'Permissões por função e conexão criptografada.' },
+              ].map(item => (
+                <li key={item.title} className="flex gap-3.5">
+                  <span className="mt-0.5 w-9 h-9 rounded-[10px] flex items-center justify-center bg-white/[0.06] ring-1 ring-white/10 flex-shrink-0">
+                    <item.icon className="w-[18px] h-[18px] text-white/90" />
+                  </span>
+                  <span>
+                    <span className="block text-[15px] font-semibold text-[#f5f5f7]">{item.title}</span>
+                    <span className="block text-[14px] text-[#86868b] mt-0.5">{item.text}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
-          <span className="text-xl font-black text-slate-800">LegalHub</span>
-        </div>
-        <div className="w-full max-w-[380px] bg-white rounded-3xl px-8 py-8"
-          style={{ boxShadow: '0 8px 40px rgba(0,0,0,0.10)' }}>
-          {FormContent()}
-        </div>
-        <p className="text-[11px] text-slate-400 mt-5">© 2026 LegalHub · Todos os direitos reservados</p>
+
+          <div className="relative flex items-center gap-2 text-[13px] text-[#86868b]">
+            <Lock className="w-3.5 h-3.5 flex-shrink-0" />
+            Conexão criptografada (HTTPS) · dados isolados por escritório
+          </div>
+        </aside>
+
+        {/* ══ Formulário ══ */}
+        <main className="flex-1 flex flex-col min-w-0">
+          <div className="lg:hidden flex items-center justify-between px-5 pt-6">
+            <a href="/" className="flex items-center gap-2.5" aria-label="LegalHub, página inicial">
+              <span className="rounded-[10px] overflow-hidden flex-shrink-0 bg-[#0b1220]" style={{ width: 34, height: 34 }}>
+                <img src="/logomarca.png" alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
+              </span>
+              <span className="font-bold text-[18px] tracking-[-0.02em]">LegalHub</span>
+            </a>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center px-5 sm:px-10 py-10">
+            <div className="w-full max-w-[380px]">
+              {FormContent()}
+            </div>
+          </div>
+
+          <footer className="px-5 pt-5 pb-20 lg:pb-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[12px] text-slate-400">
+            <span>© {year} LegalHub</span>
+            <a href="/termos" className="hover:text-slate-700">Termos</a>
+            <a href="/privacidade" className="hover:text-slate-700">Privacidade</a>
+          </footer>
+        </main>
       </div>
 
       {/* ══ CHAT WIDGET (fixed, aparece em qualquer breakpoint) ══ */}
       {chatOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 sm:p-6 pointer-events-none">
-          {/* Backdrop sutil */}
-          <div
-            className="absolute inset-0 pointer-events-auto"
-            onClick={() => setChatOpen(false)}
-            style={{ background: 'rgba(0,0,0,0.25)' }}
-          />
+          <div className="absolute inset-0 pointer-events-auto bg-black/25" onClick={() => setChatOpen(false)} />
 
-          {/* Painel do chat */}
           <div
-            className="relative pointer-events-auto flex flex-col w-full max-w-sm rounded-2xl overflow-hidden"
-            style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.28)', maxHeight: '90vh' }}
+            className="relative pointer-events-auto flex flex-col w-full max-w-sm rounded-2xl overflow-hidden bg-white ring-1 ring-black/5"
+            style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.24)', maxHeight: '90vh' }}
           >
             {/* Header */}
-            <div className="flex items-center gap-3 px-5 py-4 flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg,#0a1628,#162540)' }}>
+            <div className="flex items-center gap-3 px-5 py-4 flex-shrink-0 bg-[#0b1220]">
               <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0">
                 <img src="/logomarca.png" alt="LegalHub"
                   style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white leading-none">Equipe LegalHub</p>
-                <p className="text-[11px] text-sky-400 mt-0.5 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-sky-400 inline-block" />
-                  Online agora
-                </p>
+                <p className="text-[12px] text-white/60 mt-1">Respondemos em até 1 dia útil</p>
               </div>
-              <button onClick={() => setChatOpen(false)}
+              <button onClick={() => setChatOpen(false)} aria-label="Fechar"
                 className="text-white/50 hover:text-white transition-colors p-1">
                 <X className="w-4 h-4" />
               </button>
@@ -523,30 +453,24 @@ export function Login() {
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto bg-slate-50 px-4 py-5 space-y-4">
-
-              {/* Bolha de boas-vindas */}
               <div className="flex gap-2.5">
-                <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 mt-0.5"
-                  style={{ background: '#0a1628', border: '1px solid rgba(56,189,248,0.3)' }}>
+                <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 mt-0.5 bg-[#0b1220]">
                   <img src="/logomarca.png" alt=""
                     style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '0% 50%' }} />
                 </div>
-                <div className="bg-white rounded-2xl rounded-tl-none px-4 py-3 shadow-sm max-w-[85%]">
-                  <p className="text-sm text-slate-700 leading-relaxed">
-                    Olá! 👋 Ainda não tem uma conta?
-                  </p>
+                <div className="bg-white rounded-2xl rounded-tl-none px-4 py-3 ring-1 ring-slate-200/70 max-w-[85%]">
+                  <p className="text-sm text-slate-700 leading-relaxed">Olá! Ainda não tem uma conta?</p>
                   <p className="text-sm text-slate-700 leading-relaxed mt-1">
-                    Nossa equipe pode te ajudar a começar. Deixe seu contato e mensagem!
+                    Nossa equipe pode te ajudar a começar. Deixe seu contato e mensagem.
                   </p>
-                  <p className="text-[10px] text-slate-400 mt-1.5">Respondemos em até 1 dia útil</p>
                 </div>
               </div>
 
               {chatStep === 'sent' && (
                 <div className="flex justify-end">
-                  <div className="bg-dark-900 text-white rounded-2xl rounded-tr-none px-4 py-3 shadow-sm max-w-[85%]">
-                    <p className="text-sm leading-relaxed">Mensagem enviada! ✅</p>
-                    <p className="text-xs text-slate-300 mt-1">Nossa equipe entrará em contato em breve.</p>
+                  <div className="bg-[#0b1220] text-white rounded-2xl rounded-tr-none px-4 py-3 max-w-[85%]">
+                    <p className="text-sm leading-relaxed">Mensagem enviada.</p>
+                    <p className="text-xs text-white/70 mt-1">Nossa equipe entrará em contato em breve.</p>
                   </div>
                 </div>
               )}
@@ -555,28 +479,25 @@ export function Login() {
             {/* Formulário de envio */}
             {chatStep !== 'sent' && (
               <form onSubmit={sendChat}
-                className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-4 space-y-3">
+                className="flex-shrink-0 bg-white border-t border-slate-100 px-4 py-4 space-y-2.5">
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="text" placeholder="Seu nome" required
                     value={chatName} onChange={e => setChatName(e.target.value)}
-                    className="px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
+                    className="h-10 px-3 text-sm border border-slate-300 rounded-[10px] outline-none focus:border-[#1677FF] focus:ring-4 focus:ring-[#1677FF]/10 transition-[border-color,box-shadow]" />
                   <input
                     type="email" placeholder="Seu e-mail" required
                     value={chatEmail} onChange={e => setChatEmail(e.target.value)}
-                    className="px-3 py-2 text-sm border border-slate-200 rounded-xl outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
+                    className="h-10 px-3 text-sm border border-slate-300 rounded-[10px] outline-none focus:border-[#1677FF] focus:ring-4 focus:ring-[#1677FF]/10 transition-[border-color,box-shadow]" />
                 </div>
                 <div className="flex gap-2">
                   <input
                     type="text" placeholder="Como podemos ajudar?" required
                     value={chatMsg} onChange={e => setChatMsg(e.target.value)}
-                    className="flex-1 px-3 py-2.5 text-sm border border-slate-200 rounded-xl outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
-                  <button type="submit" disabled={chatSending}
-                    className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-all active:scale-95 disabled:opacity-60"
-                    style={{ background: 'linear-gradient(135deg,#0a1628,#162540)' }}>
-                    {chatSending
-                      ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      : <Send className="w-4 h-4 text-white" />}
+                    className="flex-1 h-10 px-3 text-sm border border-slate-300 rounded-[10px] outline-none focus:border-[#1677FF] focus:ring-4 focus:ring-[#1677FF]/10 transition-[border-color,box-shadow]" />
+                  <button type="submit" disabled={chatSending} aria-label="Enviar"
+                    className="flex-shrink-0 w-10 h-10 rounded-[10px] flex items-center justify-center bg-[#0b1220] hover:bg-black transition-colors disabled:opacity-60">
+                    {chatSending ? spinner : <Send className="w-4 h-4 text-white" />}
                   </button>
                 </div>
               </form>
@@ -589,8 +510,8 @@ export function Login() {
       {!chatOpen && (
         <button
           onClick={openChat}
-          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm font-semibold shadow-lg transition-all hover:scale-105 active:scale-95"
-          style={{ background: 'linear-gradient(135deg,#0a1628,#162540)', boxShadow: '0 8px 24px rgba(10,22,40,0.45)' }}>
+          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 h-11 px-4 rounded-full text-[14px] font-medium text-slate-800 bg-white ring-1 ring-slate-200 hover:ring-slate-300 transition-shadow"
+          style={{ boxShadow: '0 8px 24px rgba(15,23,42,0.12)' }}>
           <MessageCircle className="w-4 h-4" />
           Fale com nosso time
         </button>

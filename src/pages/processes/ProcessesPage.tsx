@@ -11,9 +11,9 @@ import {
 import { Layout } from '@/components/layout/Layout'
 import { Button, Card, Modal, Select, EmptyState } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
-import { Process, Client, Colaborador, Task, Financial, ProcessUpdate } from '@/types'
+import { Process, Client, Colaborador, Task, Financial, ProcessUpdate, AdminStatus } from '@/types'
 import { formatDate, formatCurrency, PROCESS_STATUS_LABELS, PRIORITY_COLORS, PRIORITY_LABELS, FINANCIAL_STATUS_LABELS, FINANCIAL_STATUS_COLORS, TASK_STATUS_LABELS, sanitizeFileName, GRUPOS_ACAO } from '@/lib/utils'
-import { cn } from '@/lib/utils'
+import { cn, toLocalISODate } from '@/lib/utils'
 import { useAuth } from '@/contexts/AuthContext'
 import { openExportWindow } from '@/lib/exportUtils'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
@@ -22,6 +22,11 @@ import { withErrorFeedback } from '@/lib/errorFeedback'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
 import { ProcessFormFields, FASES, CONTINGENCIAMENTOS } from './ProcessFormFields'
+import { AdminStatusPicker } from './AdminStatusPicker'
+import {
+  processKind, ProcessKind, ADMIN_STATUSES, ADMIN_STATUS_LABELS, ADMIN_STATUS_SHORT,
+  AdminStatusFilter, matchesAdminStatus, countAdminStatuses,
+} from '@/lib/processKind'
 
 /** Cria/atualiza/remove os eventos de Agenda vinculados a um processo (prazo e audiência) */
 async function syncProcessCalendarEvents(opts: {
@@ -67,6 +72,7 @@ type ProcessForm = {
   numero_protocolo: string; processo_originario: string; pasta_caso: string;
   data_requerimento: string; valor_causa: string; valor_honorarios: string;
   percentual_honorarios: string; contingenciamento: string;
+  admin_status: string;
 }
 
 const EMPTY_FORM: ProcessForm = {
@@ -77,7 +83,17 @@ const EMPTY_FORM: ProcessForm = {
   grupo_acao: '', fase: 'NEGOCIAÇÃO', etapa: 'ANÁLISE DO CASO',
   numero_protocolo: '', processo_originario: '', pasta_caso: '',
   data_requerimento: '', valor_causa: '', valor_honorarios: '',
-  percentual_honorarios: '', contingenciamento: '',
+  percentual_honorarios: '', contingenciamento: '', admin_status: '',
+}
+
+/** Registra a troca de situação administrativa nas movimentações do processo. */
+async function logAdminStatusChange(processId: string, status: string | null, author: string | null) {
+  if (!status) return
+  await supabase.from('process_updates').insert({
+    process_id: processId, type: 'andamento',
+    title: `Situação no órgão: ${ADMIN_STATUS_LABELS[status as AdminStatus] || status}`,
+    date: toLocalISODate(), author,
+  })
 }
 
 // Lista própria do painel de edição (ViewPanel) — mantida separada da lista mais
@@ -102,13 +118,16 @@ type ViewMode = 'table' | 'byColaborador'
 const PAGE_SIZE = 15
 
 export function ProcessesPage() {
+  const { profile } = useAuth()
   const [processes, setProcesses] = useState<Process[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [colaboradores, setColaboradores] = useState<Colaborador[]>([])
   const [loading, setLoading] = usePageLoadingState()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [modalidadeFilter, setModalidadeFilter] = useState('')
+  // Judicial × administrativo (abas no topo da tabela). '' = todos.
+  const [modalidadeFilter, setModalidadeFilter] = useState<'' | ProcessKind>('')
+  const [adminStatusFilter, setAdminStatusFilter] = useState<AdminStatusFilter>('')
   const [areaFilter, setAreaFilter] = useState('')
   const [colaboradorFilter, setColaboradorFilter] = useState('')
   const [sortField, setSortField] = useState<'created_at' | 'next_deadline' | 'client_name' | 'number'>('created_at')
@@ -169,7 +188,8 @@ export function ProcessesPage() {
   }
 
   useEffect(() => { load() }, [])
-  useEffect(() => { setTablePage(0) }, [search, statusFilter, modalidadeFilter, areaFilter, colaboradorFilter, viewMode])
+  useEffect(() => { setTablePage(0) }, [search, statusFilter, modalidadeFilter, adminStatusFilter, areaFilter, colaboradorFilter, viewMode])
+  useEffect(() => { if (modalidadeFilter !== 'administrativo') setAdminStatusFilter('') }, [modalidadeFilter])
 
   const location = useLocation()
   useEffect(() => {
@@ -196,12 +216,14 @@ export function ProcessesPage() {
       const matchSearch = !search ||
         p.title.toLowerCase().includes(search.toLowerCase()) ||
         p.number.toLowerCase().includes(search.toLowerCase()) ||
-        p.client_name?.toLowerCase().includes(search.toLowerCase())
+        p.client_name?.toLowerCase().includes(search.toLowerCase()) ||
+        (p.numero_protocolo || '').toLowerCase().includes(search.toLowerCase())
       const matchStatus = !statusFilter || p.status === statusFilter
-      const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
+      const matchModalidade = !modalidadeFilter || processKind(p) === modalidadeFilter
+      const matchAdmin = matchesAdminStatus(p, adminStatusFilter)
       const matchArea = !areaFilter || p.area === areaFilter
       const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
-      return matchSearch && matchStatus && matchModalidade && matchArea && matchColaborador
+      return matchSearch && matchStatus && matchModalidade && matchAdmin && matchArea && matchColaborador
     })
     return [...result].sort((a, b) => {
       let va = '', vb = ''
@@ -213,7 +235,7 @@ export function ProcessesPage() {
       if (va > vb) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-  }, [processes, search, statusFilter, modalidadeFilter, areaFilter, colaboradorFilter, sortField, sortDir])
+  }, [processes, search, statusFilter, modalidadeFilter, adminStatusFilter, areaFilter, colaboradorFilter, sortField, sortDir])
 
   // Stats — calculated from full processes list (not filtered)
   const stats = useMemo(() => {
@@ -224,9 +246,9 @@ export function ProcessesPage() {
     const lost = processes.filter(p => p.status === 'lost').length
     const returned = processes.filter(p => p.status === 'returned').length
     const encerrados = won + lost + returned
-    const judicial = processes.filter(p => p.modalidade === 'judicial').length
-    const admin = processes.filter(p => p.modalidade === 'administrativo').length
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const admin = processes.filter(p => processKind(p) === 'administrativo').length
+    const judicial = processes.length - admin
+    const todayStr = toLocalISODate()
     const comPrazo = processes.filter(p => p.next_deadline && p.next_deadline >= todayStr).length
     const taxa = encerrados > 0 ? Math.round((won / encerrados) * 100) : 0
     const now = new Date()
@@ -245,11 +267,13 @@ export function ProcessesPage() {
       const matchSearch = !search ||
         p.title.toLowerCase().includes(search.toLowerCase()) ||
         p.number.toLowerCase().includes(search.toLowerCase()) ||
-        p.client_name?.toLowerCase().includes(search.toLowerCase())
-      const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
+        p.client_name?.toLowerCase().includes(search.toLowerCase()) ||
+        (p.numero_protocolo || '').toLowerCase().includes(search.toLowerCase())
+      const matchModalidade = !modalidadeFilter || processKind(p) === modalidadeFilter
+      const matchAdmin = matchesAdminStatus(p, adminStatusFilter)
       const matchArea = !areaFilter || p.area === areaFilter
       const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
-      return matchSearch && matchModalidade && matchArea && matchColaborador
+      return matchSearch && matchModalidade && matchAdmin && matchArea && matchColaborador
     })
     return {
       all: base.length,
@@ -261,7 +285,23 @@ export function ProcessesPage() {
       archived: base.filter(p => p.status === 'archived').length,
       suspended: base.filter(p => p.status === 'suspended').length,
     }
-  }, [processes, search, modalidadeFilter, areaFilter, colaboradorFilter])
+  }, [processes, search, modalidadeFilter, adminStatusFilter, areaFilter, colaboradorFilter])
+
+  // Abas Judiciais / Administrativos e atalhos por situação — respeitam busca e
+  // filtros, mas não a própria aba (senão a contagem da outra zeraria).
+  const kindCounts = useMemo(() => {
+    const base = processes.filter(p => {
+      const q = search.toLowerCase()
+      const matchSearch = !search || p.title.toLowerCase().includes(q) || p.number.toLowerCase().includes(q) ||
+        p.client_name?.toLowerCase().includes(q) || (p.numero_protocolo || '').toLowerCase().includes(q)
+      const matchStatus = statusFilter === '__protocolados__' ? !!p.data_protocolo : (!statusFilter || p.status === statusFilter)
+      const matchArea = !areaFilter || p.area === areaFilter
+      const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
+      return matchSearch && matchStatus && matchArea && matchColaborador
+    })
+    const admin = base.filter(p => processKind(p) === 'administrativo')
+    return { all: base.length, judicial: base.length - admin.length, administrativo: admin.length, adminStatus: countAdminStatuses(admin) }
+  }, [processes, search, statusFilter, areaFilter, colaboradorFilter])
 
   function toggleGroup(id: string) {
     setExpandedGroups(prev => {
@@ -322,11 +362,16 @@ export function ProcessesPage() {
       data_protocolo: p.data_protocolo || '', next_deadline: p.next_deadline || '',
       next_hearing: p.next_hearing ? p.next_hearing.slice(0, 16) : '',
       colaborador_id: p.colaborador_id || '',
-      grupo_acao: p.area || '',
-      fase: 'NEGOCIAÇÃO', etapa: 'ANÁLISE DO CASO',
-      numero_protocolo: '', processo_originario: '', pasta_caso: '',
-      data_requerimento: p.data_protocolo || '', valor_causa: '', valor_honorarios: '',
-      percentual_honorarios: '', contingenciamento: '',
+      // Sempre os valores gravados: o save() manda o formulário inteiro, então
+      // qualquer campo em branco aqui apagaria o que já estava no banco.
+      grupo_acao: p.grupo_acao || p.area || '',
+      fase: p.fase || 'NEGOCIAÇÃO', etapa: p.etapa || 'ANÁLISE DO CASO',
+      numero_protocolo: p.numero_protocolo || '', processo_originario: p.processo_originario || '',
+      pasta_caso: p.pasta_caso || '',
+      data_requerimento: p.data_requerimento || p.data_protocolo || '',
+      valor_causa: p.valor_causa || '', valor_honorarios: p.valor_honorarios || '',
+      percentual_honorarios: p.percentual_honorarios || '', contingenciamento: p.contingenciamento || '',
+      admin_status: p.admin_status || '',
     })
     setCpfSearch('')
     setModalOpen(true)
@@ -348,7 +393,10 @@ export function ProcessesPage() {
       next_deadline: form.next_deadline || null,
       next_hearing: form.next_hearing || null,
       modalidade: form.modalidade || null,
+      admin_status: form.modalidade === 'administrativo' ? (form.admin_status || null) : null,
     }
+    // Sem situação escolhida no cadastro, o banco decide (protocolado = em análise).
+    if (!editId && !payload.admin_status) delete payload.admin_status
     if (!payload.client_id) delete payload.client_id
     let error: any = null
     let processId = editId
@@ -373,6 +421,10 @@ export function ProcessesPage() {
       toast(`Erro ao salvar processo: ${error.message}`, 'error')
       return
     }
+    const previousAdmin = editId ? processes.find(p => p.id === editId)?.admin_status ?? null : null
+    if (processId && editId && payload.admin_status && payload.admin_status !== previousAdmin) {
+      logAdminStatusChange(processId, payload.admin_status, profile?.name || null)
+    }
     if (processId) {
       syncProcessCalendarEvents({
         processId, title: payload.title, clientName: payload.client_name,
@@ -381,6 +433,27 @@ export function ProcessesPage() {
     }
     setModalOpen(false)
     load()
+  }
+
+  /** Troca a situação administrativa direto na linha. Exigência com prazo vira o próximo prazo do processo. */
+  async function updateAdminStatus(p: Process, status: AdminStatus, exigenciaPrazo: string | null) {
+    const patch: Partial<Process> = { admin_status: status }
+    if (status === 'em_exigencia' && exigenciaPrazo) patch.next_deadline = exigenciaPrazo
+    const { data, error } = await supabase.from('processes').update(patch).eq('id', p.id).select('admin_status,admin_status_at,next_deadline').single()
+    if (error) { toast(`Erro ao alterar a situação: ${error.message}`, 'error'); return }
+    setProcesses(prev => prev.map(x => x.id === p.id ? { ...x, ...data } : x))
+    if (status !== p.admin_status) logAdminStatusChange(p.id, status, profile?.name || null)
+    if (patch.next_deadline && patch.next_deadline !== p.next_deadline) {
+      await ensureProcessDeadlineTask(
+        { id: p.id, number: p.number || p.numero_protocolo || '', assigned_lawyer: p.assigned_lawyer, client_id: p.client_id },
+        p.next_deadline, patch.next_deadline,
+      )
+      await syncProcessCalendarEvents({
+        processId: p.id, title: p.title, clientName: p.client_name,
+        processNumber: p.number || p.numero_protocolo || '', nextDeadline: patch.next_deadline, nextHearing: p.next_hearing,
+      })
+    }
+    toast(`Situação: ${ADMIN_STATUS_LABELS[status]}`, 'success')
   }
 
   async function deleteProcess(id: string) {
@@ -395,6 +468,12 @@ export function ProcessesPage() {
     load()
   }
 
+  /** "Judicial" ou "Administrativo — <situação>" (exportação). */
+  function modalidadeLabel(p: Process) {
+    if (processKind(p) === 'judicial') return 'Judicial'
+    return p.admin_status ? `Administrativo — ${ADMIN_STATUS_SHORT[p.admin_status]}` : 'Administrativo'
+  }
+
   /** scope: 'all' agrupa todos os parceiros; 'sem-parceiro' ou um colaborador_id exporta só aquele recorte */
   function exportAll(scope: string = 'all') {
     const scoped = scope === 'all'
@@ -403,8 +482,8 @@ export function ProcessesPage() {
       ? filtered.filter(p => !p.colaborador_id)
       : filtered.filter(p => p.colaborador_id === scope)
 
-    const judicial = scoped.filter(p => p.modalidade === 'judicial').length
-    const admin = scoped.filter(p => p.modalidade === 'administrativo').length
+    const admin = scoped.filter(p => processKind(p) === 'administrativo').length
+    const judicial = scoped.length - admin
     const active = scoped.filter(p => p.status === 'active').length
 
     function processRow(p: Process) {
@@ -413,7 +492,7 @@ export function ProcessesPage() {
         { text: p.numero_protocolo || '—', mono: true },
         { text: p.title },
         { text: p.client_name || '—' },
-        { text: p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—', badge: (p.modalidade === 'judicial' ? 'purple' : 'cyan') as any },
+        { text: modalidadeLabel(p), badge: (processKind(p) === 'judicial' ? 'purple' : 'cyan') as any },
         { text: p.area || '—' },
         { text: p.court || '—' },
         { text: PROCESS_STATUS_LABELS[p.status || 'active'], badge: (p.status === 'active' ? 'green' : p.status === 'won' ? 'blue' : p.status === 'lost' ? 'red' : p.status === 'archived' ? 'gray' : 'amber') as any },
@@ -427,7 +506,7 @@ export function ProcessesPage() {
       const parceiroNome = scope === 'sem-parceiro' ? 'Sem parceiro' : (colaboradores.find(c => c.id === scope)?.nome || 'Parceiro')
       const csvLines = ['Número,Requerimento,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
       for (const p of scoped) {
-        csvLines.push(`"${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+        csvLines.push(`"${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${modalidadeLabel(p)}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
       }
       openExportWindow({
         title: 'Relatório de Processos',
@@ -462,11 +541,11 @@ export function ProcessesPage() {
     const csvLines = ['Parceiro,Número,Requerimento,Título,Cliente,Modalidade,Área,Vara,Status,Próximo Prazo']
     for (const col of colaboradores) {
       for (const p of filtered.filter(x => x.colaborador_id === col.id)) {
-        csvLines.push(`"${col.nome}","${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+        csvLines.push(`"${col.nome}","${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${modalidadeLabel(p)}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
       }
     }
     for (const p of filtered.filter(x => !x.colaborador_id)) {
-      csvLines.push(`"Sem parceiro","${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${p.modalidade === 'judicial' ? 'Judicial' : p.modalidade === 'administrativo' ? 'Administrativo' : '—'}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
+      csvLines.push(`"Sem parceiro","${p.number}","${p.numero_protocolo || '—'}","${p.title}","${p.client_name || '—'}","${modalidadeLabel(p)}","${p.area || '—'}","${p.court || '—'}","${PROCESS_STATUS_LABELS[p.status || 'active']}","${formatDate(p.next_deadline)}"`)
     }
 
     openExportWindow({
@@ -520,11 +599,13 @@ export function ProcessesPage() {
         const matchSearch = !search ||
           p.title.toLowerCase().includes(search.toLowerCase()) ||
           p.number.toLowerCase().includes(search.toLowerCase()) ||
-          p.client_name?.toLowerCase().includes(search.toLowerCase())
-        const matchModalidade = !modalidadeFilter || p.modalidade === modalidadeFilter
+          p.client_name?.toLowerCase().includes(search.toLowerCase()) ||
+          (p.numero_protocolo || '').toLowerCase().includes(search.toLowerCase())
+        const matchModalidade = !modalidadeFilter || processKind(p) === modalidadeFilter
+        const matchAdmin = matchesAdminStatus(p, adminStatusFilter)
         const matchArea = !areaFilter || p.area === areaFilter
         const matchColaborador = !colaboradorFilter || (colaboradorFilter === '__sem__' ? !p.colaborador_id : p.colaborador_id === colaboradorFilter)
-        return matchSearch && matchModalidade && matchArea && matchColaborador && p.data_protocolo
+        return matchSearch && matchModalidade && matchAdmin && matchArea && matchColaborador && p.data_protocolo
       })
     : filtered
 
@@ -607,6 +688,57 @@ export function ProcessesPage() {
 
         {!tableCollapsed && (
           <>
+            {/* Judicial × administrativo — judiciais chegam pela sincronização (OAB);
+                administrativos são cadastrados e acompanhados pela situação no órgão */}
+            <div className="flex items-end gap-1 px-4 pt-2 border-b border-gray-100 dark:border-dark-700 overflow-x-auto" role="tablist" aria-label="Tipo de processo">
+              {([
+                { id: '' as const, label: 'Todos', count: kindCounts.all, hint: null },
+                { id: 'judicial' as const, label: 'Judiciais', count: kindCounts.judicial, hint: 'Atualizados automaticamente pela OAB (CNJ/DJEN)' },
+                { id: 'administrativo' as const, label: 'Administrativos', count: kindCounts.administrativo, hint: 'INSS e outros órgãos — cadastro manual, com a situação do requerimento' },
+              ]).map(t => (
+                <button key={t.id || 'todos'} role="tab" aria-selected={modalidadeFilter === t.id} title={t.hint || undefined}
+                  onClick={() => setModalidadeFilter(t.id)}
+                  className={cn('flex items-center gap-2 px-3.5 py-2.5 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors',
+                    modalidadeFilter === t.id
+                      ? 'border-primary-600 text-primary-700 dark:text-primary-400'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200')}>
+                  {t.label}
+                  <span className={cn('text-[11px] px-1.5 py-0.5 rounded-full font-semibold',
+                    modalidadeFilter === t.id ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300' : 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400')}>
+                    {t.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {modalidadeFilter === 'judicial' && (
+              <div className="flex items-center gap-2 px-4 py-2 text-xs text-gray-500 dark:text-gray-400 bg-indigo-50/40 dark:bg-indigo-900/10 border-b border-gray-100 dark:border-dark-700">
+                <Zap className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                Processos judiciais entram e se atualizam sozinhos pela OAB, toda madrugada. Não precisa cadastrar.
+                <button onClick={() => setOabSyncOpen(true)} className="ml-auto font-semibold text-primary-600 dark:text-primary-400 hover:underline whitespace-nowrap">Sincronizar agora</button>
+              </div>
+            )}
+
+            {modalidadeFilter === 'administrativo' && (
+              <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-gray-100 dark:border-dark-700 overflow-x-auto">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 mr-1 whitespace-nowrap">Situação</span>
+                {([
+                  { id: '' as const, label: 'Todas', count: kindCounts.administrativo },
+                  ...ADMIN_STATUSES.map(st => ({ id: st, label: ADMIN_STATUS_SHORT[st], count: kindCounts.adminStatus[st] })),
+                  { id: '__sem__' as const, label: 'Sem situação', count: kindCounts.adminStatus.__sem__ },
+                ]).filter(c => c.id === '' || c.count > 0 || adminStatusFilter === c.id).map(c => (
+                  <button key={c.id || 'todas'} onClick={() => setAdminStatusFilter(c.id)}
+                    className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap transition-colors',
+                      adminStatusFilter === c.id
+                        ? 'bg-primary-600 text-white border-primary-600'
+                        : 'border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:border-primary-400 hover:text-primary-600')}>
+                    {c.label}
+                    <span className={cn('text-[10px] font-bold', adminStatusFilter === c.id ? 'text-white/80' : 'text-gray-400')}>{c.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Toolbar */}
             <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 dark:border-dark-700 flex-wrap">
               <Button onClick={openNew} className="h-8 text-xs px-3">
@@ -646,7 +778,7 @@ export function ProcessesPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                 <input
                   className="pl-8 pr-7 py-1.5 text-xs border border-gray-200 dark:border-dark-600 rounded-lg bg-white dark:bg-dark-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-500 w-52"
-                  placeholder="Buscar processo..."
+                  placeholder={modalidadeFilter === 'administrativo' ? 'Buscar cliente ou requerimento...' : 'Buscar processo...'}
                   value={search} onChange={e => setSearch(e.target.value)}
                 />
                 {search && (
@@ -662,16 +794,16 @@ export function ProcessesPage() {
                   onClick={() => { setFilterOpen(v => !v); setSortOpen(false) }}
                   className={cn(
                     'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors',
-                    filterOpen || modalidadeFilter || areaFilter || colaboradorFilter
+                    filterOpen || areaFilter || colaboradorFilter
                       ? 'bg-primary-50 dark:bg-primary-900/20 text-primary-700 dark:text-primary-400 border-primary-300 dark:border-primary-700'
                       : 'text-gray-600 dark:text-gray-300 border-gray-200 dark:border-dark-600 hover:bg-gray-50 dark:hover:bg-dark-700'
                   )}
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
                   Filtrar
-                  {[modalidadeFilter, areaFilter, colaboradorFilter].filter(Boolean).length > 0 && (
+                  {[areaFilter, colaboradorFilter].filter(Boolean).length > 0 && (
                     <span className="ml-0.5 w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center">
-                      {[modalidadeFilter, areaFilter, colaboradorFilter].filter(Boolean).length}
+                      {[areaFilter, colaboradorFilter].filter(Boolean).length}
                     </span>
                   )}
                 </button>
@@ -679,24 +811,12 @@ export function ProcessesPage() {
                   <div className="absolute left-0 top-full mt-1.5 w-72 bg-white dark:bg-dark-800 border border-gray-200 dark:border-dark-600 rounded-xl shadow-modal z-50 p-4 space-y-4">
                     <div className="flex items-center justify-between mb-1">
                       <p className="text-xs font-bold text-gray-700 dark:text-gray-200 uppercase tracking-wider">Filtros</p>
-                      {(modalidadeFilter || areaFilter || colaboradorFilter) && (
+                      {(areaFilter || colaboradorFilter) && (
                         <button
-                          onClick={() => { setModalidadeFilter(''); setAreaFilter(''); setColaboradorFilter('') }}
+                          onClick={() => { setAreaFilter(''); setColaboradorFilter('') }}
                           className="text-xs text-primary-600 dark:text-primary-400 hover:underline font-medium"
                         >Limpar tudo</button>
                       )}
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Modalidade</label>
-                      <div className="flex gap-1.5">
-                        {[{ v: '', l: 'Todas' }, { v: 'judicial', l: 'Judicial' }, { v: 'administrativo', l: 'Administrativo' }].map(opt => (
-                          <button key={opt.v} onClick={() => setModalidadeFilter(opt.v)}
-                            className={cn('px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors',
-                              modalidadeFilter === opt.v ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 dark:border-dark-600 text-gray-600 dark:text-gray-300 hover:border-primary-400 hover:text-primary-600')}>
-                            {opt.l}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                     <div>
                       <label className="block text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Área do Direito</label>
@@ -859,92 +979,18 @@ export function ProcessesPage() {
             ) : viewMode === 'table' ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
-                      <th className="w-9 px-3 py-2.5">
-                        <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                          checked={pageProcesses.length > 0 && pageProcesses.every(p => selectedIds.has(p.id))}
-                          onChange={togglePageSelection} />
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                        <span className="flex items-center gap-1 cursor-pointer hover:text-gray-700 dark:hover:text-gray-300">
-                          Partes
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" /></svg>
-                        </span>
-                      </th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tipo de Ação</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Modalidade</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Requerimento</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Cadastro</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Último Andamento</th>
-                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Andamento</th>
-                      <th className="w-20 px-4 py-2.5" />
-                    </tr>
-                  </thead>
+                  <ProcessTableHead
+                    view={modalidadeFilter}
+                    allChecked={pageProcesses.length > 0 && pageProcesses.every(p => selectedIds.has(p.id))}
+                    onToggleAll={togglePageSelection}
+                  />
                   <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
-                    {pageProcesses.map(p => {
-                      const lastMov = Array.isArray(p.movimentos) && p.movimentos.length > 0
-                        ? [...p.movimentos].sort((a, b) => (b.dataHora || b.data || '').localeCompare(a.dataHora || a.data || ''))[0]
-                        : null
-                      return (
-                      <tr key={p.id}
-                        className="hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors cursor-pointer group"
-                        onClick={() => setViewProcess(p)}
-                      >
-                        <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                            checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e as any)} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
-                            {p.client_name || '—'}
-                            {p.cnj_source && (
-                              <span title={`Sincronizado automaticamente${p.cnj_synced_at ? ' — ' + formatDate(p.cnj_synced_at) : ''}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
-                                <Zap className="w-2.5 h-2.5" />CNJ
-                              </span>
-                            )}
-                          </p>
-                          {p.counterparty && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">x {p.counterparty}</p>}
-                          {p.assigned_lawyer && <p className="text-xs text-gray-400 dark:text-gray-500">x {p.assigned_lawyer}</p>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs text-gray-600 dark:text-gray-300">{p.area || p.type || '—'}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          {p.modalidade ? (
-                            <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold',
-                              p.modalidade === 'judicial'
-                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400')}>
-                              {p.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}
-                            </span>
-                          ) : <span className="text-xs text-gray-400">—</span>}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.number}</span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.numero_protocolo || '—'}</span>
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                          {formatDate(p.created_at)}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[220px] truncate">{lastMov?.nome || 'N/A'}</td>
-                        <td className="px-4 py-3 text-xs text-gray-400">{lastMov ? formatDate((lastMov.dataHora || lastMov.data || '').slice(0, 10)) : 'N/A'}</td>
-                        <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
-                              <Edit3 className="w-3.5 h-3.5" />
-                            </button>
-                            <button onClick={() => deleteProcess(p.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      )
-                    })}
+                    {pageProcesses.map(p => (
+                      <ProcessTableRow key={p.id} process={p} view={modalidadeFilter}
+                        selected={selectedIds.has(p.id)} onToggle={e => toggleSelect(p.id, e)}
+                        onOpen={() => setViewProcess(p)} onEdit={() => openEdit(p)} onDelete={() => deleteProcess(p.id)}
+                        onAdminStatus={(st, prazo) => updateAdminStatus(p, st, prazo)} />
+                    ))}
                   </tbody>
                 </table>
                 {totalTablePages > 1 && (
@@ -1006,85 +1052,24 @@ export function ProcessesPage() {
                       {isExpanded && (
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-gray-50 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
-                                <th className="w-9 px-3 py-2.5">
-                                  <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                                    checked={pageItems.length > 0 && pageItems.every(p => selectedIds.has(p.id))}
-                                    onChange={() => setSelectedIds(prev => {
-                                      const allSelected = pageItems.every(p => prev.has(p.id))
-                                      const next = new Set(prev)
-                                      if (allSelected) pageItems.forEach(p => next.delete(p.id))
-                                      else pageItems.forEach(p => next.add(p.id))
-                                      return next
-                                    })} />
-                                </th>
-                                <th className="px-4 py-2.5 pl-12 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Partes</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Tipo de Ação</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Modalidade</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Processo</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Número do Requerimento</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Cadastro</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Último Andamento</th>
-                                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Data Andamento</th>
-                                <th className="w-20 px-4 py-2.5" />
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
-                              {pageItems.map(p => {
-                                const lastMov = Array.isArray(p.movimentos) && p.movimentos.length > 0
-                                  ? [...p.movimentos].sort((a, b) => (b.dataHora || b.data || '').localeCompare(a.dataHora || a.data || ''))[0]
-                                  : null
-                                return (
-                                <tr key={p.id}
-                                  className="hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors cursor-pointer group"
-                                  onClick={() => setViewProcess(p)}
-                                >
-                                  <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
-                                    <input type="checkbox" className="w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400"
-                                      checked={selectedIds.has(p.id)} onChange={e => toggleSelect(p.id, e as any)} />
-                                  </td>
-                                  <td className="px-4 py-3 pl-12">
-                                    <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
-                                      {p.client_name || '—'}
-                                      {p.cnj_source && (
-                                        <span title={`Sincronizado automaticamente${p.cnj_synced_at ? ' — ' + formatDate(p.cnj_synced_at) : ''}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
-                                          <Zap className="w-2.5 h-2.5" />CNJ
-                                        </span>
-                                      )}
-                                    </p>
-                                    {p.counterparty && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">x {p.counterparty}</p>}
-                                    {p.assigned_lawyer && <p className="text-xs text-gray-400 dark:text-gray-500">x {p.assigned_lawyer}</p>}
-                                  </td>
-                                  <td className="px-4 py-3"><span className="text-xs text-gray-600 dark:text-gray-300">{p.area || p.type || '—'}</span></td>
-                                  <td className="px-4 py-3">
-                                    {p.modalidade ? (
-                                      <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold',
-                                        p.modalidade === 'judicial'
-                                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
-                                          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400')}>
-                                        {p.modalidade === 'judicial' ? 'Judicial' : 'Administrativo'}
-                                      </span>
-                                    ) : <span className="text-xs text-gray-400">—</span>}
-                                  </td>
-                                  <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.number}</span></td>
-                                  <td className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.numero_protocolo || '—'}</span></td>
-                                  <td className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{formatDate(p.created_at)}</td>
-                                  <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[220px] truncate">{lastMov?.nome || 'N/A'}</td>
-                                  <td className="px-4 py-3 text-xs text-gray-400">{lastMov ? formatDate((lastMov.dataHora || lastMov.data || '').slice(0, 10)) : 'N/A'}</td>
-                                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
-                                        <Edit3 className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button onClick={() => deleteProcess(p.id)} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                                )
+                            <ProcessTableHead
+                              view={modalidadeFilter} indent
+                              allChecked={pageItems.length > 0 && pageItems.every(p => selectedIds.has(p.id))}
+                              onToggleAll={() => setSelectedIds(prev => {
+                                const allSelected = pageItems.every(p => prev.has(p.id))
+                                const next = new Set(prev)
+                                if (allSelected) pageItems.forEach(p => next.delete(p.id))
+                                else pageItems.forEach(p => next.add(p.id))
+                                return next
                               })}
+                            />
+                            <tbody className="divide-y divide-gray-50 dark:divide-dark-700/50">
+                              {pageItems.map(p => (
+                                <ProcessTableRow key={p.id} process={p} view={modalidadeFilter} indent
+                                  selected={selectedIds.has(p.id)} onToggle={e => toggleSelect(p.id, e)}
+                                  onOpen={() => setViewProcess(p)} onEdit={() => openEdit(p)} onDelete={() => deleteProcess(p.id)}
+                                  onAdminStatus={(st, prazo) => updateAdminStatus(p, st, prazo)} />
+                              ))}
                             </tbody>
                           </table>
                           {totalGroupPages > 1 && (
@@ -1157,6 +1142,26 @@ export function ProcessesPage() {
                 colaboradores={colaboradores}
                 afterDataRequerimento={
                   <>
+                    {form.modalidade === 'administrativo' && (
+                      <div>
+                        <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Situação no órgão</label>
+                        <div className="relative">
+                          <select
+                            value={form.admin_status}
+                            onChange={e => setForm({ ...form, admin_status: e.target.value })}
+                            className="w-full px-4 py-3 text-sm border border-gray-200 dark:border-dark-600 rounded-xl bg-gray-50 dark:bg-dark-700 text-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none"
+                          >
+                            <option value="">{editId ? 'Não informada' : 'Automática (protocolado = em análise)'}</option>
+                            {ADMIN_STATUSES.map(st => <option key={st} value={st}>{ADMIN_STATUS_LABELS[st]}</option>)}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                        </div>
+                        {form.admin_status === 'em_exigencia' && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Informe o prazo para cumprir a exigência em "Próximo prazo" abaixo.</p>
+                        )}
+                      </div>
+                    )}
+
                     {/* Próximo prazo */}
                     <div>
                       <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1.5">Próximo prazo</label>
@@ -1222,6 +1227,145 @@ export function ProcessesPage() {
   )
 }
 
+// ─── Tabela de processos (lista e por parceiro usam as mesmas colunas) ────────
+// As colunas mudam com a aba: judicial mostra o andamento que chega sozinho pela
+// sincronização; administrativo mostra requerimento e situação no órgão.
+
+type ColumnKey = 'partes' | 'tipo' | 'modalidade' | 'situacao' | 'numero' | 'requerimento' | 'data_requerimento' | 'cadastro' | 'andamento' | 'data_andamento'
+
+const COLUMNS: Record<'' | ProcessKind, { key: ColumnKey; label: string }[]> = {
+  '': [
+    { key: 'partes', label: 'Partes' }, { key: 'tipo', label: 'Tipo de Ação' },
+    { key: 'modalidade', label: 'Modalidade / Situação' }, { key: 'numero', label: 'Número do Processo' },
+    { key: 'requerimento', label: 'Número do Requerimento' }, { key: 'cadastro', label: 'Data Cadastro' },
+    { key: 'andamento', label: 'Último Andamento' }, { key: 'data_andamento', label: 'Data Andamento' },
+  ],
+  judicial: [
+    { key: 'partes', label: 'Partes' }, { key: 'tipo', label: 'Tipo de Ação' },
+    { key: 'numero', label: 'Número do Processo' }, { key: 'cadastro', label: 'Data Cadastro' },
+    { key: 'andamento', label: 'Último Andamento' }, { key: 'data_andamento', label: 'Data Andamento' },
+  ],
+  administrativo: [
+    { key: 'partes', label: 'Partes' }, { key: 'tipo', label: 'Benefício / Tipo' },
+    { key: 'situacao', label: 'Situação no órgão' }, { key: 'requerimento', label: 'Número do Requerimento' },
+    { key: 'data_requerimento', label: 'Data do Requerimento' }, { key: 'numero', label: 'Processo Judicial' },
+  ],
+}
+
+const TH_CLS = 'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 whitespace-nowrap'
+const CHECK_CLS = 'w-3.5 h-3.5 rounded border-gray-300 dark:border-dark-500 text-primary-600 focus:ring-primary-400'
+
+function lastMovimento(p: Process) {
+  if (!Array.isArray(p.movimentos) || p.movimentos.length === 0) return null
+  return [...p.movimentos].sort((a, b) => (b.dataHora || b.data || '').localeCompare(a.dataHora || a.data || ''))[0]
+}
+
+function ProcessTableHead({ view, indent, allChecked, onToggleAll }: {
+  view: '' | ProcessKind; indent?: boolean; allChecked: boolean; onToggleAll: () => void
+}) {
+  return (
+    <thead>
+      <tr className="bg-gray-50 dark:bg-dark-700/40 border-b border-gray-100 dark:border-dark-700">
+        <th className="w-9 px-3 py-2.5">
+          <input type="checkbox" className={CHECK_CLS} checked={allChecked} onChange={onToggleAll} />
+        </th>
+        {COLUMNS[view].map((c, i) => (
+          <th key={c.key} className={cn(TH_CLS, indent && i === 0 && 'pl-12')}>{c.label}</th>
+        ))}
+        <th className="w-20 px-4 py-2.5" />
+      </tr>
+    </thead>
+  )
+}
+
+function ProcessTableRow({ process: p, view, indent, selected, onToggle, onOpen, onEdit, onDelete, onAdminStatus }: {
+  process: Process; view: '' | ProcessKind; indent?: boolean; selected: boolean
+  onToggle: (e: React.MouseEvent) => void; onOpen: () => void; onEdit: () => void; onDelete: () => void
+  onAdminStatus: (status: AdminStatus, exigenciaPrazo: string | null) => Promise<void>
+}) {
+  const kind = processKind(p)
+  const lastMov = lastMovimento(p)
+
+  function cell(key: ColumnKey) {
+    switch (key) {
+      case 'partes': return (
+        <td key={key} className={cn('px-4 py-3', indent && 'pl-12')}>
+          <p className="font-medium text-gray-900 dark:text-white text-sm leading-snug flex items-center gap-1.5">
+            {p.client_name || '—'}
+            {p.cnj_source && (
+              <span title={`Sincronizado automaticamente${p.cnj_synced_at ? ' — ' + formatDate(p.cnj_synced_at) : ''}`} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400">
+                <Zap className="w-2.5 h-2.5" />CNJ
+              </span>
+            )}
+          </p>
+          {p.counterparty && <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">x {p.counterparty}</p>}
+          {p.assigned_lawyer && <p className="text-xs text-gray-400 dark:text-gray-500">x {p.assigned_lawyer}</p>}
+        </td>
+      )
+      case 'tipo': return view === 'administrativo' ? (
+        <td key={key} className="px-4 py-3">
+          <p className="text-xs font-medium text-gray-700 dark:text-gray-200">{p.type || '—'}</p>
+          {p.area && <p className="text-[11px] text-gray-400 dark:text-gray-500">{p.area}</p>}
+        </td>
+      ) : (
+        <td key={key} className="px-4 py-3"><span className="text-xs text-gray-600 dark:text-gray-300">{p.area || p.type || '—'}</span></td>
+      )
+      case 'modalidade': return (
+        <td key={key} className="px-4 py-3">
+          {kind === 'administrativo' ? (
+            <div className="space-y-1">
+              <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">Administrativo</span>
+              <div><AdminStatusPicker process={p} onChange={onAdminStatus} compact /></div>
+            </div>
+          ) : (
+            <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">Judicial</span>
+          )}
+        </td>
+      )
+      case 'situacao': return (
+        <td key={key} className="px-4 py-3"><AdminStatusPicker process={p} onChange={onAdminStatus} /></td>
+      )
+      case 'numero': return (
+        <td key={key} className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300 whitespace-nowrap">{p.number || '—'}</span></td>
+      )
+      case 'requerimento': return (
+        <td key={key} className="px-4 py-3"><span className="text-xs font-mono text-gray-700 dark:text-gray-300">{p.numero_protocolo || '—'}</span></td>
+      )
+      case 'data_requerimento': return (
+        <td key={key} className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{formatDate(p.data_requerimento || p.data_protocolo)}</td>
+      )
+      case 'cadastro': return (
+        <td key={key} className="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{formatDate(p.created_at)}</td>
+      )
+      case 'andamento': return (
+        <td key={key} className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[220px] truncate">{lastMov?.nome || 'N/A'}</td>
+      )
+      case 'data_andamento': return (
+        <td key={key} className="px-4 py-3 text-xs text-gray-400">{lastMov ? formatDate((lastMov.dataHora || lastMov.data || '').slice(0, 10)) : 'N/A'}</td>
+      )
+    }
+  }
+
+  return (
+    <tr className="hover:bg-primary-50/40 dark:hover:bg-primary-900/10 transition-colors cursor-pointer group" onClick={onOpen}>
+      <td className="px-3 py-3" onClick={e => e.stopPropagation()}>
+        <input type="checkbox" className={CHECK_CLS} checked={selected} onChange={e => onToggle(e as any)} />
+      </td>
+      {COLUMNS[view].map(c => cell(c.key))}
+      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button onClick={onEdit} className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-dark-600 text-gray-400 hover:text-primary-600 transition-colors">
+            <Edit3 className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onDelete} className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-400 hover:text-red-500 transition-colors">
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </td>
+    </tr>
+  )
+}
+
 type DocItem = {
   id: string; title: string; type: string
   file_url: string | null; file_name: string | null; file_size: number | null
@@ -1249,7 +1393,7 @@ type PanelForm = {
   number: string; court: string; judge: string; counterparty: string
   assigned_lawyer: string; description: string; area: string; type: string
   data_protocolo: string; next_deadline: string; next_hearing: string; colaborador_id: string
-  status: string; modalidade: string
+  status: string; modalidade: string; admin_status: string
   // ADVBOX extra
   ano_ajuizamento: string; segmento: string; comarca: string; vara: string
   tribunal: string; sistema_eletronico: string; numero_protocolo: string
@@ -1287,13 +1431,14 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
     colaborador_id: p.colaborador_id || '',
     status: p.status || 'active',
     modalidade: p.modalidade || '',
+    admin_status: p.admin_status || '',
     ano_ajuizamento: p.created_at ? new Date(p.created_at).getFullYear().toString() : '',
     segmento: '', comarca: '', vara: p.court || '', tribunal: '',
     sistema_eletronico: '', numero_protocolo: p.numero_protocolo || '', processo_originario: '',
-    pasta_caso: '', data_requerimento: p.data_protocolo || '',
+    pasta_caso: '', data_requerimento: p.data_requerimento || p.data_protocolo || '',
     valor_causa: '', valor_honorarios: '', percentual_honorarios: '',
     contingenciamento: '', data_fechamento: '', transito_julgado: '',
-    arquivamento: '', resultado: '', fase: p.area || 'NEGOCIAÇÃO',
+    arquivamento: '', resultado: '', fase: p.fase || 'NEGOCIAÇÃO',
     etapa: 'AÇÃO PROTOCOLADA/INICIADA', notificar_sms: false, notificar_email: false,
   })
 
@@ -1486,9 +1631,14 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
       next_hearing: form.next_hearing || null,
       colaborador_id: form.colaborador_id || null,
       status: form.status as any,
+      fase: form.fase || null,
       modalidade: (form.modalidade || null) as any,
+      admin_status: form.modalidade === 'administrativo' ? ((form.admin_status || null) as AdminStatus | null) : null,
     }).eq('id', p.id), 'Erro ao salvar processo')
     if (error) { setSaving(false); return }
+    if (form.modalidade === 'administrativo' && form.admin_status && form.admin_status !== p.admin_status) {
+      await logAdminStatusChange(p.id, form.admin_status, profile?.name || null)
+    }
     await syncProcessCalendarEvents({
       processId: p.id, title: [p.client_name, form.counterparty].filter(Boolean).join(' x ') || p.title,
       clientName: p.client_name, processNumber: form.number,
@@ -2033,6 +2183,25 @@ function ViewPanel({ process: p, colaboradores, clients, onClose, onSaved, onDel
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
         </div>
+
+        {form.modalidade === 'administrativo' && (
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">
+              Situação no órgão
+            </label>
+            <div className="relative">
+              <select value={form.admin_status} onChange={f('admin_status')}
+                className="w-full px-3 py-2.5 text-sm border border-gray-200 dark:border-dark-600 rounded-lg bg-gray-50 dark:bg-dark-700 text-gray-800 dark:text-gray-200 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 appearance-none">
+                <option value="">Não informada</option>
+                {ADMIN_STATUSES.map(st => <option key={st} value={st}>{ADMIN_STATUS_LABELS[st]}</option>)}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+            </div>
+            {form.admin_status === 'em_exigencia' && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">O prazo para cumprir a exigência vai em "Próximo prazo".</p>
+            )}
+          </div>
+        )}
 
         {/* Número do processo (CNJ) */}
         <div>

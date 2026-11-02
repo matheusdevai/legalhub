@@ -96,7 +96,7 @@ export function ProductTour() {
           />
         </BrowserFrame>
         <div key={item.id} className="mt-6 animate-fade-in">
-          <h3 className="font-serif text-xl sm:text-2xl font-semibold text-white">{item.title}</h3>
+          <h3 className="font-display text-xl sm:text-2xl font-bold tracking-[-0.02em] text-white">{item.title}</h3>
           <p className="mt-2 text-sm text-[#A7B0C0] leading-relaxed lg:hidden">{item.description}</p>
           <ul className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {item.bullets.map(b => (
