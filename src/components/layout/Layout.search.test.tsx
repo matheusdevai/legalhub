@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router-dom'
 
 // ── Mocks estáticos ────────────────────────────────────────────────────────────
 vi.mock('./Sidebar', () => ({ Sidebar: () => <div data-testid="sidebar" /> }))
+// Novidades fazem as próprias consultas; aqui só interessa a busca.
+vi.mock('@/components/announcements/WhatsNew', () => ({ WhatsNew: () => null }))
 vi.mock('@/contexts/ThemeContext', () => ({ useTheme: () => ({ theme: 'light', toggleTheme: vi.fn() }) }))
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
