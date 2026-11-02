@@ -67,7 +67,7 @@ function SectionHeading({ eyebrow, title, subtitle, center = true }: { eyebrow: 
   return (
     <Reveal className={cn('max-w-2xl mb-12 sm:mb-14', center && 'mx-auto text-center')}>
       <Eyebrow>{eyebrow}</Eyebrow>
-      <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-[color:var(--lh-fg)]" style={{ textWrap: 'balance' } as React.CSSProperties}>{title}</h2>
+      <h2 className="mt-3 font-display text-3xl sm:text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]" style={{ textWrap: 'balance' } as React.CSSProperties}>{title}</h2>
       {subtitle && <p className="mt-4 text-[color:var(--lh-muted)] leading-relaxed">{subtitle}</p>}
     </Reveal>
   )
@@ -158,7 +158,7 @@ export function LandingPage() {
   const hero = tourVideo('painel')
 
   return (
-    <div className="lh-dark min-h-screen text-[color:var(--lh-fg)] relative overflow-x-clip" style={{ background: '#020711' }}>
+    <div className="lh-dark font-display min-h-screen text-[color:var(--lh-fg)] relative overflow-x-clip" style={{ background: '#020711', lineHeight: 1.47 }}>
       <style>{`
         @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-14px) } }
         @keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
@@ -172,7 +172,7 @@ export function LandingPage() {
           --lh-hover: #e6ebf3; --lh-ok: #059669; }
         .lh-light-alt { background: #f5f7fb; }
         .lh-light .lh-card { box-shadow: 0 1px 2px rgba(16,24,40,0.04), 0 10px 30px -14px rgba(16,24,40,0.12); }
-        .lh-demo-video::cue { background: rgba(2,7,17,0.82); color: #fff; font-family: Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.4; }
+        .lh-demo-video::cue { background: rgba(2,7,17,0.82); color: #fff; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.4; }
         .lh-demo-video-lg::cue { font-size: 22px; }
         @media (max-width: 640px) { .lh-demo-video::cue { font-size: 12px; } }
         a:focus-visible, button:focus-visible, input:focus-visible {
@@ -270,7 +270,7 @@ export function LandingPage() {
           </Reveal>
 
           <Reveal delay={80}>
-            <h1 className="font-serif text-[2.4rem] leading-[1.08] sm:text-6xl lg:text-[4.2rem] font-semibold tracking-tight text-[color:var(--lh-fg)]" style={{ textWrap: 'balance' } as React.CSSProperties}>
+            <h1 className="font-display text-[2.4rem] leading-[1.04] sm:text-6xl lg:text-[4.2rem] font-bold tracking-[-0.04em] text-[color:var(--lh-fg)]" style={{ textWrap: 'balance' } as React.CSSProperties}>
               O escritório inteiro em um só sistema. <span className="text-[#1677FF]">Nenhum prazo esquecido.</span>
             </h1>
           </Reveal>
@@ -434,7 +434,7 @@ export function LandingPage() {
           </Reveal>
           <Reveal delay={120} className="order-1 lg:order-2">
             <Eyebrow>No escritório ou no fórum</Eyebrow>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-[color:var(--lh-fg)]">
+            <h2 className="mt-3 font-display text-3xl sm:text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">
               O mesmo sistema no <span className="text-[#1677FF]">computador e no celular</span>
             </h2>
             <p className="mt-4 text-[color:var(--lh-muted)] leading-relaxed">
@@ -461,7 +461,7 @@ export function LandingPage() {
             <div className="hidden md:block absolute top-6 left-[16%] right-[16%] h-px bg-gradient-to-r from-transparent via-[#1677FF]/40 to-transparent" aria-hidden />
             {STEPS.map((s, i) => (
               <Reveal key={s.title} delay={i * 100} className="relative text-center px-2">
-                <span className="relative mx-auto w-12 h-12 rounded-full bg-[color:var(--lh-card)] lh-card border border-[#1677FF]/40 flex items-center justify-center font-serif text-lg font-semibold text-[#1677FF]">
+                <span className="relative mx-auto w-12 h-12 rounded-full bg-[color:var(--lh-card)] lh-card border border-[#1677FF]/40 flex items-center justify-center font-display text-lg font-bold text-[#1677FF]">
                   <span className="sr-only">Passo </span>{i + 1}
                 </span>
                 <h3 className="mt-5 text-base font-semibold text-[color:var(--lh-fg)]">{s.title}</h3>
@@ -477,7 +477,7 @@ export function LandingPage() {
         <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-14 items-start">
           <Reveal className="lg:col-span-5 lg:sticky lg:top-28">
             <Eyebrow>Segurança e sigilo</Eyebrow>
-            <h2 className="mt-3 font-serif text-3xl sm:text-4xl font-semibold tracking-tight text-[color:var(--lh-fg)]">
+            <h2 className="mt-3 font-display text-3xl sm:text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">
               Sigilo profissional levado a sério
             </h2>
             <p className="mt-4 text-[color:var(--lh-muted)] leading-relaxed">
@@ -582,7 +582,7 @@ export function LandingPage() {
                         </div>
                         <div className="flex items-baseline gap-1 mt-1">
                           <span className="text-sm text-[color:var(--lh-muted)]">R$</span>
-                          <span className="font-serif text-4xl font-semibold tracking-tight text-[color:var(--lh-fg)]">{PROMO_MONTHLY_PRICE}</span>
+                          <span className="font-display text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">{PROMO_MONTHLY_PRICE}</span>
                           <span className="text-sm text-[color:var(--lh-muted)]">/mês</span>
                         </div>
                         <p className="mt-1 text-[11px] text-[#1677FF] font-medium">nos 3 primeiros meses, depois R$ {plan.price}/mês</p>
@@ -591,7 +591,7 @@ export function LandingPage() {
                       <>
                         <div className="flex items-baseline gap-1">
                           <span className="text-sm text-[color:var(--lh-muted)]">R$</span>
-                          <span className="font-serif text-4xl font-semibold tracking-tight text-[color:var(--lh-fg)]">{plan.price}</span>
+                          <span className="font-display text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">{plan.price}</span>
                           <span className="text-sm text-[color:var(--lh-muted)]">/mês</span>
                         </div>
                         {PROMO_ACTIVE && <p className="mt-1 text-[11px] text-[#1677FF] font-medium">já é o valor promocional dos 3 primeiros meses</p>}
@@ -669,7 +669,7 @@ export function LandingPage() {
       <section className="relative py-20 sm:py-28 px-5 sm:px-8">
         <Reveal className="relative max-w-5xl mx-auto rounded-[2rem] border border-[#1677FF]/25 overflow-hidden px-6 py-14 sm:px-14 sm:py-16 text-center"
           style={{ background: 'radial-gradient(ellipse at 50% 0%, rgba(11,92,255,0.35), rgba(2,7,17,0) 70%), rgba(255,255,255,0.02)' }}>
-          <h2 className="font-serif text-3xl sm:text-[2.6rem] leading-tight font-semibold tracking-tight text-[color:var(--lh-fg)]" style={{ textWrap: 'balance' } as React.CSSProperties}>
+          <h2 className="font-display text-3xl sm:text-[2.6rem] leading-tight font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]" style={{ textWrap: 'balance' } as React.CSSProperties}>
             Organize o escritório ainda esta semana
           </h2>
           <p className="mt-4 text-[color:var(--lh-muted)] leading-relaxed max-w-xl mx-auto">

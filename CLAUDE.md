@@ -35,7 +35,10 @@ src/
                                 gravações reais num escritório demo com dados fictícios, voz Luciana (macOS) + legenda; tocam
                                 mudos/legendados e "Ouvir narração" liga o som. Regravar com scripts/demo-videos/ (ver README lá).
                                 Sem prova social inventada: só números/depoimentos reais e autorizados.
-    auth/Login.tsx
+                                Tipografia: `font-display` (tailwind) = fonte de sistema da Apple (SF Pro), como fullstorecg.com.br;
+                                fora do Mac/iPhone cai na Inter. Títulos em peso 700 com tracking negativo. Fraunces (`font-serif`)
+                                só sobrou em `LegalDocument.tsx`.
+    auth/Login.tsx            — mesma linguagem visual da landing (tinta #05070c/#0b1220 + um só azul #1677FF, sem brilhos desfocados), fonte `font-display`
     dashboard/Dashboard.tsx   — tabs: visao | lista | quadro | desempenho | ia | configuracoes
     clients/ClientsPage.tsx
     processes/ProcessesPage.tsx
@@ -385,7 +388,10 @@ const filtered = useMemo(() => clients.filter(c => {
 - Fases: `NEGOCIAÇÃO | CONHECIMENTO | RECURSAL | EXECUÇÃO | ENCERRADO`
 - Grupos de ação: Cível, Criminal, Trabalhista, Tributário, Administrativo, Família, Previdenciário, Empresarial, Imobiliário, Outro
 - Campos ADVBOX: grupo_acao, fase, etapa, numero_protocolo, processo_originario, pasta_caso, valor_causa, valor_honorarios, percentual_honorarios, contingenciamento
-- View modes: table | byColaborador — as duas usam exatamente as mesmas colunas de tabela (Partes, Tipo de Ação, Modalidade, Número do Processo, Número do Requerimento, Data Cadastro, Último Andamento, Data Andamento + checkbox de seleção em massa). Ao alterar colunas de uma, replicar na outra (`ProcessesPage.tsx` — tabela principal ~L1004-1094, tabela por grupo/parceiro ~L1151-1230).
+- View modes: table | byColaborador — as duas renderizam `ProcessTableHead`/`ProcessTableRow` (fim de `ProcessesPage.tsx`), então as colunas são sempre as mesmas. As colunas vêm de `COLUMNS[aba]`: cada aba (Todos / Judiciais / Administrativos) tem o seu conjunto — mudar coluna = mudar só ali.
+- **Judicial × administrativo** (`processKind()` em `src/lib/processKind.ts`): só é administrativo o que tem `modalidade='administrativo'`; o resto é judicial, inclusive os importados pela sincronização (chegam com `modalidade` nula — nunca comparar `p.modalidade === 'judicial'`). Judiciais entram sozinhos pela OAB; administrativos (INSS etc.) são cadastrados à mão.
+- **Situação do administrativo** (`processes.admin_status`: `em_analise | em_exigencia | deferido | indeferido`, nulo = não informada; `admin_status_at` = dia da última mudança, mantido pelo trigger `processes_admin_status_stamp`, que também inicia como `em_analise` o administrativo cadastrado já com número de requerimento). Trocada direto na linha (`AdminStatusPicker.tsx`) ou nos formulários; cada troca vira uma movimentação (`process_updates`). "Em exigência" pede o prazo de cumprimento, que é gravado em `next_deadline` (mesma tarefa/Agenda/aviso de qualquer prazo). Alertas na linha (`adminStatusSummary`): exigência vencendo em ≤5 dias/vencida, análise há ≥90 dias.
+- `openEdit()` precisa carregar TODOS os campos gravados (requerimento, fase, etapa, valores...): o `save()` manda o formulário inteiro, então campo em branco no formulário apaga o que estava no banco (bug que existia até nov/2026).
 
 ## Financeiro — estrutura
 - `type: receivable` = entrada (honorários, reembolso)

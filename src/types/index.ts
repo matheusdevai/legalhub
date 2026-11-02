@@ -145,11 +145,27 @@ export interface Process {
   data_protocolo: string | null
   numero_protocolo: string | null
   modalidade: 'judicial' | 'administrativo' | null
+  /** Situação do processo administrativo (nulo = não informada). Ver src/lib/processKind.ts */
+  admin_status: AdminStatus | null
+  /** Dia da última mudança de admin_status (trigger no banco) */
+  admin_status_at: string | null
+  data_requerimento: string | null
+  grupo_acao: string | null
+  fase: string | null
+  etapa: string | null
+  processo_originario: string | null
+  pasta_caso: string | null
+  valor_causa: string | null
+  valor_honorarios: string | null
+  percentual_honorarios: string | null
+  contingenciamento: string | null
   colaborador_id: string | null
   cnj_source: boolean | null
   cnj_synced_at: string | null
   movimentos: ProcessMovimentoAuto[] | null
 }
+
+export type AdminStatus = 'em_analise' | 'em_exigencia' | 'deferido' | 'indeferido'
 
 /** Movimentação importada automaticamente via CNJ/DataJud ou PJe (formato varia por fonte) */
 export interface ProcessMovimentoAuto {
