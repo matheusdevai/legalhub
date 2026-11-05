@@ -11,7 +11,10 @@ export interface Profile {
   phone: string | null
   oab_number: string | null
   oab_seccional: string | null
+  /** @deprecated o DataJud não permite busca por OAB; não é mais usado pela sincronização. */
   oab_tribunais: string[] | null
+  /** Inscrições suplementares [{numero, uf}] — o DJEN filtra pela UF da inscrição. */
+  oab_inscricoes?: { numero: string; uf: string }[] | null
   onboarding_completed: boolean | null
   /** Conta criada com senha temporária: obriga a troca no primeiro acesso (FirstAccessScreen). */
   must_change_password?: boolean | null
@@ -291,6 +294,9 @@ export interface CalendarEvent {
   google_event_id: string | null
   user_id: string | null
   sync_google: boolean | null
+  /** Id do evento no Outlook/Hotmail (Microsoft Graph), quando sincronizado. */
+  outlook_event_id?: string | null
+  sync_outlook?: boolean | null
   created_at: string | null
   deleted_at: string | null
   task_id: string | null

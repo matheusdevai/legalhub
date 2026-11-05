@@ -1,9 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
+import { courtFromCnjNumber, mergeMovimentos, parseDatajudDate } from "../_shared/oabSync/core.ts"
+import { findProcessByNumber } from "../_shared/oabSync/persist.ts"
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-region",
   "Content-Type": "application/json",
 }
 
@@ -37,28 +39,11 @@ async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, ke
   return data === true
 }
 
+// Tribunal pelo número CNJ. A versão antiga tinha a tabela de códigos errada
+// ('13' = PB, mas no padrão CNJ 13 = MG e 15 = PB; segmento 4 é Justiça
+// Federal e 5 é do Trabalho) e consultava o índice errado do DataJud.
 function oabTribunal(cnj: string): string {
-  const digits = cnj.replace(/\D/g, '')
-  if (digits.length < 20) return ''
-  const seg = digits[13]
-  const trib = digits.slice(14, 16)
-  if (seg === '8') return 'tj' + stateByCourt(trib)
-  if (seg === '4') return 'trt' + parseInt(trib)
-  if (seg === '3') return 'trf' + parseInt(trib)
-  return ''
-}
-
-const COURT_STATE: Record<string, string> = {
-  '01':'sp','02':'mg','03':'rj','04':'rs','05':'ba',
-  '06':'pr','07':'ce','08':'pe','09':'go','10':'pa',
-  '11':'am','12':'ma','13':'pb','14':'pi','15':'rn',
-  '16':'al','17':'es','18':'mt','19':'ms','20':'se',
-  '21':'ac','22':'rr','23':'ro','24':'ap','25':'to',
-  '26':'df','27':'sc',
-}
-
-function stateByCourt(code: string): string {
-  return COURT_STATE[code] || code.toLowerCase()
+  return courtFromCnjNumber(cnj) || ''
 }
 
 async function enrichWithDatajud(cnj: string): Promise<any | null> {
@@ -104,9 +89,10 @@ Deno.serve(async (req: Request) => {
       return ok({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 })
     }
 
-    const body = await req.json().catch(() => ({}))
-    const oabNum   = (body.oab_number    || profile.oab_number    || '').trim().replace(/\D/g, '')
-    const oabState = (body.oab_seccional || profile.oab_seccional || '').trim().toUpperCase()
+    // Só a OAB gravada no perfil de quem chama (nunca uma vinda do navegador):
+    // o token do JusBrasil é pago e compartilhado entre todos os escritórios.
+    const oabNum   = (profile.oab_number    || '').trim().replace(/\D/g, '')
+    const oabState = (profile.oab_seccional || '').trim().toUpperCase()
     const oabName  = profile.name || 'Advogado'
 
     if (!oabNum || !oabState) return ok({ error: 'OAB nao configurada', total: 0, imported: 0, updated: 0, errors: [], tribunais_pesquisados: 0 })
@@ -181,21 +167,21 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < allCnjs.length; i += BATCH) {
       const batch = allCnjs.slice(i, i + BATCH)
       await Promise.all(batch.map(async cnj => {
-        const num = cnj.replace(/[^\d\-\.]/g, '')
+        const num = cnj.replace(/\D/g, '')
         if (!num) return
 
-        const { data: ex } = await supabase.from('processes').select('id').eq('number', num).eq('tenant_id', profile.tenant_id).is('deleted_at', null).maybeSingle()
+        const ex = await findProcessByNumber(supabase, profile.tenant_id, num)
 
         const enriched = await enrichWithDatajud(num)
-        const parteAtiva = enriched && Array.isArray(enriched.partes) ? enriched.partes.find((p: any) => p.polo === 'ATIVO' || p.polo === 'A') : null
         const movimentos = enriched && Array.isArray(enriched.movimentos) ? enriched.movimentos : []
 
         if (ex) {
           const { error: upErr } = await supabase.from('processes').update({
             cnj_synced_at: now,
-            ...(movimentos.length ? { movimentos } : {}),
-            ...(enriched?.orgaoJulgador?.nome ? { court: enriched.orgaoJulgador.nome } : {}),
-          }).eq('id', ex.id)
+            // Soma os andamentos (nunca substitui: apagaria as intimações do DJEN)
+            ...(movimentos.length ? { movimentos: mergeMovimentos(ex.movimentos, movimentos).merged } : {}),
+            ...(enriched?.orgaoJulgador?.nome && !ex.court ? { court: enriched.orgaoJulgador.nome } : {}),
+          }).eq('id', ex.id).eq('tenant_id', profile.tenant_id)
           if (upErr) errors.push(`update ${num}: ${upErr.message}`)
           else updated++
         } else {
@@ -203,12 +189,12 @@ Deno.serve(async (req: Request) => {
             tenant_id: profile.tenant_id,
             number: num,
             title: enriched?.assuntos?.[0]?.nome || enriched?.classe?.nome || 'Processo',
-            client_name: parteAtiva?.nome || null,
+            client_name: null,
             court: enriched?.orgaoJulgador?.nome || null,
             area: enriched?.classe?.nome || null,
             status: 'active',
             priority: 'medium',
-            data_protocolo: enriched?.dataAjuizamento?.slice(0, 10) || null,
+            data_protocolo: parseDatajudDate(enriched?.dataAjuizamento),
             cnj_source: true,
             cnj_synced_at: now,
             movimentos: movimentos.length ? movimentos : null,

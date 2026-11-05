@@ -1,61 +1,37 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Scale, ChevronRight, CheckCircle2, RotateCcw, X } from 'lucide-react'
+import { Scale, ChevronRight, CheckCircle2, RotateCcw, X, Plus, Trash2, AlertTriangle, Info } from 'lucide-react'
 import { Modal, Button, Input, Select } from '@/components/ui'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
+import { normalizeInscricoes, UFS } from '@/lib/oabSync'
+import {
+  lastSyncRun, syncCnjComplement, syncEscavador, syncJusbrasil, syncPje,
+  type PjeSyncResult, type SourceResult, type SyncRunRow,
+} from '@/lib/oabSyncClient'
 
-const ESTADOS_BR = [
-  'AC','AL','AM','AP','BA','CE','DF','ES','GO',
-  'MA','MG','MS','MT','PA','PB','PE','PI','PR',
-  'RJ','RN','RO','RR','RS','SC','SE','SP','TO',
-]
-
-// Mapeia seccional (UF) → código do TJ no DataJud (API pública do CNJ)
-const UF_TO_TJ: Record<string, string> = {
-  AC: 'tjac', AL: 'tjal', AM: 'tjam', AP: 'tjap', BA: 'tjba', CE: 'tjce',
-  DF: 'tjdft', ES: 'tjes', GO: 'tjgo', MA: 'tjma', MG: 'tjmg', MS: 'tjms',
-  MT: 'tjmt', PA: 'tjpa', PB: 'tjpb', PE: 'tjpe', PI: 'tjpi', PR: 'tjpr',
-  RJ: 'tjrj', RN: 'tjrn', RO: 'tjro', RR: 'tjrr', RS: 'tjrs', SC: 'tjsc',
-  SE: 'tjse', SP: 'tjsp', TO: 'tjto',
-}
-
-// Troca o TJ da seccional anterior pelo novo na lista de tribunais marcados,
-// em vez de só acumular — evita que o tribunal do estado antigo continue
-// sendo consultado silenciosamente depois que o usuário troca a UF da OAB.
-export function swapSeccionalTribunal(current: string[], prevUf: string, nextUf: string): string[] {
-  const prevTj = UF_TO_TJ[prevUf]
-  const nextTj = UF_TO_TJ[nextUf]
-  let next = prevTj && prevTj !== nextTj ? current.filter(t => t !== prevTj) : current
-  if (nextTj && !next.includes(nextTj)) next = [nextTj, ...next]
-  return next
-}
-
-const TRFS_CNJ = [
-  { code: 'trf1', label: 'TRF1' },
-  { code: 'trf2', label: 'TRF2' },
-  { code: 'trf3', label: 'TRF3' },
-  { code: 'trf4', label: 'TRF4' },
-  { code: 'trf5', label: 'TRF5' },
-  { code: 'trf6', label: 'TRF6' },
-]
+// Sincronização de processos pela OAB.
+//
+// Fonte principal: DJEN (Comunica PJe, API pública do CNJ) — filtra pela
+// inscrição (número + UF da OAB) e traz comunicações de QUALQUER tribunal do
+// país. Por isso a lista de "inscrições suplementares": quem advoga em outro
+// estado com outra inscrição só recebe esses processos consultando-a também.
+// O DataJud (CNJ) não permite busca por OAB (o índice público não tem partes);
+// ele só completa classe/órgão/andamentos dos processos já encontrados.
 
 type Step = 'config' | 'syncing' | 'result'
+interface Row { numero: string; uf: string }
 
 interface SyncResult {
-  total: number
-  imported: number
-  updated: number
-  errors: string[]
-  oab: string
-  jusbrasil: { total: number; imported: number; updated: number; first_sync_note?: string | null } | null
-  escavador: { total: number; imported: number; updated: number } | null
-  cnj: { total: number; imported: number; updated: number } | null
-  pje: { total: number; imported: number; updated: number } | null
+  pje: PjeSyncResult
+  escavador: SourceResult | null
+  jusbrasil: SourceResult | null
 }
 
 interface Props { onDone: () => void }
+
+const isTokenMissing = (r: SourceResult | null) => !!r?.error && /nao configurad|não configurad/i.test(r.error)
 
 export function OabSyncModal({ onDone }: Props) {
   const { profile, refreshProfile } = useAuth()
@@ -64,125 +40,68 @@ export function OabSyncModal({ onDone }: Props) {
   const [step, setStep] = useState<Step>('config')
   const [oabNumber, setOabNumber] = useState(profile?.oab_number || '')
   const [oabSeccional, setOabSeccional] = useState(profile?.oab_seccional || '')
+  const [extras, setExtras] = useState<Row[]>(() => (profile?.oab_inscricoes || []).map(i => ({ numero: i.numero, uf: i.uf })))
   const [error, setError] = useState<string | null>(null)
   const [savingOab, setSavingOab] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
-  const [tribunais, setTribunais] = useState<string[]>(
-    profile?.oab_tribunais?.length ? profile.oab_tribunais :
-    profile?.oab_seccional ? [UF_TO_TJ[profile.oab_seccional]] : []
-  )
-  const [showMaisTribunais, setShowMaisTribunais] = useState(false)
+  const [lastRun, setLastRun] = useState<SyncRunRow | null>(null)
 
-  function toggleTribunal(code: string) {
-    setTribunais(prev => prev.includes(code) ? prev.filter(t => t !== code) : [...prev, code])
+  useEffect(() => {
+    if (profile?.user_id) lastSyncRun(profile.user_id).then(setLastRun)
+  }, [profile?.user_id, step])
+
+  function updateExtra(i: number, patch: Partial<Row>) {
+    setExtras(prev => prev.map((r, k) => (k === i ? { ...r, ...patch } : r)))
   }
 
   async function startSync() {
     if (!oabNumber.trim() || !oabSeccional) {
-      setError('Informe o número da OAB e a seccional.')
+      setError('Informe o número da OAB e a seccional da inscrição principal.')
       return
     }
+    const incomplete = extras.some(r => (r.numero.trim() && !r.uf) || (!r.numero.trim() && r.uf))
+    if (incomplete) { setError('Complete número e UF de cada inscrição suplementar (ou remova a linha).'); return }
     setError(null)
 
-    // Persiste OAB e tribunais marcados no perfil se mudou — os tribunais também
-    // são lidos pelo cron noturno de sincronização automática (mesma seleção do usuário aqui).
-    const tribunaisChanged = JSON.stringify(tribunais) !== JSON.stringify(profile?.oab_tribunais || [])
-    const changed = oabNumber.trim() !== profile?.oab_number || oabSeccional !== profile?.oab_seccional || tribunaisChanged
-    if (changed) {
-      setSavingOab(true)
-      await supabase.from('profiles')
-        .update({ oab_number: oabNumber.trim(), oab_seccional: oabSeccional, oab_tribunais: tribunais })
-        .eq('user_id', profile!.user_id)
-      await refreshProfile()
-      setSavingOab(false)
-    }
+    const suplementares = normalizeInscricoes(null, extras)
+      .filter(i => !(i.numero === oabNumber.replace(/\D/g, '').replace(/^0+/, '') && i.uf === oabSeccional))
+
+    // A Edge Function usa as inscrições GRAVADAS no perfil (não as do navegador),
+    // então salva antes de sincronizar.
+    setSavingOab(true)
+    const { error: saveErr } = await supabase.from('profiles')
+      .update({ oab_number: oabNumber.trim(), oab_seccional: oabSeccional, oab_inscricoes: suplementares })
+      .eq('user_id', profile!.user_id)
+    setSavingOab(false)
+    if (saveErr) { setError(`Não foi possível salvar a OAB: ${saveErr.message}`); return }
+    await refreshProfile()
 
     setStep('syncing')
+    // DJEN primeiro (sozinho): é a fonte que cria/atualiza a maioria dos
+    // processos — rodar as outras ao mesmo tempo podia gravar o mesmo processo duas vezes.
+    const pje = await syncPje('manual')
+    const [esc, jus] = await Promise.all([syncEscavador(), syncJusbrasil()])
+    // DataJud em segundo plano: só completa dados e pode levar mais de 1 minuto.
+    void syncCnjComplement()
 
-    const body = { oab_number: oabNumber.trim(), oab_seccional: oabSeccional.toUpperCase() }
-    const cnjBody = { ...body, tribunais }
-
-    const [jbSettled, escSettled, cnjSettled, pjeSettled] = await Promise.allSettled([
-      supabase.functions.invoke('sync-jusbrasil', { body }).catch((e: any) => ({
-        data: { error: e?.message || 'Erro JusBrasil', total: 0, imported: 0, updated: 0, errors: [] },
-        error: null,
-      })),
-      supabase.functions.invoke('sync-escavador', { body }).catch((e: any) => ({
-        data: { error: e?.message || 'Erro Escavador', total: 0, imported: 0, updated: 0, errors: [] },
-        error: null,
-      })),
-      tribunais.length > 0
-        ? supabase.functions.invoke('sync-cnj', { body: cnjBody }).catch((e: any) => ({
-            data: { error: e?.message || 'Erro CNJ', total: 0, imported: 0, updated: 0, errors: [] },
-            error: null,
-          }))
-        : Promise.resolve({ data: null, error: null }),
-      // PJe via DJEN (Comunica PJe) — API pública gratuita do CNJ, só precisa
-      // de OAB + UF (mesmos dados já exigidos acima), sem login/senha.
-      // Cobre tribunais estaduais e federais automaticamente, sem seleção manual.
-      supabase.functions.invoke('sync-pje', { body }).catch((e: any) => ({
-        data: { error: e?.message || 'Erro PJe (DJEN)', total: 0, imported: 0, updated: 0, errors: [] },
-        error: null,
-      })),
-    ])
-
-    const allErrors: string[] = []
-
-    let jbData: any = null
-    if (jbSettled.status === 'fulfilled') {
-      const d = (jbSettled.value as any)?.data
-      if (d?.error) allErrors.push(`JusBrasil: ${d.error}`)
-      else if (d) {
-        jbData = d
-        if (Array.isArray(d.errors)) allErrors.push(...d.errors.map((e: string) => `JusBrasil: ${e}`))
-      }
-    }
-
-    let escData: any = null
-    if (escSettled.status === 'fulfilled') {
-      const d = (escSettled.value as any)?.data
-      if (d?.error) allErrors.push(`Escavador: ${d.error}`)
-      else if (d) {
-        escData = d
-        if (Array.isArray(d.errors)) allErrors.push(...d.errors.map((e: string) => `Escavador: ${e}`))
-      }
-    }
-
-    let cnjData: any = null
-    if (cnjSettled.status === 'fulfilled') {
-      const d = (cnjSettled.value as any)?.data
-      if (d?.error) allErrors.push(`CNJ: ${d.error}`)
-      else if (d) {
-        cnjData = d
-        if (Array.isArray(d.errors)) allErrors.push(...d.errors.map((e: string) => `CNJ: ${e}`))
-      }
-    }
-
-    let pjeData: any = null
-    if (pjeSettled.status === 'fulfilled') {
-      const d = (pjeSettled.value as any)?.data
-      if (d?.error) allErrors.push(`PJe: ${d.error}`)
-      else if (d) {
-        pjeData = d
-        if (Array.isArray(d.errors)) allErrors.push(...d.errors.map((e: string) => `PJe: ${e}`))
-      }
-    }
-
-    setResult({
-      total: (jbData?.total || 0) + (escData?.total || 0) + (cnjData?.total || 0) + (pjeData?.total || 0),
-      imported: (jbData?.imported || 0) + (escData?.imported || 0) + (cnjData?.imported || 0) + (pjeData?.imported || 0),
-      updated: (jbData?.updated || 0) + (escData?.updated || 0) + (cnjData?.updated || 0) + (pjeData?.updated || 0),
-      errors: allErrors,
-      oab: jbData?.oab || escData?.oab || cnjData?.oab || `${oabNumber}/${oabSeccional}`,
-      jusbrasil: jbData ? { total: jbData.total, imported: jbData.imported, updated: jbData.updated, first_sync_note: jbData.first_sync_note } : null,
-      escavador: escData ? { total: escData.total, imported: escData.imported, updated: escData.updated } : null,
-      cnj: cnjData ? { total: cnjData.total, imported: cnjData.imported, updated: cnjData.updated } : null,
-      pje: pjeData ? { total: pjeData.total, imported: pjeData.imported, updated: pjeData.updated } : null,
-    })
+    setResult({ pje, escavador: esc, jusbrasil: jus })
     setStep('result')
   }
 
   const stepIndex = { config: 0, syncing: 1, result: 2 }[step]
+  const inscricoesLabel = [`${oabNumber || '—'}/${oabSeccional || '—'}`, ...extras.filter(e => e.numero && e.uf).map(e => `${e.numero}/${e.uf}`)].join(', ')
+
+  const pje = result?.pje
+  const paid = [
+    { label: 'Escavador', data: result?.escavador ?? null },
+    { label: 'JusBrasil', data: result?.jusbrasil ?? null },
+  ]
+  const totals = {
+    total: (pje?.total || 0) + paid.reduce((s, p) => s + (p.data && !p.data.error ? p.data.total || 0 : 0), 0),
+    imported: (pje?.imported || 0) + paid.reduce((s, p) => s + (p.data && !p.data.error ? p.data.imported || 0 : 0), 0),
+    updated: (pje?.updated || 0) + paid.reduce((s, p) => s + (p.data && !p.data.error ? p.data.updated || 0 : 0), 0),
+  }
+  const pjeErrors = [...(pje?.error ? [pje.error] : []), ...(pje?.errors || [])]
 
   return (
     <Modal open onClose={onDone} title="" size="md">
@@ -198,8 +117,8 @@ export function OabSyncModal({ onDone }: Props) {
                 Sincronizar processos via OAB
               </h2>
               <p className="text-xs text-primary-100 mt-0.5">
-                {step === 'config' && 'PJe (DJEN) + CNJ gratuitos — JusBrasil e Escavador pagos opcionais'}
-                {step === 'syncing' && 'Buscando processos no PJe, CNJ, JusBrasil e Escavador…'}
+                {step === 'config' && 'Todos os tribunais do país que publicam no DJEN — gratuito'}
+                {step === 'syncing' && 'Buscando suas intimações no DJEN (todos os tribunais)…'}
                 {step === 'result' && 'Sincronização concluída'}
               </p>
             </div>
@@ -240,113 +159,85 @@ export function OabSyncModal({ onDone }: Props) {
       {step === 'config' && (
         <div className="space-y-4">
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Informe sua OAB para importar automaticamente seus processos via{' '}
-            <strong className="text-gray-700 dark:text-gray-200">PJe (DJEN)</strong> e{' '}
-            <strong className="text-gray-700 dark:text-gray-200">CNJ (DataJud)</strong> — gratuitos,
-            cobrem tribunais estaduais e federais. Se você tiver token configurado,{' '}
-            <strong className="text-gray-700 dark:text-gray-200">JusBrasil</strong> e{' '}
-            <strong className="text-gray-700 dark:text-gray-200">Escavador</strong> (pagos) também são
-            consultados em paralelo.
+            Importamos seus processos pelas intimações publicadas no{' '}
+            <strong className="text-gray-700 dark:text-gray-200">DJEN</strong> (Diário de Justiça Eletrônico Nacional,
+            do CNJ), de <strong className="text-gray-700 dark:text-gray-200">qualquer tribunal do país</strong> —
+            estaduais, federais e do trabalho. Se houver token configurado, JusBrasil e Escavador também são consultados.
           </p>
           <div className="grid grid-cols-2 gap-3">
             <Input
-              label="Número da OAB *"
+              label="Número da OAB (principal) *"
               value={oabNumber}
               onChange={e => setOabNumber(e.target.value.replace(/\D/g, ''))}
               placeholder="Ex: 123456"
             />
-            <Select
-              label="Seccional (UF) *"
-              value={oabSeccional}
-              onChange={e => {
-                const uf = e.target.value
-                setTribunais(prev => swapSeccionalTribunal(prev, oabSeccional, uf))
-                setOabSeccional(uf)
-              }}
-            >
+            <Select label="Seccional (UF) *" value={oabSeccional} onChange={e => setOabSeccional(e.target.value)}>
               <option value="">Selecione</option>
-              {ESTADOS_BR.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+              {UFS.map(uf => <option key={uf} value={uf}>{uf}</option>)}
             </Select>
           </div>
 
-          <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
-            <div className="flex gap-2 flex-wrap">
-              {[
-                { label: 'PJe (DJEN)', free: true },
-                { label: 'CNJ (DataJud)', free: true },
-                { label: 'JusBrasil', free: false },
-                { label: 'Escavador', free: false },
-              ].map(src => (
-                <span key={src.label} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-dark-700 border border-blue-200 dark:border-blue-700 text-xs font-medium text-blue-700 dark:text-blue-300 shadow-sm">
-                  <span className={cn('w-1.5 h-1.5 rounded-full', src.free ? 'bg-emerald-500' : 'bg-amber-400')} />
-                  {src.label}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-blue-600 dark:text-blue-400 flex-1">
-              Busca em paralelo nas quatro fontes (verde = gratuita, âmbar = paga/opcional)
-            </p>
-          </div>
-
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
-              Tribunais para busca no CNJ (DataJud)
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {oabSeccional && UF_TO_TJ[oabSeccional] && (
-                <button
-                  type="button"
-                  onClick={() => toggleTribunal(UF_TO_TJ[oabSeccional])}
-                  className={cn(
-                    'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                    tribunais.includes(UF_TO_TJ[oabSeccional])
-                      ? 'bg-primary-600 text-white border-primary-600'
-                      : 'bg-white dark:bg-dark-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-dark-600',
-                  )}
-                >
-                  TJ{oabSeccional}
-                </button>
-              )}
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                Inscrições suplementares (advoga em outros estados?)
+              </p>
               <button
                 type="button"
-                onClick={() => setShowMaisTribunais(v => !v)}
-                className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 dark:border-dark-600 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                onClick={() => setExtras(prev => [...prev, { numero: '', uf: '' }])}
+                disabled={extras.length >= 10}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-700 disabled:opacity-40"
               >
-                {showMaisTribunais ? 'Ocultar tribunais federais' : '+ Tribunais federais (TRF)'}
+                <Plus className="w-3.5 h-3.5" /> Adicionar inscrição
               </button>
             </div>
-            {showMaisTribunais && (
-              <div className="flex flex-wrap gap-1.5">
-                {TRFS_CNJ.map(trf => (
-                  <button
-                    key={trf.code}
-                    type="button"
-                    onClick={() => toggleTribunal(trf.code)}
-                    className={cn(
-                      'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
-                      tribunais.includes(trf.code)
-                        ? 'bg-primary-600 text-white border-primary-600'
-                        : 'bg-white dark:bg-dark-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-dark-600',
-                    )}
-                  >
-                    {trf.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            {tribunais.length === 0 && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                Nenhum tribunal selecionado — a busca no CNJ será pulada (JusBrasil e Escavador continuam ativos).
+            {extras.length === 0 && (
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                O DJEN busca pela inscrição (número + UF), não pelo tribunal. Processos em que você atua com outra
+                inscrição (ex.: OAB/PE suplementar) só aparecem se ela estiver cadastrada aqui.
               </p>
             )}
+            {extras.map((r, i) => (
+              <div key={i} className="grid grid-cols-[1fr_110px_auto] gap-2 items-end">
+                <Input
+                  label={i === 0 ? 'Número' : undefined}
+                  value={r.numero}
+                  onChange={e => updateExtra(i, { numero: e.target.value.replace(/\D/g, '') })}
+                  placeholder="Número da inscrição"
+                />
+                <Select label={i === 0 ? 'UF' : undefined} value={r.uf} onChange={e => updateExtra(i, { uf: e.target.value })}>
+                  <option value="">UF</option>
+                  {UFS.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => setExtras(prev => prev.filter((_, k) => k !== i))}
+                  className="h-10 px-2 text-gray-400 hover:text-red-500 transition-colors"
+                  title="Remover inscrição"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
 
-          <div className="flex items-start gap-2 p-3 bg-emerald-50 dark:bg-emerald-900/10 rounded-xl border border-emerald-100 dark:border-emerald-800">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-              PJe (DJEN) é consultado automaticamente pela sua OAB + seccional acima — sem precisar de login/senha, cobrindo tribunais estaduais e federais que publicam no Diário de Justiça Eletrônico Nacional.
+          <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800">
+            <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-blue-700 dark:text-blue-300">
+              Aparecem os processos com alguma intimação publicada no DJEN no último ano. Processo sem publicação no
+              período, em segredo de justiça ou intimado só por outro meio (pessoal, carta, sistema próprio do tribunal)
+              não aparece — cadastre-o manualmente. A sincronização automática roda todo dia às 2h.
             </p>
           </div>
+
+          {lastRun && (
+            <p className={cn('text-[11px]', lastRun.ok === false ? 'text-amber-600 dark:text-amber-400' : 'text-gray-400 dark:text-gray-500')}>
+              Última sincronização ({lastRun.trigger === 'cron' ? 'automática' : 'manual'}): {formatDate(lastRun.started_at, "dd/MM/yyyy 'às' HH:mm")}
+              {lastRun.finished_at
+                ? ` — ${lastRun.found} intimações, ${lastRun.imported} processo(s) novo(s), ${lastRun.updated} atualizado(s)${lastRun.ok === false ? ` · com erro: ${(lastRun.errors || [])[0] || ''}` : ''}`
+                : ' — em andamento'}
+            </p>
+          )}
 
           {error && <p className="text-sm text-red-500 dark:text-red-400">{error}</p>}
 
@@ -370,44 +261,44 @@ export function OabSyncModal({ onDone }: Props) {
             <Scale className="absolute inset-0 m-auto w-6 h-6 text-primary-600" />
           </div>
           <div className="text-center space-y-1">
-            <p className="font-semibold text-gray-900 dark:text-white">
-              Buscando no PJe, CNJ, JusBrasil e Escavador
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              OAB {oabNumber}/{oabSeccional}
-            </p>
+            <p className="font-semibold text-gray-900 dark:text-white">Buscando suas intimações no DJEN</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">OAB {inscricoesLabel}</p>
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 text-center max-w-xs">
-            Isso pode levar alguns segundos. Não feche esta janela.
+            O último ano inteiro, em todos os tribunais. Pode levar até um minuto — não feche esta janela.
           </p>
         </div>
       )}
 
       {/* ── Step 3: Resultado ── */}
-      {step === 'result' && result && (
+      {step === 'result' && result && pje && (
         <div className="space-y-4">
-          {result.jusbrasil?.first_sync_note && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
-              <p className="text-xs text-blue-700 dark:text-blue-300">
-                <span className="font-semibold">JusBrasil: </span>{result.jusbrasil.first_sync_note}
-              </p>
+          {pje.error ? (
+            <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+              <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-red-800 dark:text-red-300">Não foi possível consultar o DJEN</p>
+                <p className="text-sm text-red-700 dark:text-red-400 mt-0.5">{pje.error}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+              <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+              <div>
+                <p className="font-semibold text-emerald-800 dark:text-emerald-300">Sincronização concluída!</p>
+                <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">
+                  OAB {pje.oab || inscricoesLabel}{pje.periodo ? ` · ${formatDate(pje.periodo.inicio)} a ${formatDate(pje.periodo.fim)}` : ''}
+                </p>
+              </div>
             </div>
           )}
-
-          <div className="flex items-center gap-3 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
-            <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-            <div>
-              <p className="font-semibold text-emerald-800 dark:text-emerald-300">Sincronização concluída!</p>
-              <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-0.5">OAB {result.oab}</p>
-            </div>
-          </div>
 
           {/* Stats totais */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Processos encontrados', value: result.total, color: 'text-primary-600 dark:text-primary-400', bg: 'bg-primary-50 dark:bg-primary-900/20' },
-              { label: 'Novos importados', value: result.imported, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
-              { label: 'Atualizados', value: result.updated, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+              { label: 'Intimações encontradas', value: totals.total, color: 'text-primary-600 dark:text-primary-400', bg: 'bg-primary-50 dark:bg-primary-900/20' },
+              { label: 'Processos novos', value: totals.imported, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+              { label: 'Atualizados', value: totals.updated, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
             ].map(s => (
               <div key={s.label} className={cn('text-center p-3 rounded-xl', s.bg)}>
                 <p className={cn('text-2xl font-bold', s.color)}>{s.value}</p>
@@ -416,59 +307,82 @@ export function OabSyncModal({ onDone }: Props) {
             ))}
           </div>
 
-          {/* Breakdown por fonte */}
-          {(result.jusbrasil || result.escavador || result.cnj || result.pje) && (
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { label: 'PJe (DJEN)', data: result.pje },
-                { label: 'CNJ (DataJud)', data: result.cnj },
-                { label: 'JusBrasil', data: result.jusbrasil },
-                { label: 'Escavador', data: result.escavador },
-              ].map(({ label, data }) => (
-                <div key={label} className="p-3 rounded-xl border border-gray-100 dark:border-dark-700 bg-gray-50/50 dark:bg-dark-800/50">
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />
-                    <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{label}</span>
-                  </div>
-                  {data ? (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {data.total} encontrados · {data.imported} novos · {data.updated} atualizados
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 italic">
-                      {label === 'CNJ (DataJud)' ? 'Nenhum tribunal selecionado' : 'Token não configurado'}
-                    </p>
-                  )}
+          {/* Por inscrição e por fonte */}
+          <div className="grid grid-cols-2 gap-2">
+            {(pje.inscricoes || []).map(i => (
+              <div key={i.oab} className="p-3 rounded-xl border border-gray-100 dark:border-dark-700 bg-gray-50/50 dark:bg-dark-800/50">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className={cn('w-1.5 h-1.5 rounded-full', i.errors.length ? 'bg-amber-500' : 'bg-emerald-500')} />
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">DJEN · OAB {i.oab}</span>
                 </div>
-              ))}
-            </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {i.errors.length ? i.errors[0] : `${i.found} intimação(ões)${i.truncated ? ` de ${i.count}` : ''}`}
+                </p>
+              </div>
+            ))}
+            {paid.map(({ label, data }) => (
+              <div key={label} className="p-3 rounded-xl border border-gray-100 dark:border-dark-700 bg-gray-50/50 dark:bg-dark-800/50">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{label} (pago)</span>
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {!data || isTokenMissing(data) ? <span className="italic text-gray-400">Token não configurado</span>
+                    : data.error ? data.error
+                    : `${data.total} encontrados · ${data.imported} novos · ${data.updated} atualizados`}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          {result.jusbrasil?.first_sync_note && (
+            <p className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 rounded-xl p-3">
+              <span className="font-semibold">JusBrasil: </span>{result.jusbrasil.first_sync_note}
+            </p>
           )}
 
-          {result.errors.length > 0 && (
+          {pje.truncated && (
+            <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+              Há mais intimações do que coube nesta sincronização. Clique em "Sincronizar novamente" daqui a pouco para trazer o restante
+              (o que já foi gravado não se repete).
+            </p>
+          )}
+          {!!pje.skipped_plan_limit && (
+            <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
+              {pje.skipped_plan_limit} processo(s) não foram criados porque o escritório chegou ao limite de processos do plano.
+              As intimações de processos já cadastrados continuaram sendo atualizadas. Veja Configurações &gt; Plano.
+            </p>
+          )}
+
+          {pjeErrors.length > 0 && !pje.error && (
             <details className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
               <summary className="cursor-pointer text-xs font-semibold text-amber-700 dark:text-amber-400 select-none">
-                ⚠ {result.errors.length} aviso{result.errors.length !== 1 ? 's' : ''} (clique para ver)
+                ⚠ {pjeErrors.length} aviso{pjeErrors.length !== 1 ? 's' : ''} (clique para ver)
               </summary>
               <ul className="mt-2 space-y-0.5">
-                {result.errors.map((e, i) => (
+                {pjeErrors.map((e, i) => (
                   <li key={i} className="text-[11px] text-amber-700 dark:text-amber-500 font-mono">{e}</li>
                 ))}
               </ul>
             </details>
           )}
 
-          {result.total === 0 && !result.jusbrasil?.first_sync_note && (
+          {!pje.error && totals.total === 0 && (
             <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-4 space-y-2">
               <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-                Nenhum processo encontrado para OAB {result.oab}
+                Nenhuma intimação no DJEN no último ano para {pje.oab || inscricoesLabel}
               </p>
               <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc list-inside space-y-0.5">
-                <li>Verifique se o número e a seccional estão corretos</li>
-                <li>Confirme que os tokens de API estão configurados no Supabase</li>
-                <li>Processos muito antigos podem não estar indexados — cadastre manualmente</li>
+                <li>Confira o número e a UF de cada inscrição (o DJEN busca pela UF da inscrição, não do tribunal)</li>
+                <li>Se advoga em outro estado com outra inscrição, adicione-a em "Inscrições suplementares"</li>
+                <li>Processos sem publicação recente ou em segredo de justiça precisam ser cadastrados manualmente</li>
               </ul>
             </div>
           )}
+
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+            Em segundo plano, o DataJud (CNJ) completa classe, vara e andamentos dos processos pelo número.
+          </p>
 
           <div className="flex items-center justify-between pt-1 border-t border-gray-100 dark:border-dark-700">
             <button
@@ -478,7 +392,7 @@ export function OabSyncModal({ onDone }: Props) {
               <RotateCcw className="w-3.5 h-3.5" /> Sincronizar novamente
             </button>
             <div className="flex gap-2">
-              {result.total > 0 && (
+              {totals.total > 0 && (
                 <Button variant="ghost" size="sm" onClick={() => { onDone(); navigate('/publicacoes') }}>
                   Ver intimações
                 </Button>
