@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Clock, ExternalLink } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Clock, ExternalLink, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui'
 import { cn, formatDate } from '@/lib/utils'
 
@@ -42,16 +42,31 @@ export function isSafeHttpUrl(value: string): boolean {
   }
 }
 
+export interface IntimacaoTarefaResumo {
+  id: string
+  due_date: string | null
+  deadline_date: string | null
+  assigned_to: string | null
+  assigned_name: string | null
+  status: string
+}
+
 interface Props {
   item: IntimacaoReadingData | null
+  /** Tarefa de prazo gravada para esta intimação (tasks.intimacao_ref). */
+  tarefa?: IntimacaoTarefaResumo | null
+  /** Prazo criado antes do vínculo no banco (só no localStorage deste navegador). */
   prazoCriadoEm: string | null
+  team?: { user_id: string; name: string }[]
+  canChangeResponsavel?: boolean
+  onChangeResponsavel?: (userId: string | null) => void
   onBack: () => void
   onMarkStatus: (situacao: 'Lida' | 'Cumprida') => void
   onCriarPrazo: () => void
   onVerTarefa: () => void
 }
 
-export function IntimacaoReadingPanel({ item, prazoCriadoEm, onBack, onMarkStatus, onCriarPrazo, onVerTarefa }: Props) {
+export function IntimacaoReadingPanel({ item, tarefa, prazoCriadoEm, team = [], canChangeResponsavel = false, onChangeResponsavel, onBack, onMarkStatus, onCriarPrazo, onVerTarefa }: Props) {
   if (!item) {
     return (
       <div className="h-full min-h-[320px] flex flex-col items-center justify-center text-center px-8 py-16 text-gray-400 dark:text-gray-500">
@@ -124,7 +139,39 @@ export function IntimacaoReadingPanel({ item, prazoCriadoEm, onBack, onMarkStatu
       </div>
 
       <div className="px-5 py-3 border-t border-gray-100 dark:border-dark-700 space-y-2.5">
-        {prazoCriadoEm ? (
+        {tarefa ? (
+          <div className="rounded-xl bg-primary-50 dark:bg-primary-900/20 p-3 space-y-2">
+            <button
+              type="button"
+              onClick={onVerTarefa}
+              className="w-full flex items-center justify-center gap-2 text-primary-700 dark:text-primary-400 text-sm font-semibold hover:underline"
+            >
+              <Clock className="w-4 h-4" />
+              {tarefa.deadline_date ? `Prazo fatal ${formatDate(tarefa.deadline_date)}` : `Prazo ${formatDate(tarefa.due_date)}`}
+              {tarefa.deadline_date && tarefa.due_date && tarefa.due_date !== tarefa.deadline_date ? ` · interno ${formatDate(tarefa.due_date)}` : ''}
+              {tarefa.status === 'done' ? ' · concluída' : ''} — ver em Atividades
+            </button>
+            <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+              <UserRound className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="flex-shrink-0">Responsável:</span>
+              {canChangeResponsavel && onChangeResponsavel ? (
+                <select
+                  value={tarefa.assigned_to || ''}
+                  onChange={e => onChangeResponsavel(e.target.value || null)}
+                  className="flex-1 min-w-0 rounded-lg border border-gray-200 dark:border-dark-600 bg-white dark:bg-dark-700 px-2 py-1 text-xs"
+                >
+                  <option value="">Sem responsável</option>
+                  {tarefa.assigned_to && !team.some(t => t.user_id === tarefa.assigned_to) && (
+                    <option value={tarefa.assigned_to}>{tarefa.assigned_name || 'Responsável atual'}</option>
+                  )}
+                  {team.map(t => <option key={t.user_id} value={t.user_id}>{t.name}</option>)}
+                </select>
+              ) : (
+                <span className="font-medium">{tarefa.assigned_name || 'Sem responsável'}</span>
+              )}
+            </label>
+          </div>
+        ) : prazoCriadoEm ? (
           <button
             type="button"
             onClick={onVerTarefa}

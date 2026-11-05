@@ -1,312 +1,64 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
+import { enrichFromDatajud } from "../_shared/oabSync/datajud.ts"
 
-const CNJ_BASE = "https://api-publica.datajud.cnj.jus.br"
-const CNJ_API_KEY = "cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw=="
+// CNJ / DataJud — complemento dos processos do escritório pelo NÚMERO.
+//
+// Antes esta função tentava achar processos pela OAB no DataJud. Isso nunca
+// funcionou: o índice público não tem o campo `partes` (verificado em
+// 05/11/2026: "failed to find nested object under path [partes]"; a consulta
+// plana devolve 0 após 20–55 s). Com até ~20 tentativas por tribunal, a função
+// estourava o limite de ~150 s (HTTP 546) e derrubava junto o cron das 5h.
+//
+// Agora: pega processos do escritório ainda não conferidos (ou conferidos há
+// mais de 7 dias), consulta o DataJud pelo número e só PREENCHE o que estiver
+// vazio (classe, órgão julgador, data de ajuizamento) e SOMA os andamentos —
+// nunca apaga as intimações do DJEN nem sobrescreve o que o advogado digitou.
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-region",
   "Content-Type": "application/json",
 }
 
-// Rate limit simples por usuário chamador: no máximo RATE_LIMIT chamadas numa
-// janela de RATE_WINDOW_SECONDS, contra a tabela edge_function_rate_limits (só
-// acessível via service role). A CNJ_API_KEY é compartilhada por todo o
-// projeto, então chamadas repetidas de uma conta comprometida podem estourar
-// a cota/gerar custo indevido contra a API pública do CNJ para todos os tenants.
 const RATE_LIMIT = 10
 const RATE_WINDOW_SECONDS = 60 * 60
+const TIME_BUDGET_MS = 100_000
 
-// Count + insert atômicos via RPC (função Postgres com pg_advisory_xact_lock
-// por rate_key) — um SELECT count() + INSERT separados aqui deixaria N
-// chamadas concorrentes lerem o mesmo count() antes de qualquer INSERT
-// comitar, passando todas juntas acima do limite (TOCTOU). Ver migration
-// 20260903120000_fix_edge_function_rate_limit_race.sql.
-async function checkRateLimit(supabaseAdmin: ReturnType<typeof createClient>, key: string): Promise<boolean> {
-  const { data, error } = await supabaseAdmin.rpc('check_rate_limit', {
-    p_key: key,
-    p_limit: RATE_LIMIT,
-    p_window_seconds: RATE_WINDOW_SECONDS,
-  })
-  if (error) {
-    console.error('check_rate_limit RPC error:', error)
-    throw new Error('Erro ao verificar limite de uso')
-  }
-  return data === true
-}
-
-function oabVariants(num: string): string[] {
-  const digits = num.replace(/\D/g, '')
-  const n = parseInt(digits, 10)
-  const s = new Set<string>([
-    digits,
-    digits.padStart(5, '0'),
-    digits.padStart(6, '0'),
-    digits.padStart(7, '0'),
-    String(n),
-  ])
-  return Array.from(s)
-}
-
-function buildQueries(num: string, oabState: string, skipNested: boolean) {
-  const nestedQuery = {
-    size: 100,
-    query: {
-      nested: {
-        path: "partes",
-        query: {
-          nested: {
-            path: "partes.advogados",
-            query: {
-              bool: {
-                must: [
-                  { match: { "partes.advogados.OabNumero": num } },
-                  { match: { "partes.advogados.OabEstado": oabState } },
-                ],
-              },
-            },
-          },
-        },
-      },
-    },
-  }
-
-  const boolNestedQuery = {
-    size: 100,
-    query: {
-      bool: {
-        must: [
-          {
-            nested: {
-              path: "partes",
-              query: {
-                nested: {
-                  path: "partes.advogados",
-                  query: {
-                    bool: {
-                      must: [
-                        { match: { "partes.advogados.OabNumero": num } },
-                        { match: { "partes.advogados.OabEstado": oabState } },
-                      ],
-                    },
-                  },
-                },
-              },
-            },
-          },
-        ],
-      },
-    },
-  }
-
-  const flatQuery = {
-    size: 100,
-    query: {
-      bool: {
-        must: [
-          { match: { "partes.advogados.OabNumero": num } },
-          { match: { "partes.advogados.OabEstado": oabState } },
-        ],
-      },
-    },
-  }
-
-  const all = [
-    { name: `nested(${num})`,     body: nestedQuery,     requireNested: true },
-    { name: `boolNested(${num})`, body: boolNestedQuery,  requireNested: true },
-    { name: `flat(${num})`,       body: flatQuery,        requireNested: false },
-    {
-      name: `qs(${num})`,
-      body: {
-        size: 100,
-        query: {
-          query_string: {
-            query: 'partes.advogados.OabNumero:"' + num + '" AND partes.advogados.OabEstado:"' + oabState + '"',
-          },
-        },
-      },
-      requireNested: false,
-    },
-  ]
-
-  return all.filter(q => !skipNested || !q.requireNested)
-}
-
-function buildNoStateQueries(num: string) {
-  return [
-    {
-      name: `flatNoState(${num})`,
-      body: { size: 100, query: { bool: { must: [{ match: { "partes.advogados.OabNumero": num } }] } } },
-    },
-    {
-      name: `qsNoState(${num})`,
-      body: { size: 100, query: { query_string: { query: 'partes.advogados.OabNumero:"' + num + '"' } } },
-    },
-  ]
-}
-
-async function searchDatajud(trib: string, oabNum: string, oabState: string): Promise<{ hits: any[]; debug: string }> {
-  const url = `${CNJ_BASE}/api_publica_${trib.toLowerCase()}/_search`
-  const variants = oabVariants(oabNum)
-  let skipNested = false
-  const debugParts: string[] = []
-
-  for (const v of variants) {
-    const strategies = buildQueries(v, oabState, skipNested)
-    for (const { name, body } of strategies) {
-      try {
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Authorization': `APIKey ${CNJ_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(20_000),
-        })
-        if (!r.ok) {
-          const errBody = await r.text().catch(() => '')
-          if (errBody.includes('failed to find nested object')) skipNested = true
-          debugParts.push(`${name}:HTTP${r.status}`)
-          continue
-        }
-        const d = await r.json()
-        const hits: any[] = d?.hits?.hits ?? []
-        debugParts.push(`${name}:${hits.length}hits`)
-        if (hits.length > 0) {
-          return { hits: hits.map((h: any) => h._source), debug: debugParts.join(' | ') + ' [encontrado]' }
-        }
-      } catch {
-        debugParts.push(`${name}:timeout`)
-      }
-    }
-  }
-
-  for (const v of variants) {
-    for (const { name, body } of buildNoStateQueries(v)) {
-      try {
-        const r = await fetch(url, {
-          method: 'POST',
-          headers: { 'Authorization': `APIKey ${CNJ_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(20_000),
-        })
-        if (!r.ok) { debugParts.push(`${name}:HTTP${r.status}`); continue }
-        const d = await r.json()
-        const hits: any[] = d?.hits?.hits ?? []
-        debugParts.push(`${name}:${hits.length}hits`)
-        if (hits.length > 0) {
-          return { hits: hits.map((h: any) => h._source), debug: debugParts.join(' | ') + ' [AVISO:OabEstado-mismatch]' }
-        }
-      } catch {
-        debugParts.push(`${name}:timeout`)
-      }
-    }
-  }
-
-  const indexType = skipNested ? 'indice-plano' : 'indice-nested'
-  return { hits: [], debug: debugParts.join(' | ') + ` [0-resultados:${indexType}]` }
-}
+const reply = (data: object, status = 200) => new Response(JSON.stringify(data), { status, headers: CORS })
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS })
-
+  const startedAt = Date.now()
   try {
     const auth = req.headers.get('Authorization')
-    if (!auth) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS })
+    if (!auth) return reply({ error: 'Unauthorized' }, 401)
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-
     const { data: { user }, error: authErr } = await supabase.auth.getUser(auth.replace('Bearer ', ''))
-    if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS })
+    if (authErr || !user) return reply({ error: 'Unauthorized' }, 401)
 
-    const { data: profile } = await supabase
-      .from('profiles').select('tenant_id, oab_number, oab_seccional')
-      .eq('user_id', user.id).single()
-    if (!profile?.tenant_id) return new Response(JSON.stringify({ error: 'Profile not found' }), { status: 404, headers: CORS })
+    const { data: profile } = await supabase.from('profiles').select('tenant_id, role').eq('user_id', user.id).single()
+    if (!profile?.tenant_id || profile.role === 'client') return reply({ error: 'Perfil não encontrado' }, 404)
 
-    const withinLimit = await checkRateLimit(supabase, `sync-cnj:${user.id}`)
-    if (!withinLimit) {
-      return new Response(JSON.stringify({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.' }), { status: 429, headers: CORS })
-    }
+    const { data: allowed, error: rlErr } = await supabase.rpc('check_rate_limit', {
+      p_key: `sync-cnj:${user.id}`, p_limit: RATE_LIMIT, p_window_seconds: RATE_WINDOW_SECONDS,
+    })
+    if (rlErr) return reply({ error: 'Erro ao verificar limite de uso' }, 500)
+    if (allowed !== true) return reply({ error: 'Muitas sincronizações em pouco tempo. Aguarde e tente novamente.' }, 429)
 
-    const body = await req.json()
-    const oabNum   = (body.oab_number    || profile.oab_number    || '').trim().replace(/\D/g, '')
-    const oabState = (body.oab_seccional || profile.oab_seccional || '').trim().toUpperCase()
-    const tribunais: string[] = body.tribunais || []
-
-    if (!oabNum || !oabState) {
-      return new Response(JSON.stringify({ error: 'OAB nao configurada.' }), { status: 400, headers: CORS })
-    }
-    if (tribunais.length === 0) {
-      return new Response(JSON.stringify({ error: 'Selecione ao menos um tribunal.' }), { status: 400, headers: CORS })
-    }
-
-    const allProcs: Array<{ source: any }> = []
-    const errors: string[] = []
-    const debug_per_tribunal: Record<string, string> = {}
-    const now = new Date().toISOString()
-
-    await Promise.all(tribunais.map(async trib => {
-      const { hits, debug } = await searchDatajud(trib, oabNum, oabState)
-      debug_per_tribunal[trib] = debug
-      for (const src of hits) allProcs.push({ source: src })
-    }))
-
-    let imported = 0, updated = 0
-    const insert_errors: string[] = []
-
-    for (const { source: proc } of allProcs) {
-      const num = proc.numeroProcesso
-      if (!num) continue
-
-      const parteAtiva = Array.isArray(proc.partes)
-        ? proc.partes.find((p: any) => p.polo === 'ATIVO' || p.polo === 'A')
-        : null
-      const movimentos = Array.isArray(proc.movimentos) ? proc.movimentos : []
-
-      const { data: ex } = await supabase.from('processes').select('id')
-        .eq('number', num).eq('tenant_id', profile.tenant_id)
-        .is('deleted_at', null).maybeSingle()
-
-      if (ex) {
-        const { error: upErr } = await supabase.from('processes').update({
-          cnj_synced_at: now,
-          movimentos: movimentos.length ? movimentos : null,
-        }).eq('id', ex.id)
-        if (upErr) insert_errors.push(`update ${num}: ${upErr.message}`)
-        else updated++
-      } else {
-        const { error: insErr } = await supabase.from('processes').insert({
-          tenant_id: profile.tenant_id,
-          number: num,
-          title: proc.assuntos?.[0]?.nome || proc.classe?.nome || 'Processo CNJ',
-          client_name: parteAtiva?.nome || null,
-          court: proc.orgaoJulgador?.nome || null,
-          area: proc.classe?.nome || null,
-          status: 'active',
-          priority: 'medium',
-          data_protocolo: proc.dataAjuizamento?.slice(0, 10) || null,
-          cnj_source: true,
-          cnj_synced_at: now,
-          movimentos: movimentos.length ? movimentos : null,
-        })
-        if (insErr) insert_errors.push(`insert ${num}: ${insErr.message}`)
-        else imported++
-      }
-    }
-
-    return new Response(
-      JSON.stringify({
-        total: allProcs.length,
-        imported,
-        updated,
-        errors: [...errors, ...insert_errors],
-        oab: `${oabNum}/${oabState}`,
-        tribunais_pesquisados: tribunais.length,
-        debug_per_tribunal,
-      }),
-      { headers: CORS },
-    )
+    const r = await enrichFromDatajud(supabase, profile.tenant_id, startedAt + TIME_BUDGET_MS, { limit: 16, concurrency: 4 })
+    console.log(JSON.stringify({ fn: 'sync-cnj', tenant: profile.tenant_id, checked: r.checked, enriched: r.enriched, errors: r.errors.length, ms: Date.now() - startedAt }))
+    return reply({
+      total: r.checked,
+      imported: 0,
+      updated: r.enriched,
+      pending: r.pending,
+      errors: r.errors.slice(0, 10),
+      note: 'O DataJud não permite buscar pela OAB; ele completa classe, órgão e andamentos dos processos já encontrados, pelo número.',
+    })
   } catch (e: any) {
-    return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: CORS })
+    console.error('sync-cnj:', e?.message)
+    return reply({ error: e?.message || 'Erro inesperado' }, 500)
   }
 })

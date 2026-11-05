@@ -2,6 +2,8 @@ import { useState, FormEvent } from 'react'
 import { Search, Star, ChevronRight, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
+import { syncPje } from '@/lib/oabSyncClient'
+import { toast } from '@/components/ui/Toast'
 
 const TESTIMONIALS = [
   {
@@ -98,6 +100,14 @@ export function OnboardingModal({ onComplete }: { onComplete: () => void }) {
     }
     await refreshProfile()
     onComplete()
+    // Primeira sincronização logo após cadastrar a OAB. Antes ela só acontecia
+    // se o advogado abrisse "Sincronizar via OAB" por conta própria — quem não
+    // abria dependia do cron das 5h, que falhava todo dia — e ficava sem processos.
+    toast('Buscando seus processos no DJEN (todos os tribunais)… isso leva até um minuto.', 'info')
+    syncPje('onboarding').then(r => {
+      if (r.error) toast(`Não foi possível buscar seus processos agora: ${r.error}. Tente em Processos > Sincronizar via OAB.`, 'error')
+      else toast(r.imported > 0 ? `${r.imported} processo(s) importado(s) pela sua OAB.` : 'Nenhuma intimação no DJEN no último ano para a sua OAB — cadastre seus processos ou adicione inscrições suplementares em Processos > Sincronizar via OAB.', r.imported > 0 ? 'success' : 'info')
+    })
   }
 
   async function handleSkip() {

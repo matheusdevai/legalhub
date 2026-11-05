@@ -10,8 +10,18 @@ import { supabase } from '@/lib/supabase'
 import { cn, formatDate } from '@/lib/utils'
 import { openExportWindow } from '@/lib/exportUtils'
 import { OabSyncModal } from '@/components/cnj/OabSyncModal'
-import { computePrazo } from '@/lib/prazoUtils'
 import { toast } from '@/components/ui/Toast'
+import { useAuth } from '@/contexts/AuthContext'
+import { fetchCourtCalendar, fetchDeadlineSettings } from '@/lib/deadlines/api'
+import { calendarForProcess, type CourtCalendarRow } from '@/lib/deadlines/courtCalendar'
+import { courtLabel } from '@/lib/deadlines/courts'
+import type { Regime, Unit } from '@/lib/deadlines/engine'
+import { notifyTaskAssignment } from '@/lib/taskActions'
+import { formatCnj } from '@/lib/oabSync'
+import {
+  calcIntimacaoPrazo, canAssignTaskTo, countyFromOrgan, courtOfIntimacao, intimacaoDate,
+  intimacaoRef, intimacaoTaskDescription, suggestRegime,
+} from '@/lib/intimacaoPrazo'
 import { IntimacaoListItem } from './IntimacaoListItem'
 import { IntimacaoReadingPanel } from './IntimacaoReadingPanel'
 
@@ -26,10 +36,44 @@ interface CnjMovimento {
   orgao?: string
   link?: string
   fonte?: string
+  idComunicacao?: string | number | null
+  hash?: string | null
+  tribunal?: string | null
+  classe?: string | null
+  cancelada?: boolean
 }
+
+/** Tarefa de prazo ligada a uma intimação (tasks.intimacao_ref). */
+export interface IntimacaoTask {
+  id: string
+  intimacao_ref: string
+  due_date: string | null
+  deadline_date: string | null
+  assigned_to: string | null
+  assigned_name: string | null
+  status: string
+}
+
+interface TeamOption { user_id: string; name: string; role: string }
+
+const REGIMES: { value: Regime; label: string }[] = [
+  { value: 'civel', label: 'Cível (CPC) — dias úteis' },
+  { value: 'juizado', label: 'Juizado Especial — dias úteis' },
+  { value: 'trabalhista', label: 'Trabalhista (CLT) — dias úteis' },
+  { value: 'penal', label: 'Penal (CPP) — dias corridos, em validação' },
+  { value: 'administrativo', label: 'Administrativo — dias corridos' },
+  { value: 'fixado_juiz', label: 'Fixado pelo juiz' },
+]
+const DEFAULT_UNIT: Record<Regime, Unit> = { civel: 'dias_uteis', juizado: 'dias_uteis', trabalhista: 'dias_uteis', administrativo: 'dias_corridos', fixado_juiz: 'dias_uteis', penal: 'dias_corridos' }
+const DEFAULT_RECESS: Record<Regime, boolean> = { civel: true, juizado: false, trabalhista: true, administrativo: false, fixado_juiz: true, penal: true }
 
 interface Intimacao {
   id: string
+  /** Chave estável gravada em tasks.intimacao_ref. */
+  ref: string
+  /** Sigla do tribunal (court_calendar.court): 'tjpb', 'trt13'… */
+  courtCode: string | null
+  classe: string | null
   process_id: string
   client_id: string | null
   numero_processo: string
@@ -70,6 +114,9 @@ function savePrazoCriado(id: string, dueDate: string) {
 }
 
 function isIntimacao(movimento: CnjMovimento): boolean {
+  // Tudo que vem do DJEN é comunicação processual (intimação, citação, edital);
+  // dos andamentos do DataJud, só os que são intimação/citação.
+  if (movimento.fonte === 'pje') return !movimento.cancelada
   const nome = (movimento.nome || '').toLowerCase()
   return nome.includes('intima') || nome.includes('citação') || nome.includes('citacao')
 }
@@ -96,8 +143,19 @@ export function PublicacoesPage() {
   const [prazoMap, setPrazoMap] = useState<Record<string, string>>(getPrazoMap)
   const [prazoItem, setPrazoItem] = useState<Intimacao | null>(null)
   const [prazoDias, setPrazoDias] = useState(15)
-  const [prazoUnidade, setPrazoUnidade] = useState<'uteis' | 'corridos'>('uteis')
+  const [prazoUnidade, setPrazoUnidade] = useState<Unit>('dias_uteis')
+  const [prazoRegime, setPrazoRegime] = useState<Regime>('civel')
+  const [regimeReason, setRegimeReason] = useState('')
+  const [prazoDobro, setPrazoDobro] = useState(false)
+  const [prazoDobroMotivo, setPrazoDobroMotivo] = useState('')
+  const [prazoRecesso, setPrazoRecesso] = useState(true)
+  const [prazoResponsavel, setPrazoResponsavel] = useState('')
   const [prazoSaving, setPrazoSaving] = useState(false)
+  const [tasksByRef, setTasksByRef] = useState<Record<string, IntimacaoTask>>({})
+  const [team, setTeam] = useState<TeamOption[]>([])
+  const [calendarRows, setCalendarRows] = useState<CourtCalendarRow[]>([])
+  const [marginDays, setMarginDays] = useState(2)
+  const { profile } = useAuth()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const navigate = useNavigate()
 
@@ -107,42 +165,69 @@ export function PublicacoesPage() {
       .from('processes')
       .select('id, number, title, client_id, client_name, court, area, assigned_lawyer, movimentos, cnj_synced_at')
       .is('deleted_at', null)
-      .eq('cnj_source', true)
+      // Sem filtrar por cnj_source: as intimações também chegam aos processos
+      // cadastrados à mão (a sincronização acha o processo pelo número).
       .not('movimentos', 'is', null)
-      .order('cnj_synced_at', { ascending: false })
+      .order('cnj_synced_at', { ascending: false, nullsFirst: false })
+
+    const [{ data: taskRows }, { data: teamRows }, cal, settings] = await Promise.all([
+      supabase.from('tasks').select('id, intimacao_ref, due_date, deadline_date, assigned_to, assigned_name, status')
+        .not('intimacao_ref', 'is', null).is('deleted_at', null),
+      supabase.from('profiles').select('user_id, name, display_name, role').neq('role', 'client').order('name'),
+      fetchCourtCalendar(),
+      profile?.tenant_id ? fetchDeadlineSettings(profile.tenant_id) : Promise.resolve(null),
+    ])
+    const byRef: Record<string, IntimacaoTask> = {}
+    for (const t of (taskRows || []) as IntimacaoTask[]) byRef[t.intimacao_ref] = t
+    setTasksByRef(byRef)
+    setTeam((teamRows || []).map(t => ({ user_id: t.user_id, name: t.display_name || t.name || '—', role: t.role })))
+    setCalendarRows(cal)
+    if (settings) setMarginDays(settings.internal_margin_days)
 
     if (!error && data) {
       setHasCnjData(data.length > 0)
       const map = getStatusMap()
       const intimacoes: Intimacao[] = []
+      let migratedStatus = false
 
       for (const proc of data) {
         const movimentos: CnjMovimento[] = Array.isArray(proc.movimentos) ? proc.movimentos : []
         const relevant = movimentos.filter(isIntimacao)
 
         relevant.forEach((mov, idx) => {
-          const intimId = `${proc.id}_mov_${idx}`
+          const ref = intimacaoRef(proc.id, mov, idx)
+          const intimId = `${proc.id}|${ref}`
+          // Situação lida/cumprida gravada no formato antigo (por posição) passa para a chave estável.
+          const legacyId = `${proc.id}_mov_${idx}`
+          if (!map[intimId] && map[legacyId]) { map[intimId] = map[legacyId]; migratedStatus = true }
           const teorCompleto = (mov.teor || '').trim()
+          const courtCode = courtOfIntimacao(mov.tribunal, proc.number)
+          const task = byRef[ref]
           intimacoes.push({
             id: intimId,
+            ref,
+            courtCode,
+            classe: mov.classe || null,
             process_id: proc.id,
             client_id: proc.client_id || null,
-            numero_processo: proc.number || '—',
+            numero_processo: formatCnj(proc.number) || '—',
             partes: proc.client_name || proc.title || '—',
-            tribunal: proc.court || '—',
+            tribunal: courtCode ? courtLabel(courtCode) : (proc.court || '—'),
             orgao: mov.orgao || proc.court || '—',
-            publicacao: mov.dataHora ? mov.dataHora.slice(0, 10) : (proc.cnj_synced_at?.slice(0, 10) || ''),
+            publicacao: intimacaoDate(mov.dataHora) || (proc.cnj_synced_at ? intimacaoDate(proc.cnj_synced_at) || '' : ''),
             conteudo: mov.nome || 'Intimação',
             teor: teorCompleto || mov.nome || 'Intimação',
             temTeorCompleto: teorCompleto.length > 0,
             link: mov.link || null,
             fonte: mov.fonte || null,
             complementos: Array.isArray(mov.complementosTabelados) ? mov.complementosTabelados : [],
-            responsavel: proc.assigned_lawyer || '',
+            // Responsável da tarefa de prazo, quando existe; senão o advogado do processo.
+            responsavel: task?.assigned_name || proc.assigned_lawyer || '',
             situacao: map[intimId] || 'Pendente',
           })
         })
       }
+      if (migratedStatus) { try { localStorage.setItem(STATUS_KEY, JSON.stringify(map)); setStatusMap({ ...map }) } catch { /* sem storage */ } }
 
       // Ordena por data de publicação (mais recentes primeiro)
       intimacoes.sort((a, b) => b.publicacao.localeCompare(a.publicacao))
@@ -222,35 +307,108 @@ export function PublicacoesPage() {
     setStatusMap(m => ({ ...m, [id]: s }))
   }
 
+  const isManager = ['admin', 'lawyer', 'super_admin'].includes(profile?.role || '')
+  const assignableTeam = useMemo(
+    () => team.filter(t => canAssignTaskTo(profile?.role, profile?.user_id, t.user_id)),
+    [team, profile?.role, profile?.user_id],
+  )
+
   function openPrazoModal(item: Intimacao) {
+    const sg = suggestRegime({ court: item.courtCode, organ: item.orgao, classe: item.classe })
     setPrazoItem(item)
     setPrazoDias(15)
-    setPrazoUnidade('uteis')
+    setPrazoRegime(sg.regime)
+    setRegimeReason(sg.reason)
+    setPrazoUnidade(DEFAULT_UNIT[sg.regime])
+    setPrazoRecesso(DEFAULT_RECESS[sg.regime])
+    setPrazoDobro(false)
+    setPrazoDobroMotivo('')
+    // Padrão: quem está criando (estagiário/financeiro só podem atribuir a si mesmos).
+    setPrazoResponsavel(profile?.user_id || '')
   }
 
-  const prazoPreview = prazoItem
-    ? computePrazo(new Date(`${prazoItem.publicacao || new Date().toISOString().slice(0, 10)}T12:00:00`), prazoDias, prazoUnidade)
-    : null
+  function changePrazoRegime(r: Regime) {
+    setPrazoRegime(r); setPrazoUnidade(DEFAULT_UNIT[r]); setPrazoRecesso(DEFAULT_RECESS[r]); setRegimeReason('')
+  }
+
+  const prazoCalendar = useMemo(
+    () => prazoItem ? calendarForProcess(calendarRows, { court: prazoItem.courtCode, county: countyFromOrgan(prazoItem.orgao) }) : [],
+    [prazoItem, calendarRows],
+  )
+
+  const prazoCalc = useMemo(() => {
+    if (!prazoItem) return null
+    if (!prazoItem.publicacao) return { result: null, error: 'Intimação sem data de disponibilização — cadastre o prazo em Prazos/Atividades informando a data.' }
+    return calcIntimacaoPrazo({
+      disponibilizacao: prazoItem.publicacao, regime: prazoRegime, amount: prazoDias, unit: prazoUnidade,
+      doubled: prazoDobro, applyRecess: prazoRecesso, internalMarginDays: marginDays, calendar: prazoCalendar,
+    })
+  }, [prazoItem, prazoRegime, prazoDias, prazoUnidade, prazoDobro, prazoRecesso, marginDays, prazoCalendar])
 
   async function criarTarefaPrazo() {
-    if (!prazoItem || !prazoPreview) return
+    const result = prazoCalc?.result
+    if (!prazoItem || !result) return
+    if (prazoDobro && !prazoDobroMotivo.trim()) { toast('Informe o motivo do prazo em dobro (ex.: Fazenda Pública, CPC art. 183).', 'error'); return }
+    if (prazoResponsavel && !canAssignTaskTo(profile?.role, profile?.user_id, prazoResponsavel)) {
+      toast('Seu perfil só pode atribuir tarefas a você mesmo.', 'error'); return
+    }
     setPrazoSaving(true)
-    const dueDateStr = prazoPreview.toISOString().slice(0, 10)
-    const { error } = await supabase.from('tasks').insert({
-      title: `Prazo: ${prazoItem.conteudo || 'Intimação'} — ${prazoItem.numero_processo}`,
-      description: `Gerado a partir da intimação de ${prazoItem.tribunal} publicada em ${formatDate(prazoItem.publicacao)}. Prazo calculado: ${prazoDias} dias ${prazoUnidade === 'uteis' ? 'úteis' : 'corridos'} (não considera feriados — confirme antes de protocolar).`,
+    const resp = team.find(t => t.user_id === prazoResponsavel) || null
+    const title = `Prazo: ${prazoItem.conteudo || 'Intimação'} — ${prazoItem.numero_processo}`
+    const { data, error } = await supabase.from('tasks').insert({
+      title,
+      description: intimacaoTaskDescription({
+        tribunal: prazoItem.tribunal, result, regimeLabel: REGIMES.find(r => r.value === prazoRegime)?.label || prazoRegime,
+        amount: prazoDias, unit: prazoUnidade, doubled: prazoDobro, doubledReason: prazoDobroMotivo.trim(),
+      }),
       process_id: prazoItem.process_id || null,
       client_id: prazoItem.client_id || null,
-      due_date: dueDateStr,
+      // Mesma convenção das tarefas do Controle de Prazos: a tarefa vence no
+      // prazo INTERNO (margem para revisar e protocolar) e guarda o FATAL.
+      due_date: result.internalDate,
+      deadline_date: result.fatalDate,
       priority: 'high',
       status: 'pending',
       type: 'deadline',
-    })
+      // Vazio = distribuição automática (trigger trg_auto_assign_task).
+      assigned_to: resp?.user_id || null,
+      assigned_name: resp?.name || null,
+      created_by: profile?.user_id || null,
+      intimacao_ref: prazoItem.ref,
+    }).select('id, intimacao_ref, due_date, deadline_date, assigned_to, assigned_name, status').single()
     setPrazoSaving(false)
-    if (error) { toast(`Erro ao criar tarefa de prazo: ${error.message}`, 'error'); return }
-    savePrazoCriado(prazoItem.id, dueDateStr)
-    setPrazoMap(m => ({ ...m, [prazoItem.id]: dueDateStr }))
+    if (error) {
+      toast(/tasks_intimacao_ref_uniq/.test(error.message) ? 'Já existe uma tarefa de prazo para esta intimação.' : `Erro ao criar tarefa de prazo: ${error.message}`, 'error')
+      if (/tasks_intimacao_ref_uniq/.test(error.message)) load()
+      return
+    }
+    const task = data as IntimacaoTask
+    setTasksByRef(m => ({ ...m, [task.intimacao_ref]: task }))
+    if (task.assigned_to && task.assigned_to !== profile?.user_id) notifyTaskAssignment(task.assigned_to, title).catch(() => {})
+    savePrazoCriado(prazoItem.id, result.fatalDate)
+    setPrazoMap(m => ({ ...m, [prazoItem.id]: result.fatalDate }))
+    setItems(list => list.map(i => i.ref === task.intimacao_ref ? { ...i, responsavel: task.assigned_name || i.responsavel } : i))
+    toast(`Tarefa criada: fatal ${formatDate(result.fatalDate)}${task.assigned_name ? ` · responsável ${task.assigned_name}` : ' · distribuição automática'}.`, 'success')
     setPrazoItem(null)
+    if (!task.assigned_to) load() // pega o responsável escolhido pela distribuição automática
+  }
+
+  /** Atribui, troca ou remove (null) o responsável da tarefa de prazo de uma intimação. */
+  async function changeResponsavel(item: Intimacao, userId: string | null) {
+    const task = tasksByRef[item.ref]
+    if (!task) return
+    if (userId && !canAssignTaskTo(profile?.role, profile?.user_id, userId)) { toast('Seu perfil só pode atribuir tarefas a você mesmo.', 'error'); return }
+    if (!isManager && task.assigned_to && task.assigned_to !== profile?.user_id) { toast('Só advogados e administradores alteram o responsável de tarefas de outras pessoas.', 'error'); return }
+    const resp = userId ? team.find(t => t.user_id === userId) || null : null
+    const { error } = await supabase.from('tasks')
+      .update({ assigned_to: resp?.user_id || null, assigned_name: resp?.name || null })
+      .eq('id', task.id)
+    if (error) { toast(`Erro ao alterar responsável: ${error.message}`, 'error'); return }
+    const updated = { ...task, assigned_to: resp?.user_id || null, assigned_name: resp?.name || null }
+    setTasksByRef(m => ({ ...m, [item.ref]: updated }))
+    setItems(list => list.map(i => i.ref === item.ref ? { ...i, responsavel: resp?.name || '' } : i))
+    if (resp && resp.user_id !== profile?.user_id) notifyTaskAssignment(resp.user_id, `Prazo: ${item.conteudo} — ${item.numero_processo}`).catch(() => {})
+    toast(resp ? `Responsável: ${resp.name}` : 'Responsável removido — a tarefa sai da Agenda até alguém ser atribuído.', 'success')
   }
 
   async function handleSync() {
@@ -474,7 +632,8 @@ export function PublicacoesPage() {
                     key={item.id}
                     item={item}
                     active={item.id === selectedId}
-                    temPrazoCriado={!!prazoMap[item.id]}
+                    temPrazoCriado={!!tasksByRef[item.ref] || !!prazoMap[item.id]}
+                    responsavelTarefa={tasksByRef[item.ref] ? (tasksByRef[item.ref].assigned_name || 'Sem responsável') : null}
                     onSelect={() => setSelectedId(item.id)}
                   />
                 ))
@@ -512,7 +671,11 @@ export function PublicacoesPage() {
           )}>
             <IntimacaoReadingPanel
               item={selectedItem}
-              prazoCriadoEm={selectedItem ? prazoMap[selectedItem.id] || null : null}
+              tarefa={selectedItem ? tasksByRef[selectedItem.ref] || null : null}
+              prazoCriadoEm={selectedItem && !tasksByRef[selectedItem.ref] ? prazoMap[selectedItem.id] || null : null}
+              team={assignableTeam}
+              canChangeResponsavel={!!selectedItem && (isManager || !tasksByRef[selectedItem.ref]?.assigned_to || tasksByRef[selectedItem.ref]?.assigned_to === profile?.user_id)}
+              onChangeResponsavel={userId => selectedItem && changeResponsavel(selectedItem, userId)}
               onBack={() => setSelectedId(null)}
               onMarkStatus={s => selectedItem && markStatus(selectedItem.id, s)}
               onCriarPrazo={() => selectedItem && openPrazoModal(selectedItem)}
@@ -527,45 +690,81 @@ export function PublicacoesPage() {
 
       {/* Criar tarefa de prazo */}
       {prazoItem && (
-        <Modal open onClose={() => setPrazoItem(null)} title="Criar tarefa de prazo" size="sm">
+        <Modal open onClose={() => setPrazoItem(null)} title="Criar tarefa de prazo" size="md">
           <div className="space-y-4">
-            <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-3">
-              <p className="text-xs text-amber-700 dark:text-amber-400">
-                Cálculo automático não considera feriados nacionais/locais. Confira o prazo legal antes de protocolar.
-              </p>
-            </div>
             <p className="text-sm text-gray-600 dark:text-gray-300">
               <strong>{prazoItem.numero_processo}</strong> — {prazoItem.conteudo}
               <br />
-              <span className="text-xs text-gray-400">Publicado em {formatDate(prazoItem.publicacao)} ({prazoItem.tribunal})</span>
+              <span className="text-xs text-gray-400">
+                Disponibilizada no DJEN em {formatDate(prazoItem.publicacao)} · {prazoItem.tribunal}{prazoItem.orgao && prazoItem.orgao !== '—' ? ` — ${prazoItem.orgao}` : ''}
+              </span>
             </p>
+
+            <Select label="Regime de contagem" value={prazoRegime} onChange={e => changePrazoRegime(e.target.value as Regime)}>
+              {REGIMES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </Select>
+            {regimeReason && <p className="-mt-2 text-[11px] text-gray-400 dark:text-gray-500">Sugerido pelo tribunal/órgão: {regimeReason}. Confira.</p>}
+
             <div className="grid grid-cols-2 gap-3">
               <Input
-                label="Dias"
+                label="Prazo"
                 type="number"
                 min={1}
                 value={prazoDias}
-                onChange={e => setPrazoDias(Math.max(1, Number(e.target.value) || 1))}
+                onChange={e => setPrazoDias(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
               />
-              <Select label="Contagem" value={prazoUnidade} onChange={e => setPrazoUnidade(e.target.value as 'uteis' | 'corridos')}>
-                <option value="uteis">Dias úteis</option>
-                <option value="corridos">Dias corridos</option>
+              <Select label="Unidade" value={prazoUnidade} onChange={e => setPrazoUnidade(e.target.value as Unit)}>
+                <option value="dias_uteis">Dias úteis</option>
+                <option value="dias_corridos">Dias corridos</option>
+                <option value="meses">Meses</option>
               </Select>
             </div>
-            {prazoPreview && (
-              <div className="flex items-center gap-2 p-3 bg-primary-50 dark:bg-primary-900/20 rounded-xl">
-                <Clock className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />
-                <p className="text-sm font-semibold text-primary-700 dark:text-primary-400">
-                  Vencimento: {formatDate(prazoPreview.toISOString().slice(0, 10))}
-                </p>
-              </div>
+
+            <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-gray-700 dark:text-gray-200">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={prazoDobro} onChange={e => setPrazoDobro(e.target.checked)} /> Prazo em dobro</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={prazoRecesso} onChange={e => setPrazoRecesso(e.target.checked)} /> Suspende no recesso (20/12 a 20/01)</label>
+            </div>
+            {prazoDobro && (
+              <Input label="Motivo do prazo em dobro *" value={prazoDobroMotivo} onChange={e => setPrazoDobroMotivo(e.target.value)} placeholder="Ex.: Fazenda Pública (CPC, art. 183) — não vale nos Juizados Federais" />
             )}
+
+            <Select label="Responsável" value={prazoResponsavel} onChange={e => setPrazoResponsavel(e.target.value)}>
+              {isManager && <option value="">Distribuir automaticamente (quem tem menos tarefas)</option>}
+              {assignableTeam.map(t => <option key={t.user_id} value={t.user_id}>{t.name}{t.user_id === profile?.user_id ? ' (eu)' : ''}</option>)}
+            </Select>
+
+            {prazoCalc?.result ? (
+              <div className="p-3 bg-primary-50 dark:bg-primary-900/20 rounded-xl space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-primary-600 dark:text-primary-400 flex-shrink-0" />
+                  <p className="text-sm font-semibold text-primary-700 dark:text-primary-400">
+                    Prazo fatal: {formatDate(prazoCalc.result.fatalDate)}
+                    <span className="font-normal text-primary-600/80 dark:text-primary-400/80"> · tarefa vence no prazo interno: {formatDate(prazoCalc.result.internalDate)}</span>
+                  </p>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                  Publicação: {formatDate(prazoCalc.result.referenceDate)} (1º dia útil após a disponibilização) · 1º dia contado: {formatDate(prazoCalc.result.startDate)}
+                  {prazoCalendar.length > 0 ? ` · ${new Set(prazoCalendar.map(c => c.date)).size} dia(s) do calendário do tribunal considerados` : ' · sem feriados locais cadastrados para este tribunal'}
+                </p>
+                {prazoCalc.result.warnings.map(w => (
+                  <p key={w} className="flex gap-1.5 text-[11px] text-amber-700 dark:text-amber-400"><AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />{w}</p>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-red-500">{prazoCalc?.error}</p>
+            )}
+
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-xl p-2.5">
+              O cálculo considera feriados nacionais, recesso e o calendário cadastrado do tribunal. Feriados locais e
+              suspensões não cadastrados não entram — confira a data com a fonte oficial antes de protocolar.
+            </p>
+
             <div className="flex justify-end gap-3 pt-1">
               <button onClick={() => setPrazoItem(null)}
                 className="px-4 py-2 text-sm font-medium border border-gray-200 dark:border-dark-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-dark-700 transition-colors">
                 Cancelar
               </button>
-              <Button onClick={criarTarefaPrazo} loading={prazoSaving}>Criar tarefa</Button>
+              <Button onClick={criarTarefaPrazo} loading={prazoSaving} disabled={!prazoCalc?.result}>Criar tarefa</Button>
             </div>
           </div>
         </Modal>

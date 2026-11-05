@@ -25,6 +25,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { confirmDialog } from '@/components/ui/ConfirmDialog'
 import { toast } from '@/components/ui/Toast'
 import { withErrorFeedback } from '@/lib/errorFeedback'
+import {
+  connectOutlook, createOutlookEvent, deleteOutlookEvent, disconnectOutlook, isOutlookConfigured,
+  listOutlookEvents, outlookAccount, OutlookAuthError, planOutlookImport, updateOutlookEvent,
+} from '@/lib/outlookCalendar'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar'
@@ -54,6 +58,18 @@ const EMPTY_FORM = {
   location: '', description: '',
   status: 'scheduled' as 'scheduled' | 'completed' | 'cancelled',
   sync_google: true,
+  sync_outlook: false,
+}
+
+// ─── Mini Outlook icon (genérico, não é o logotipo) ──────────────────────────
+function OIcon({ className = 'w-3 h-3' }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect x="2" y="4" width="20" height="16" rx="3" fill="#0A64C8" />
+      <circle cx="9.5" cy="12" r="3.6" fill="none" stroke="#fff" strokeWidth="2" />
+      <path d="M14.5 9h5M14.5 12h5M14.5 15h5" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
 }
 
 // ─── Google helpers ───────────────────────────────────────────────────────────
@@ -151,6 +167,12 @@ export function CalendarPage() {
   const [gMsg,        setGMsg]        = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
   const [setupModal,  setSetupModal]  = useState(false)
 
+  // Outlook / Hotmail state
+  const [oEmail,      setOEmail]      = useState<string | null>(null)
+  const [oConnecting, setOConnecting] = useState(false)
+  const [oSyncing,    setOSyncing]    = useState(false)
+  const [oNeedsReconnect, setONeedsReconnect] = useState(false)
+
   const [filterShowConcluded, setFilterShowConcluded] = useState(false)
   const [filterType, setFilterType]   = useState<string>('')
   const [search, setSearch] = useState('')
@@ -161,6 +183,12 @@ export function CalendarPage() {
     if (!uid) return
     const t = getStoredToken(uid)
     if (t) { setGToken(t); const e = localStorage.getItem(gEmailKey(uid)); if (e) setGEmail(e) }
+  }, [uid])
+
+  // Restaura a conta Outlook já conectada (a MSAL renova o token sozinha)
+  useEffect(() => {
+    if (!uid || !isOutlookConfigured()) return
+    outlookAccount(uid).then(a => setOEmail(a?.email || null))
   }, [uid])
 
   // Load GIS + silent refresh
@@ -318,6 +346,35 @@ export function CalendarPage() {
   }
 
   // ─── CRUD ─────────────────────────────────────────────────────────────────
+  // ─── Sincronização automática: eventos de tarefa → Outlook ─────────────────
+  const syncTaskEventsToOutlook = useCallback(async (evts: CalendarEvent[]) => {
+    const pending = evts.filter(ev => ev.task_id && !ev.outlook_event_id)
+    for (const ev of pending) {
+      try {
+        const id = await createOutlookEvent(uid, { title: ev.title, date: ev.date, description: ev.description })
+        const { error } = await supabase.from('calendar_events').update({ outlook_event_id: id, sync_outlook: true }).eq('id', ev.id)
+        if (error) { await deleteOutlookEvent(uid, id).catch(() => {}); continue }
+        setEvents(prev => prev.map(e => e.id === ev.id ? { ...e, outlook_event_id: id, sync_outlook: true } : e))
+      } catch (e) {
+        if (e instanceof OutlookAuthError) { setONeedsReconnect(true); return }
+        /* tenta de novo no próximo carregamento */
+      }
+    }
+    // Tarefa concluída/excluída: o trigger já apagou o evento daqui; apaga também no Outlook.
+    const { data: orphaned } = await supabase.from('calendar_events')
+      .select('id, outlook_event_id').eq('user_id', uid)
+      .not('task_id', 'is', null).not('deleted_at', 'is', null).not('outlook_event_id', 'is', null)
+    for (const o of orphaned || []) {
+      try { await deleteOutlookEvent(uid, o.outlook_event_id as string) } catch (e) { if (e instanceof OutlookAuthError) return }
+      await supabase.from('calendar_events').update({ outlook_event_id: null, sync_outlook: false }).eq('id', o.id)
+    }
+  }, [uid])
+
+  useEffect(() => {
+    if (!oEmail || oNeedsReconnect || events.length === 0) return
+    syncTaskEventsToOutlook(events)
+  }, [events, oEmail, oNeedsReconnect, syncTaskEventsToOutlook])
+
   function openNew(date?: Date, type?: typeof EMPTY_FORM['type'], clientName?: string) {
     setEditId(null)
     setForm({
@@ -325,6 +382,7 @@ export function CalendarPage() {
       date: date ? format(date, 'yyyy-MM-dd') : format(new Date(), 'yyyy-MM-dd'),
       type: type || 'meeting',
       sync_google: !!gToken,
+      sync_outlook: !!oEmail,
       client_name: clientName || '',
       title: clientName ? `Reunião com ${clientName}` : '',
     })
@@ -349,6 +407,7 @@ export function CalendarPage() {
       client_name: ev.client_name || '', location: ev.location || '',
       description: ev.description || '', status: (ev.status as any) || 'scheduled',
       sync_google: ev.sync_google ?? !!gToken,
+      sync_outlook: ev.sync_outlook ?? !!ev.outlook_event_id,
     })
     setModalOpen(true)
   }
@@ -372,8 +431,27 @@ export function CalendarPage() {
       } catch (e: any) { console.warn('Google push failed:', e.message) }
     }
 
+    // Outlook: cria/atualiza o evento lá e guarda o id (é o que evita duplicar ao importar).
+    let outlookEventId: string | null = editId ? (events.find(e => e.id === editId)?.outlook_event_id || null) : null
+    let outlookFailed = ''
+    if (oEmail && form.sync_outlook) {
+      try {
+        const f = { title: form.title, date: form.date, time: form.time || null, end_date: form.end_date || null, end_time: form.end_time || null, location: form.location || null, description: form.description || null }
+        if (outlookEventId) await updateOutlookEvent(uid, outlookEventId, f)
+        else outlookEventId = await createOutlookEvent(uid, f)
+      } catch (e: any) {
+        outlookFailed = e?.message || 'erro'
+        if (e instanceof OutlookAuthError) setONeedsReconnect(true)
+      }
+    } else if (oEmail && !form.sync_outlook && outlookEventId) {
+      // Desmarcou "sincronizar com Outlook": tira de lá.
+      try { await deleteOutlookEvent(uid, outlookEventId); outlookEventId = null } catch (e: any) { outlookFailed = e?.message || 'erro' }
+    }
+
     const payload: any = {
       ...form, process_number: selectedProcess?.number || form.process_number,
+      outlook_event_id: outlookEventId,
+      sync_outlook: !!outlookEventId,
       process_id: form.process_id || null, end_date: form.end_date || null, end_time: form.end_time || null,
       google_event_id: form.sync_google && googleEventId ? googleEventId : (editId ? (events.find(e => e.id === editId)?.google_event_id || null) : null),
       user_id: uid || null,
@@ -385,8 +463,11 @@ export function CalendarPage() {
 
     setSaving(false)
     if (error) { toast(`Erro ao salvar: ${error.message}`, 'error'); return }
-    if (token && form.sync_google && googleEventId) {
-      setGMsg({ type: 'ok', text: '✓ Sincronizado com Google Calendar' })
+    if (outlookFailed) {
+      setGMsg({ type: 'err', text: `Evento salvo no LegalHub, mas não no Outlook: ${outlookFailed}` })
+    } else if ((token && form.sync_google && googleEventId) || (form.sync_outlook && outlookEventId)) {
+      const where = [token && form.sync_google && googleEventId ? 'Google Calendar' : '', form.sync_outlook && outlookEventId ? 'Outlook' : ''].filter(Boolean).join(' e ')
+      setGMsg({ type: 'ok', text: `✓ Sincronizado com ${where}` })
       setTimeout(() => setGMsg(null), 4000)
     }
     setModalOpen(false)
@@ -399,6 +480,9 @@ export function CalendarPage() {
     const token = gToken || getStoredToken(uid)
     if (ev?.google_event_id && token) {
       try { await gcalRequest(`/calendars/primary/events/${ev.google_event_id}`, 'DELETE', token) } catch {}
+    }
+    if (ev?.outlook_event_id && oEmail) {
+      try { await deleteOutlookEvent(uid, ev.outlook_event_id) } catch (e) { if (e instanceof OutlookAuthError) setONeedsReconnect(true) }
     }
     const { error } = await withErrorFeedback(supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', id), 'Erro ao excluir evento')
     if (error) return
@@ -473,6 +557,59 @@ export function CalendarPage() {
     setGSyncing(false)
   }
 
+  // ─── Outlook / Hotmail ─────────────────────────────────────────────────────
+  async function connectOutlookAccount() {
+    setOConnecting(true); setGMsg(null)
+    try {
+      const { email } = await connectOutlook(uid)
+      setOEmail(email); setONeedsReconnect(false)
+      setGMsg({ type: 'ok', text: `✅ Outlook conectado: ${email}` })
+    } catch (e: any) {
+      const msg = String(e?.message || '')
+      setGMsg({ type: 'err', text: /user_cancelled|cancel/i.test(msg) ? 'Conexão com o Outlook cancelada.'
+        : /AADSTS65001|consent|admin/i.test(msg) ? 'Sua organização exige aprovação do administrador para conectar a agenda. Peça ao TI para liberar o app LegalHub no Microsoft Entra ID.'
+        : /popup_window_error|popup/i.test(msg) ? 'O navegador bloqueou a janela de login da Microsoft. Libere pop-ups para este site e tente de novo.'
+        : `Erro ao conectar o Outlook: ${msg}` })
+    }
+    setOConnecting(false)
+  }
+
+  async function disconnectOutlookAccount() {
+    await disconnectOutlook(uid)
+    setOEmail(null); setONeedsReconnect(false)
+    setGMsg({ type: 'ok', text: 'Outlook desconectado. Os eventos já importados continuam na agenda.' })
+  }
+
+  async function importFromOutlook() {
+    setOSyncing(true); setGMsg(null)
+    try {
+      const incoming = await listOutlookEvents(uid)
+      const { data: existing } = await supabase.from('calendar_events')
+        .select('id, title, date, time, outlook_event_id, google_event_id').eq('user_id', uid).is('deleted_at', null)
+      const plan = planOutlookImport((existing || []) as any, incoming)
+      let imported = 0, updated = 0, removed = 0
+      for (const row of plan.toInsert) {
+        const { error } = await supabase.from('calendar_events').insert({ ...row, type: 'meeting', status: 'scheduled', user_id: uid, sync_outlook: true, sync_google: false })
+        if (!error) imported++
+      }
+      for (const u of plan.toUpdate) {
+        const { error } = await supabase.from('calendar_events').update(u.row).eq('id', u.id).eq('user_id', uid)
+        if (!error) updated++
+      }
+      for (const id of plan.toDelete) {
+        const { error } = await supabase.from('calendar_events').update({ deleted_at: new Date().toISOString() }).eq('id', id).eq('user_id', uid)
+        if (!error) removed++
+      }
+      setONeedsReconnect(false)
+      setGMsg({ type: 'ok', text: `Outlook: ${imported} evento(s) importado(s), ${updated} atualizado(s), ${removed} cancelado(s) lá e removido(s) aqui${plan.duplicates ? `, ${plan.duplicates} ignorado(s) por já existirem na agenda` : ''}.` })
+      load()
+    } catch (e: any) {
+      if (e instanceof OutlookAuthError) setONeedsReconnect(true)
+      setGMsg({ type: 'err', text: `Erro ao importar do Outlook: ${e?.message || e}` })
+    }
+    setOSyncing(false)
+  }
+
   const gConnected = !!(gToken || getStoredToken(uid))
 
   function exportAll() {
@@ -518,6 +655,7 @@ export function CalendarPage() {
         className={cn('w-full text-left text-xs px-1.5 py-0.5 rounded border truncate hover:opacity-80 transition-opacity flex items-center gap-1', TYPE_COLORS[ev.type || 'meeting'])}
       >
         {ev.google_event_id && <GIcon className="w-2 h-2 flex-shrink-0" />}
+        {ev.outlook_event_id && <OIcon className="w-2 h-2 flex-shrink-0" />}
         {!compact && ev.time && <span className="font-semibold flex-shrink-0">{ev.time.slice(0, 5)}</span>}
         <span className="truncate">{ev.title}</span>
       </button>
@@ -917,6 +1055,69 @@ export function CalendarPage() {
               )}
             </div>
 
+            {/* Outlook / Hotmail */}
+            <div className={cn(
+              'rounded-xl border p-3 space-y-3',
+              oEmail && !oNeedsReconnect
+                ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800'
+                : 'bg-white dark:bg-dark-800 border-gray-200 dark:border-dark-700'
+            )}>
+              <div className="flex items-center gap-2 px-0.5">
+                <OIcon className="w-4 h-4 flex-shrink-0" />
+                <p className="text-[10px] font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">Outlook / Hotmail</p>
+              </div>
+
+              {oEmail ? (
+                <>
+                  <div className="flex items-center gap-2">
+                    {oNeedsReconnect
+                      ? <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                      : <CheckCircle className="w-3.5 h-3.5 text-green-600 dark:text-green-400 flex-shrink-0" />}
+                    <div className="min-w-0">
+                      <p className={cn('text-xs font-semibold', oNeedsReconnect ? 'text-amber-700 dark:text-amber-400' : 'text-green-700 dark:text-green-400')}>
+                        {oNeedsReconnect ? 'Conexão expirada' : 'Conectado'}
+                      </p>
+                      <p className="text-[10px] text-green-600 dark:text-green-500 truncate">{oEmail}</p>
+                    </div>
+                  </div>
+                  {oNeedsReconnect ? (
+                    <button onClick={connectOutlookAccount} disabled={oConnecting}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+                      {oConnecting ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Reconectar
+                    </button>
+                  ) : (
+                    <button onClick={importFromOutlook} disabled={oSyncing}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors">
+                      {oSyncing ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                      {oSyncing ? 'Sincronizando...' : 'Importar / sincronizar'}
+                    </button>
+                  )}
+                  <button onClick={disconnectOutlookAccount}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-dark-600 text-gray-500 dark:text-gray-400 hover:text-red-500 hover:border-red-300 hover:bg-red-50 dark:hover:bg-red-900/20 text-xs font-medium transition-colors">
+                    <Link2Off className="w-3.5 h-3.5" /> Desconectar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    Contas pessoais (Hotmail, Outlook.com) e corporativas (Microsoft 365).
+                  </p>
+                  <button
+                    onClick={connectOutlookAccount}
+                    disabled={oConnecting || !isOutlookConfigured()}
+                    title={isOutlookConfigured() ? undefined : 'Integração ainda não configurada pelo administrador do LegalHub (falta VITE_MS_CLIENT_ID).'}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border-2 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold transition-colors"
+                  >
+                    {oConnecting ? <Loader className="w-3.5 h-3.5 animate-spin" /> : <OIcon className="w-3.5 h-3.5" />}
+                    {oConnecting ? 'Conectando...' : 'Conectar Outlook'}
+                  </button>
+                  {!isOutlookConfigured() && (
+                    <p className="text-[10px] text-gray-400 dark:text-gray-500">Disponível assim que a conexão com a Microsoft for configurada.</p>
+                  )}
+                </>
+              )}
+            </div>
+
             {/* Filtros */}
             <div className="bg-white dark:bg-dark-800 rounded-xl border border-gray-200 dark:border-dark-700 p-3 space-y-2.5">
               <p className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-1">Filtros</p>
@@ -1141,6 +1342,25 @@ export function CalendarPage() {
               </button>
             )}
           </div>
+          {isOutlookConfigured() && (
+            <div className={cn('flex items-center gap-3 p-3 rounded-xl border', oEmail ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/10' : 'border-gray-200 dark:border-dark-600 bg-gray-50 dark:bg-dark-700/30')}>
+              <label className="flex items-center gap-2.5 cursor-pointer flex-1">
+                <input type="checkbox" checked={!!form.sync_outlook} disabled={!oEmail} onChange={e => setForm(f => ({ ...f, sync_outlook: e.target.checked }))} className="w-4 h-4 accent-blue-600" />
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <OIcon className="w-4 h-4" />
+                    <span className="text-sm font-medium text-gray-900 dark:text-white">Sincronizar com Outlook</span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{oEmail ? `Conta: ${oEmail}` : 'Conecte sua conta Microsoft para sincronizar'}</p>
+                </div>
+              </label>
+              {!oEmail && (
+                <button type="button" onClick={() => { setModalOpen(false); connectOutlookAccount() }} className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline whitespace-nowrap">
+                  Conectar →
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex justify-end gap-3 mt-6 pt-4 px-6 border-t border-gray-100 dark:border-dark-700">

@@ -13,7 +13,7 @@
 // Corpus Christi e feriados locais vêm do calendário do tribunal, com fonte.
 // ============================================================================
 
-export const RULES_VERSION = '2026.2'
+export const RULES_VERSION = '2026.3'
 
 export type Regime = 'civel' | 'juizado' | 'trabalhista' | 'administrativo' | 'fixado_juiz' | 'penal'
 
@@ -192,7 +192,29 @@ class ForensicCalendar {
     return entries.find(e => e.kind === 'altered_hours') || entries.find(e => e.kind === 'outage') || null
   }
 
-  /** Dia em que a publicação, a ciência ou a contagem podem começar. */
+  /**
+   * Dia em que a publicação ou a ciência podem acontecer: dia de expediente
+   * (útil, horário normal). Suspensão e recesso NÃO impedem — o art. 220 do CPC
+   * suspende o curso do prazo, não o expediente: disponibilizado em 12/01, o ato
+   * é publicado em 13/01 e o prazo começa a correr em 21/01. (Até a versão
+   * 2026.2 a publicação era empurrada para depois da suspensão e o 1º dia
+   * contado virava 22/01 — um dia a mais, o lado perigoso.)
+   */
+  canPublish(d: string): boolean {
+    this.ensureYear(d)
+    const entries = this.byDate.get(d) || []
+    if (entries.some(e => e.kind === 'holiday' || e.kind === 'no_court' || e.kind === 'altered_hours')) return false
+    const wd = weekday(d)
+    return wd !== 0 && wd !== 6
+  }
+
+  /** Suspensão/recesso no dia (para explicar na memória de cálculo). */
+  suspendedOn(d: string): DayInfo | null {
+    const i = this.info(d)
+    return i && (i.kind === 'suspension' || i.kind === 'recess') ? i : null
+  }
+
+  /** Dia em que a contagem pode começar (dia útil, fora de suspensão/recesso). */
   canStart(d: string): boolean {
     const i = this.info(d)
     return i === null || i.kind === 'outage'
@@ -250,11 +272,11 @@ export function calculateDeadline(input: DeadlineInput): DeadlineResult {
   const amount = input.doubled ? input.amount * 2 : input.amount
   const reasonOf = (d: string) => { const i = cal.info(d); return i ? { note: i.label, source: i.source } : { note: 'dia útil' } }
 
-  /** Próximo dia (depois de `d`) em que o prazo pode começar ('start') ou vencer ('end'), registrando os dias pulados. */
-  const nextDay = (d: string, mode: 'start' | 'end', log: boolean): string => {
+  /** Próximo dia (depois de `d`) em que pode haver publicação ('publish'), começar a contagem ('start') ou vencer ('end'), registrando os dias pulados. */
+  const nextDay = (d: string, mode: 'publish' | 'start' | 'end', log: boolean): string => {
     let cur = addDays(d, 1)
     for (let i = 0; i < MAX_SPAN_DAYS; i++, cur = addDays(cur, 1)) {
-      if (mode === 'start' ? cal.canStart(cur) : cal.canEnd(cur)) return cur
+      if (mode === 'publish' ? cal.canPublish(cur) : mode === 'start' ? cal.canStart(cur) : cal.canEnd(cur)) return cur
       if (log) memory.push({ date: cur, kind: 'nao_conta', ...reasonOf(cur) })
     }
     throw new DeadlineInputError('Calendário sem dia útil por mais de 3 anos — verifique as suspensões cadastradas.')
@@ -264,15 +286,19 @@ export function calculateDeadline(input: DeadlineInput): DeadlineResult {
   memory.push({ date: input.eventDate, kind: 'evento', note: eventLabel(input.startEvent) })
   let reference = input.eventDate
   if (input.startEvent === 'djen') {
-    reference = nextDay(input.eventDate, 'start', true)
-    memory.push({ date: reference, kind: 'publicacao', note: 'Considera-se publicada no 1º dia útil seguinte à disponibilização', source: 'Lei 11.419/2006, art. 4º, § 3º' })
+    reference = nextDay(input.eventDate, 'publish', true)
+    memory.push({ date: reference, kind: 'publicacao', note: 'Considera-se publicada no 1º dia útil seguinte à disponibilização', source: 'Lei 11.419/2006, art. 4º, § 3º; CPC, art. 224, § 2º' })
   } else if (input.startEvent === 'sistema_tacita') {
     const tacit = addDays(input.eventDate, 10)
-    reference = cal.canStart(tacit) ? tacit : nextDay(tacit, 'start', false)
+    reference = cal.canPublish(tacit) ? tacit : nextDay(tacit, 'publish', false)
     memory.push({ date: reference, kind: 'ciencia', note: 'Ciência tácita: 10 dias corridos após o envio, sem consulta', source: 'Lei 11.419/2006, art. 5º, § 3º' })
-  } else if (input.startEvent === 'sistema_ciencia' && !cal.canStart(input.eventDate)) {
-    reference = nextDay(input.eventDate, 'start', false)
+  } else if (input.startEvent === 'sistema_ciencia' && !cal.canPublish(input.eventDate)) {
+    reference = nextDay(input.eventDate, 'publish', false)
     memory.push({ date: reference, kind: 'ciencia', note: 'Consulta em dia não útil: ciência no 1º dia útil seguinte', source: 'Lei 11.419/2006, art. 5º, § 2º' })
+  }
+  const suspendedAtReference = cal.suspendedOn(reference)
+  if (suspendedAtReference && unit !== 'meses' && unit !== 'anos') {
+    warnings.push(`Intimação durante ${suspendedAtReference.label.toLowerCase().startsWith('recesso') ? 'o recesso forense' : 'a suspensão de prazos'} (${suspendedAtReference.label}): a contagem começa no 1º dia útil depois dela.`)
   }
 
   // 2) Contagem

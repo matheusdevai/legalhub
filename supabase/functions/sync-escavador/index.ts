@@ -1,9 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from "jsr:@supabase/supabase-js@2"
+import { findProcessByNumber } from "../_shared/oabSync/persist.ts"
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-region",
   "Content-Type": "application/json",
 }
 
@@ -73,9 +74,11 @@ Deno.serve(async (req: Request) => {
       return ok({ error: "Muitas sincronizações em pouco tempo. Aguarde e tente novamente.", total: 0, imported: 0, updated: 0, errors: [], source: "escavador" })
     }
 
-    const body = await req.json().catch(() => ({}))
-    const oabNum   = (body.oab_number    || profile.oab_number    || "").trim().replace(/\D/g, "")
-    const oabState = (body.oab_seccional || profile.oab_seccional || "").trim().toUpperCase()
+    // Só a OAB gravada no perfil de quem chama (nunca uma vinda do navegador):
+    // o token do Escavador é pago e compartilhado, e ninguém deve importar
+    // para o próprio escritório os processos de outro advogado.
+    const oabNum   = (profile.oab_number    || "").trim().replace(/\D/g, "")
+    const oabState = (profile.oab_seccional || "").trim().toUpperCase()
 
     if (!oabNum || !oabState) return ok({ error: "OAB nao configurada", total: 0, imported: 0, updated: 0, errors: [], source: "escavador" })
 
@@ -125,16 +128,12 @@ Deno.serve(async (req: Request) => {
     for (let i = 0; i < allProcesses.length; i += BATCH) {
       const batch = allProcesses.slice(i, i + BATCH)
       await Promise.all(batch.map(async (proc: any) => {
-        const num = proc.numero_cnj?.replace(/[^\d\-\.]/g, "") || ""
+        // Número só em dígitos, procurado pela coluna number_digits — o mesmo
+        // processo cadastrado com máscara não é duplicado.
+        const num = String(proc.numero_cnj || "").replace(/\D/g, "")
         if (!num) return
 
-        const { data: ex } = await supabase
-          .from("processes")
-          .select("id")
-          .eq("number", num)
-          .eq("tenant_id", profile.tenant_id)
-          .is("deleted_at", null)
-          .maybeSingle()
+        const ex = await findProcessByNumber(supabase, profile.tenant_id, num)
 
         const title =
           proc.titulo_polo_ativo ||
@@ -149,8 +148,8 @@ Deno.serve(async (req: Request) => {
         if (ex) {
           const { error: upErr } = await supabase
             .from("processes")
-            .update({ cnj_synced_at: now, ...(court ? { court } : {}) })
-            .eq("id", ex.id)
+            .update({ cnj_synced_at: now, ...(court && !ex.court ? { court } : {}) })
+            .eq("id", ex.id).eq("tenant_id", profile.tenant_id)
           if (upErr) errors.push(`update ${num}: ${upErr.message}`)
           else updated++
         } else {
