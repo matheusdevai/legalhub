@@ -104,5 +104,26 @@ describe('RecurringTab', () => {
   it('estado vazio', () => {
     renderTab([], [])
     expect(screen.getByText(/Nenhuma recorrência ativa/)).toBeInTheDocument()
+    expect(screen.getByText(/mensalidades e honorários de clientes/)).toBeInTheDocument()
+  })
+
+  it('"Receita recorrente" e "Despesa recorrente" chamam onNew com o tipo certo', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const h = renderTab([], [])
+    await user.click(screen.getByRole('button', { name: /Receita recorrente/ }))
+    expect(h.onNew).toHaveBeenLastCalledWith('receivable')
+    await user.click(screen.getByRole('button', { name: /Despesa recorrente/ }))
+    expect(h.onNew).toHaveBeenLastCalledWith('payable')
+    expect(h.onNew).toHaveBeenCalledTimes(2)
+  })
+
+  it('receita mensal recorrente: entra nas entradas fixas e é prevista nos meses seguintes', () => {
+    const honorario = fin({ id: 'tpl4', recurring: true, recurrence_interval: 'monthly', due_date: '2026-10-20', type: 'receivable', category: 'fees', description: 'Honorário mensal', amount: 800 })
+    renderTab([honorario], [])
+    expect(screen.getByTestId('fixed-income')).toHaveTextContent('800,00')
+    const row = screen.getByTestId('recurring-row')
+    expect(within(row).queryByTestId('cell-8')).toBeNull()
+    for (const m of [9, 10, 11]) expect(within(row).getByTestId(`cell-${m}`)).toHaveAttribute('data-state', 'projected')
+    expect(screen.getByTestId('total-income')).toHaveTextContent('800,00')
   })
 })

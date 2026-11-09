@@ -169,3 +169,26 @@ describe('templateUpdateAfterMaterialize', () => {
     expect(upd?.deleted_at).toBeTruthy()
   })
 })
+
+describe('receita mensal recorrente na planilha', () => {
+  const honorario = template({ type: 'receivable', category: 'fees', description: 'Honorário mensal', amount: 800, due_date: '2026-11-10' })
+
+  it('aparece como Entrada prevista em cada mês a partir do vencimento do template', () => {
+    expect(monthSheetFinancials([honorario], 2026, 9)).toEqual([])
+    for (const m of [10, 11]) {
+      const rows = buildSheetRows(monthSheetFinancials([honorario], 2026, m))
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).toMatchObject({ projected: true, templateId: 'tpl', income: 800, expense: 0 })
+      expect(sheetTotals(rows).income).toBe(800)
+    }
+  })
+
+  it('ao receber, grava a ocorrência como receita paga e avança o template', () => {
+    const payload = occurrenceInsertPayload(honorario, '2026-11-10', { status: 'paid', paid_date: '2026-11-10' })
+    expect(payload).toMatchObject({ type: 'receivable', category: 'fees', amount: 800, status: 'paid', generated_from_id: 'tpl' })
+    expect(templateUpdateAfterMaterialize(honorario, '2026-11-10')).toEqual({ due_date: '2026-12-10' })
+    const real = fin({ id: 'r', type: 'receivable', generated_from_id: 'tpl', due_date: '2026-11-10', status: 'paid', amount: 800 })
+    const rows = buildSheetRows(monthSheetFinancials([honorario, real], 2026, 10))
+    expect(rows.map(r => r.projected)).toEqual([false])
+  })
+})

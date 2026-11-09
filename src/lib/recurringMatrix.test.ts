@@ -107,3 +107,36 @@ describe('templateOccurrences', () => {
     expect(templateOccurrences(t, [t, occ('a', '2026-10-01'), fin({ id: 'b' })]).map(f => f.id)).toEqual(['a'])
   })
 })
+
+describe('receita recorrente (honorário mensal de cliente)', () => {
+  const honorario = tpl({ type: 'receivable', category: 'fees', description: 'Honorário mensal', amount: 800, due_date: '2026-11-10' })
+
+  it('projeta a receita nos meses seguintes, com valor somado e sem meses anteriores', () => {
+    expect(recurringMonthCell(honorario, [honorario], 2026, 9, TODAY).state).toBe('none')
+    for (const m of [10, 11]) {
+      const cell = recurringMonthCell(honorario, [honorario], 2026, m, TODAY)
+      expect(cell.state).toBe('projected')
+      expect(cell.total).toBe(800)
+      expect(cell.occurrences[0].type).toBe('receivable')
+    }
+    expect(recurringMonthCell(honorario, [honorario], 2027, 5, TODAY).state).toBe('projected')
+  })
+
+  it('após receber (ocorrência paga) a célula vira paga e o mês seguinte segue previsto', () => {
+    const all = [honorario, occ('nov', '2026-11-10', { type: 'receivable', status: 'paid', paid_date: '2026-11-10', amount: 800 })]
+    expect(recurringMonthCell(honorario, all, 2026, 10, TODAY).state).toBe('paid')
+    expect(recurringMonthCell(honorario, all, 2026, 11, TODAY).state).toBe('projected')
+  })
+
+  it('respeita a data final da receita', () => {
+    const t = tpl({ type: 'receivable', due_date: '2026-11-10', recurrence_end_date: '2026-12-31' })
+    expect(recurringMonthCell(t, [t], 2026, 11, TODAY).state).toBe('projected')
+    expect(recurringMonthCell(t, [t], 2027, 0, TODAY).state).toBe('none')
+  })
+
+  it('conta nas entradas fixas por mês e vira alerta nos próximos 7 dias', () => {
+    expect(monthlyEquivalent(honorario)).toBe(800)
+    const alerts = recurringAlerts([honorario], [honorario], '2026-11-05')
+    expect(alerts.dueSoon.map(f => f.type)).toEqual(['receivable'])
+  })
+})

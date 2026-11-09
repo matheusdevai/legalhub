@@ -35,7 +35,7 @@ type Props = {
   onAdjust: (template: Financial) => void
   onEdit: (template: Financial) => void
   onStop: (template: Financial) => void
-  onNew: () => void
+  onNew: (type: Financial['type']) => void
 }
 
 export function RecurringTab({ templates, financials, year, onYearChange, onTogglePaid, onOpenMonth, onAdjust, onEdit, onStop, onNew }: Props) {
@@ -128,13 +128,18 @@ export function RecurringTab({ templates, financials, year, onYearChange, onTogg
             <button onClick={() => onYearChange(year + 1)} aria-label="Próximo ano" className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-dark-700 text-slate-500"><ChevronRight className="w-3.5 h-3.5" /></button>
           </div>
           <div className="flex-1" />
-          <button onClick={onNew} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-button">
-            <Plus className="w-3.5 h-3.5" /> Nova recorrência
+          <button type="button" data-testid="new-recurring-receivable" onClick={() => onNew('receivable')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-button">
+            <Plus className="w-3.5 h-3.5" /> Receita recorrente
+          </button>
+          <button type="button" data-testid="new-recurring-payable" onClick={() => onNew('payable')}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-600 hover:bg-slate-50 dark:hover:bg-dark-700 rounded-lg">
+            <Plus className="w-3.5 h-3.5" /> Despesa recorrente
           </button>
         </div>
 
         {templates.length === 0 ? (
-          <p className="text-sm text-slate-400 text-center py-10">Nenhuma recorrência ativa. Crie uma com “Nova recorrência” (aluguel, assinaturas, mensalidades de clientes…).</p>
+          <p className="text-sm text-slate-400 text-center py-10">Nenhuma recorrência ativa. Cadastre uma “Receita recorrente” (mensalidades e honorários de clientes…) ou uma “Despesa recorrente” (aluguel, assinaturas…).</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-xs border-collapse" data-testid="recurring-matrix">
