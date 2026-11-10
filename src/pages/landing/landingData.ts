@@ -1,9 +1,12 @@
 import { isLaunchPromoActive, EBOOK_PROMO_END } from '@/lib/promoUtils'
 
+// Oferta de lançamento: vale SÓ para o plano Básico, a R$ 149,00/mês. Pro e
+// Enterprise não têm cupom de lançamento no checkout, então a página nunca
+// promete desconto neles (preço riscado, "% OFF" etc.).
 export const PROMO_MONTHLY_PRICE = 149
-// A oferta some sozinha da página quando a janela acaba — create-checkout-session
-// para de aplicar o cupom na mesma data, então anunciar depois disso seria
-// prometer um preço que o checkout não cobra.
+export const LAUNCH_PLAN_ID: PlanId = 'basico'
+// A oferta some sozinha da página quando a janela acaba, na mesma data em que
+// o checkout/e-book encerram (EBOOK_PROMO_END).
 export const PROMO_ACTIVE = isLaunchPromoActive()
 export const PROMO_LAST_DAY = new Date(new Date(EBOOK_PROMO_END).getTime() - 1).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
@@ -203,15 +206,23 @@ export function recommendedPlanFor(activeProcesses: number): PlanId {
   return 'enterprise'
 }
 
+const LAUNCH_PLAN_NAME = PLANS.find(p => p.id === LAUNCH_PLAN_ID)?.name ?? 'Básico'
+
+/** Faixa da seção Planos (sem depender da data atual, para poder ser testada). */
+export const LAUNCH_BANNER_HEADLINE = `Oferta de lançamento: assine o plano ${LAUNCH_PLAN_NAME} até ${PROMO_LAST_DAY} por R$ ${PROMO_MONTHLY_PRICE},00/mês`
+export const LAUNCH_BANNER_BONUS = 'Bônus: e-book completo do LegalHub direto dentro do sistema'
+
+export const LAUNCH_FAQ = {
+  q: 'Como funciona a promoção de lançamento?',
+  a: `A oferta de lançamento é o plano ${LAUNCH_PLAN_NAME} por R$ ${PROMO_MONTHLY_PRICE},00/mês, para quem assina até ${PROMO_LAST_DAY}. Os planos Pro e Enterprise seguem com o valor normal, sem desconto de lançamento. Como bônus, quem cria a conta até essa data também recebe o e-book completo do LegalHub direto dentro do sistema.`,
+}
+
 export const FAQS = [
   {
     q: 'Preciso de cartão de crédito para começar?',
     a: `Não. Você cria a conta e usa o sistema por ${TRIAL_DAYS} dias grátis, com todos os recursos do plano Pro, sem informar dados de pagamento. Se não assinar ao fim do teste, seus dados continuam disponíveis para consulta e exportação.`,
   },
-  ...(PROMO_ACTIVE ? [{
-    q: 'Como funciona a promoção de lançamento?',
-    a: `Assinando até ${PROMO_LAST_DAY}, você paga R$ ${PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, independentemente do plano escolhido. Depois desse período, passa a valer o valor normal do plano contratado. Como bônus, você também recebe o e-book completo do LegalHub direto dentro do sistema.`,
-  }] : []),
+  ...(PROMO_ACTIVE ? [LAUNCH_FAQ] : []),
   {
     q: 'Como as intimações chegam no sistema?',
     a: 'Você informa o número da sua OAB e a seccional. Todo dia o LegalHub consulta o Diário de Justiça Eletrônico Nacional (DJEN/Comunica PJe, do CNJ), que reúne as publicações de tribunais estaduais e federais, e importa as comunicações em seu nome. Não pedimos a senha do PJe. Só aparece o que é publicado no DJEN, que hoje cobre a grande maioria dos tribunais.',
