@@ -2,7 +2,7 @@ import { createContext, useContext, useCallback, useEffect, useState, ReactNode 
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { Profile } from '@/types'
-import type { SubscriptionSnapshot } from '@/lib/billingStatus'
+import { isTrialAwaitingFirstAccess, type SubscriptionSnapshot } from '@/lib/billingStatus'
 
 interface AuthContextType {
   session: Session | null
@@ -19,6 +19,8 @@ interface AuthContextType {
   refreshProfile: () => Promise<void>
 }
 
+const SUBSCRIPTION_COLUMNS = 'status, current_period_end, trial_starts_on_first_access, trial_started_at'
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -28,9 +30,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<SubscriptionSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchSubscriptionStatus = useCallback(async (tenantId: string) => {
-    const { data } = await supabase.from('billing_subscriptions').select('status, current_period_end').eq('tenant_id', tenantId).maybeSingle()
-    setSubscription((data as SubscriptionSnapshot | null) ?? null)
+  const fetchSubscriptionStatus = useCallback(async (tenantId: string, role?: string) => {
+    const { data } = await supabase.from('billing_subscriptions').select(SUBSCRIPTION_COLUMNS).eq('tenant_id', tenantId).maybeSingle()
+    let sub = (data as SubscriptionSnapshot | null) ?? null
+    // Escritório com teste que começa no primeiro acesso: o 1º acesso de alguém
+    // da equipe dispara os 14 dias (RPC idempotente; Portal do Cliente não conta).
+    if (sub && role !== 'client' && isTrialAwaitingFirstAccess(sub)) {
+      const { error } = await supabase.rpc('start_trial_on_first_access')
+      if (!error) {
+        const { data: fresh } = await supabase.from('billing_subscriptions').select(SUBSCRIPTION_COLUMNS).eq('tenant_id', tenantId).maybeSingle()
+        sub = (fresh as SubscriptionSnapshot | null) ?? sub
+      }
+    }
+    setSubscription(sub)
   }, [])
 
   // useCallback com identidade estável (só muda se fetchSubscriptionStatus
@@ -44,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .single()
     if (data) {
       setProfile(data as Profile)
-      if (data.tenant_id) fetchSubscriptionStatus(data.tenant_id)
+      if (data.tenant_id) fetchSubscriptionStatus(data.tenant_id, data.role)
     }
   }, [fetchSubscriptionStatus])
 
