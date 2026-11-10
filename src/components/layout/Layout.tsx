@@ -10,7 +10,7 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { withErrorFeedback } from '@/lib/errorFeedback'
 import { isEbookEligible, EBOOK_URL } from '@/lib/promoUtils'
-import { tenantAccess, type SubscriptionSnapshot } from '@/lib/billingStatus'
+import { tenantAccess, trialNotice, formatTrialEnd, type SubscriptionSnapshot } from '@/lib/billingStatus'
 import { cn } from '@/lib/utils'
 import type { Notification, Profile } from '@/types'
 import { formatDistanceToNow } from 'date-fns'
@@ -60,14 +60,23 @@ function MaintenanceBanner() {
  */
 function BillingBanner({ subscription, isAdmin }: { subscription: SubscriptionSnapshot | null; isAdmin: boolean }) {
   const navigate = useNavigate()
-  const { readOnly, trialDaysLeft } = tenantAccess(subscription)
+  const { readOnly, trialDaysLeft: rawTrialDaysLeft } = tenantAccess(subscription)
+  // Teste que começa no primeiro acesso só avisa quando falta 1 dia ou menos
+  // (trialNotice); o teste normal segue com o banner durante os 14 dias.
+  const notice = trialNotice(subscription)
+  const trialDaysLeft = notice.kind === 'none' ? null : rawTrialDaysLeft
   const pastDue = subscription?.status === 'past_due'
   if (!readOnly && trialDaysLeft === null && !pastDue) return null
 
   const trial = trialDaysLeft !== null
   let title: string
   let detail: string
-  if (trial) {
+  if (notice.kind === 'ending') {
+    title = `Seu teste grátis termina ${formatTrialEnd(notice.endsAt)}.`
+    detail = isAdmin
+      ? 'Assine o sistema agora para continuar usando sem interrupção — seus dados são mantidos.'
+      : 'Avise o administrador do escritório para assinar o sistema.'
+  } else if (trial) {
     title = trialDaysLeft === 1 ? 'Último dia do seu teste grátis.' : `Seu teste grátis termina em ${trialDaysLeft} dias.`
     detail = isAdmin
       ? 'Assine um plano para continuar usando sem interrupção — seus dados são mantidos.'
