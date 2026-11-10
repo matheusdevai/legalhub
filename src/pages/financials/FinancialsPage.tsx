@@ -644,9 +644,16 @@ export function FinancialsPage() {
     setLancMonth(month)
     setSecondaryTab(null)
   }
-  function openNewRecurring() {
+  function openNewRecurring(type: Financial['type']) {
     setEditId(null)
-    setDrawerInitial({ ...DRAWER_EMPTY_FORM, type: 'payable', category: 'rent', recurring: true, recurrence_interval: 'monthly' })
+    setDrawerInitial({
+      ...DRAWER_EMPTY_FORM,
+      type,
+      category: type === 'receivable' ? 'fees' : 'rent',
+      due_date: toLocalISODate(),
+      recurring: true,
+      recurrence_interval: 'monthly',
+    })
     setDrawerOpen(true)
   }
   async function confirmStopRecurrence(template: Financial) {

@@ -216,6 +216,26 @@ describe('FinancialDrawer — recorrência x parcelamento', () => {
   })
 })
 
+describe('FinancialDrawer — "Receita recorrente" vinda da aba Recorrentes', () => {
+  it('abre como Receita/Honorários, recorrência mensal marcada, e salva só com descrição e valor', async () => {
+    const { onSave } = renderDrawer({
+      initial: { type: 'receivable', category: 'fees', due_date: '2026-11-09', recurring: true, recurrence_interval: 'monthly' },
+    })
+    expect(screen.getByText('Receita')).toBeInTheDocument()
+    expect(screen.getByTestId('field-category')).toHaveValue('fees')
+    expect(screen.getByTestId('field-recurring')).toBeChecked()
+    expect(screen.getByTestId('field-recurrence-interval')).toHaveValue('monthly')
+    expect(screen.getByTestId('field-due-date')).toHaveValue('2026-11-09')
+    await userEvent.type(screen.getByTestId('field-description'), 'Mensalidade cliente X')
+    await userEvent.type(screen.getByTestId('field-amount'), '1500')
+    await userEvent.click(screen.getByTestId('btn-save'))
+    await waitFor(() => {
+      const [arg] = onSave.mock.calls[0] as [FinancialDrawerForm]
+      expect(arg).toMatchObject({ type: 'receivable', category: 'fees', recurring: true, recurrence_interval: 'monthly', due_date: '2026-11-09' })
+    })
+  })
+})
+
 // ── Clientes e Processos ──────────────────────────────────────────────────────
 describe('FinancialDrawer — campos de cliente e processo', () => {
   it('lista os clientes no select', () => {
