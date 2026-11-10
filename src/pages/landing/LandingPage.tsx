@@ -9,9 +9,11 @@ import {
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
 import { BrowserFrame, DemoVideo } from './DemoVideo'
+import { PlanPrice } from './PlanPrice'
 import { ProductTour } from './ProductTour'
+import { PROMO_BAR_HEIGHT_VAR, PromoCountdownBar } from './PromoCountdownBar'
 import {
-  FAQS, PLANS, PROMO_ACTIVE, PROMO_LAST_DAY, PROMO_MONTHLY_PRICE, TRIAL_DAYS,
+  FAQS, LAUNCH_BANNER_BONUS, LAUNCH_BANNER_HEADLINE, PLANS, PROMO_ACTIVE, TRIAL_DAYS,
   recommendedPlanFor, tourVideo,
 } from './landingData'
 
@@ -162,7 +164,7 @@ export function LandingPage() {
       <style>{`
         @keyframes float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-14px) } }
         @keyframes marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }
-        html { scroll-padding-top: 80px; }
+        html { scroll-padding-top: calc(80px + var(--promo-bar-h, 0px)); }
         /* Tema por seção: escuro por padrão; .lh-light deixa a seção branca */
         .lh-dark { --lh-fg: #fff; --lh-muted: #A7B0C0; --lh-soft: #cfd6e2; --lh-border: rgba(255,255,255,0.1);
           --lh-border-strong: rgba(255,255,255,0.18); --lh-divider: rgba(255,255,255,0.06); --lh-card: rgba(255,255,255,0.02);
@@ -183,10 +185,17 @@ export function LandingPage() {
         }
       `}</style>
 
+      {/* ══ OFERTA DE LANÇAMENTO (cronômetro) ══
+          Fixa no topo; publica a própria altura em --promo-bar-h. O espaçador empurra a
+          página e o header fixo desce na mesma medida (0px quando a barra não aparece). */}
+      <PromoCountdownBar onCta={() => goToLogin('signup')} />
+      <div aria-hidden style={{ height: `var(${PROMO_BAR_HEIGHT_VAR}, 0px)` }} />
+
       {/* ══ NAVBAR ══ */}
       <header
-        className="fixed top-0 inset-x-0 z-50 transition-colors duration-200"
+        className="fixed inset-x-0 z-50 transition-colors duration-200"
         style={{
+          top: `var(${PROMO_BAR_HEIGHT_VAR}, 0px)`,
           background: scrolled || menuOpen ? 'rgba(2,7,17,0.88)' : 'transparent',
           backdropFilter: scrolled || menuOpen ? 'blur(14px)' : 'none',
           borderBottom: scrolled ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
@@ -511,9 +520,9 @@ export function LandingPage() {
             </div>
             <div className="flex-1">
               <p className="text-sm font-semibold text-[color:var(--lh-fg)]">
-                Oferta de lançamento: assine até {PROMO_LAST_DAY} e pague R$ {PROMO_MONTHLY_PRICE},00/mês nos 3 primeiros meses, em qualquer plano
+                {LAUNCH_BANNER_HEADLINE}
               </p>
-              <p className="mt-1 text-xs text-[#1677FF]">Bônus: e-book completo do LegalHub direto dentro do sistema</p>
+              <p className="mt-1 text-xs text-[#1677FF]">{LAUNCH_BANNER_BONUS}</p>
             </div>
           </Reveal>}
 
@@ -572,31 +581,7 @@ export function LandingPage() {
                   <p className="mt-1.5 text-xs text-[color:var(--lh-muted)] leading-relaxed min-h-[2.5rem]">{plan.tagline}</p>
 
                   <div className="mt-5">
-                    {PROMO_ACTIVE && plan.price > PROMO_MONTHLY_PRICE ? (
-                      <>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-[color:var(--lh-muted)] line-through">R$ {plan.price}/mês</span>
-                          <span className="text-[10px] font-bold text-[color:var(--lh-ok)] bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-0.5">
-                            {Math.round((1 - PROMO_MONTHLY_PRICE / plan.price) * 100)}% OFF
-                          </span>
-                        </div>
-                        <div className="flex items-baseline gap-1 mt-1">
-                          <span className="text-sm text-[color:var(--lh-muted)]">R$</span>
-                          <span className="font-display text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">{PROMO_MONTHLY_PRICE}</span>
-                          <span className="text-sm text-[color:var(--lh-muted)]">/mês</span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-[#1677FF] font-medium">nos 3 primeiros meses, depois R$ {plan.price}/mês</p>
-                      </>
-                    ) : (
-                      <>
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-sm text-[color:var(--lh-muted)]">R$</span>
-                          <span className="font-display text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">{plan.price}</span>
-                          <span className="text-sm text-[color:var(--lh-muted)]">/mês</span>
-                        </div>
-                        {PROMO_ACTIVE && <p className="mt-1 text-[11px] text-[#1677FF] font-medium">já é o valor promocional dos 3 primeiros meses</p>}
-                      </>
-                    )}
+                    <PlanPrice plan={plan} promoActive={PROMO_ACTIVE} />
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">

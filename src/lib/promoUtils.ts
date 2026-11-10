@@ -1,8 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Promoção de lançamento — 3 primeiros meses por R$ 149/mês + e-book de bônus.
-// Janela fixa: quem assina (profile.created_at) dentro dela ganha o e-book, e
-// create-checkout-session aplica o cupom de lançamento até EBOOK_PROMO_END
-// (LAUNCH_PROMO_END lá — mudar as duas juntas).
+// Promoção de lançamento — plano Básico por R$ 149/mês + e-book de bônus.
+// (O Básico já custa R$ 149; Pro e Enterprise NÃO têm desconto de lançamento
+// enquanto não houver cupom Stripe configurado no checkout.)
+// Janela fixa: quem cria a conta (profile.created_at) dentro dela ganha o e-book,
+// e create-checkout-session só aplica cupom de lançamento (quando o plano tem um
+// configurado) até EBOOK_PROMO_END (LAUNCH_PROMO_END lá — mudar as duas juntas).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const EBOOK_PROMO_START = '2026-08-23T00:00:00.000Z'
