@@ -8,21 +8,16 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
-import { BrowserFrame, DemoVideo } from './DemoVideo'
 import { DemoSandbox } from './DemoSandbox'
 import { PlanPrice } from './PlanPrice'
-import { ProductTour } from './ProductTour'
 import { PROMO_BAR_HEIGHT_VAR, PromoCountdownBar } from './PromoCountdownBar'
 import { Reveal } from './Reveal'
-import { DeadlineTimeline } from './DeadlineTimeline'
-import { FeatureBento } from './FeatureBento'
 import { AiShowcase } from './AiShowcase'
-import { TrustStrip } from './TrustStrip'
 import { StickyCta } from './StickyCta'
-import { TechBackdrop } from './TechBackdrop'
-import { LaptopFrame, PhoneFrame } from './DeviceFrames'
 import { HeroMockup } from './HeroMockup'
-import { ProfileTour } from './ProfileTour'
+import { StoryScroll } from './StoryScroll'
+import { TechBackdrop } from './TechBackdrop'
+import { ScrollProgress, SectionDots, useHeroParallax } from './ScrollFX'
 import {
   FAQS, LAUNCH_BANNER_BONUS, LAUNCH_BANNER_HEADLINE, PLANS, PROMO_ACTIVE, TRIAL_DAYS,
   recommendedPlanFor, tourVideo,
@@ -61,26 +56,21 @@ function SectionHeading({ eyebrow, title, subtitle, center = true }: { eyebrow: 
 }
 
 const NAV_LINKS = [
-  { href: '#demonstracao', label: 'Demonstração' },
-  { href: '#recursos', label: 'Recursos' },
+  { href: '#demonstracao', label: 'Como funciona' },
+  { href: '#ia', label: 'Assistente' },
   { href: '#seguranca', label: 'Segurança' },
   { href: '#planos', label: 'Planos' },
   { href: '#faq', label: 'Dúvidas' },
 ]
 
-// Fontes de dados e serviços com que o sistema de fato se conecta hoje.
-const INTEGRATIONS = ['DJEN · Comunica PJe (CNJ)', 'DataJud (CNJ)', 'Google Agenda', 'Google Drive', 'Escavador', 'Jusbrasil', 'Google Gemini']
-
-const PAINS = [
-  { icon: Clock, title: 'Prazo perdido no meio de e-mails e planilhas', fix: 'Intimações importadas todo dia e prazo calculado em dias úteis, já com tarefa e lembrete.' },
-  { icon: FileSpreadsheet, title: 'Honorários espalhados em cadernos e extratos', fix: 'Planilha de lançamentos, recorrências e fluxo de caixa num só lugar.' },
-  { icon: Users, title: 'Ninguém sabe quem está cuidando do quê', fix: 'Tarefas distribuídas automaticamente para quem está com menos carga.' },
-]
-
-const STEPS = [
-  { title: 'Crie a conta', description: `Cadastro em 1 minuto, sem cartão. ${TRIAL_DAYS} dias com todos os recursos do plano Pro.` },
-  { title: 'Traga seus dados', description: 'Importe clientes por CSV e conecte sua OAB para puxar processos e intimações.' },
-  { title: 'Trabalhe com a equipe', description: 'Convide advogados, estagiários e financeiro, cada um com as permissões da função.' },
+const DOTS = [
+  { id: 'topo', label: 'Início' },
+  { id: 'demonstracao', label: 'Como funciona' },
+  { id: 'teste-voce-mesmo', label: 'Teste você mesmo' },
+  { id: 'ia', label: 'Assistente' },
+  { id: 'seguranca', label: 'Segurança' },
+  { id: 'planos', label: 'Planos' },
+  { id: 'faq', label: 'Dúvidas' },
 ]
 
 const SECURITY = [
@@ -99,6 +89,7 @@ export function LandingPage() {
   const [faqOpen, setFaqOpen] = useState<number | null>(0)
   const [processCount, setProcessCount] = useState(300)
 
+  const heroRef = useHeroParallax<HTMLDivElement>()
   const recommendedPlanId = recommendedPlanFor(processCount)
 
   useEffect(() => {
@@ -130,8 +121,6 @@ export function LandingPage() {
     navigate('/login', { state: { mode } })
   }
 
-  const hero = tourVideo('painel')
-
   return (
     <div className="lh-dark font-display min-h-screen text-[color:var(--lh-fg)] relative overflow-x-clip" style={{ background: '#020711', lineHeight: 1.47 }}>
       <style>{`
@@ -161,6 +150,8 @@ export function LandingPage() {
       {/* ══ OFERTA DE LANÇAMENTO (cronômetro) ══
           Fixa no topo; publica a própria altura em --promo-bar-h. O espaçador empurra a
           página e o header fixo desce na mesma medida (0px quando a barra não aparece). */}
+      <ScrollProgress />
+      <SectionDots sections={DOTS} />
       <PromoCountdownBar onCta={() => goToLogin('signup')} />
       <div aria-hidden style={{ height: `var(${PROMO_BAR_HEIGHT_VAR}, 0px)` }} />
 
@@ -227,7 +218,7 @@ export function LandingPage() {
       </header>
 
       {/* ══ HERO ══ */}
-      <section id="topo" className="relative pt-28 sm:pt-36 pb-16 sm:pb-24 px-5 sm:px-8">
+      <section id="topo" className="relative pt-28 sm:pt-36 pb-10 sm:pb-12 px-5 sm:px-8">
         <div
           className="pointer-events-none absolute inset-0 opacity-50"
           style={{
@@ -240,7 +231,7 @@ export function LandingPage() {
         <div className="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[60rem] max-w-[140vw] h-[36rem] rounded-full blur-3xl opacity-25"
           style={{ background: 'radial-gradient(ellipse, #0B5CFF, transparent 65%)' }} />
 
-        <div className="relative max-w-4xl mx-auto text-center">
+        <div ref={heroRef} className="relative max-w-4xl mx-auto text-center will-change-transform">
           <Reveal>
             <div className="inline-flex items-center gap-2 pl-2.5 pr-3.5 py-1.5 rounded-full border border-[color:var(--lh-border)] bg-[color:var(--lh-card-2)] lh-card mb-6">
               <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -298,128 +289,14 @@ export function LandingPage() {
         <HeroMockup />
       </section>
 
-      {/* ══ INTEGRAÇÕES ══ */}
-      <section aria-label="Integrações" className="relative py-10 border-y border-[color:var(--lh-divider)]">
-        <p className="text-center text-xs font-bold uppercase tracking-[0.14em] text-[color:var(--lh-muted)] mb-6 px-5">Conectado às fontes que o escritório já usa</p>
-        <div className="relative overflow-hidden" style={{ maskImage: 'linear-gradient(90deg, transparent, black 12%, black 88%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, black 12%, black 88%, transparent)' }}>
-          <div className="lh-marquee flex w-max gap-3" style={{ animation: 'marquee 40s linear infinite' }}>
-            {[...INTEGRATIONS, ...INTEGRATIONS].map((name, i) => (
-              <span key={i} aria-hidden={i >= INTEGRATIONS.length}
-                className="flex-shrink-0 px-4 py-2 rounded-full border border-[color:var(--lh-border)] bg-[color:var(--lh-card)] lh-card text-sm font-medium text-[color:var(--lh-soft)] whitespace-nowrap">
-                {name}
-              </span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ══ DOR → SOLUÇÃO ══ */}
-      <section className="lh-light relative py-20 sm:py-28 px-5 sm:px-8">
-        <div className="max-w-6xl mx-auto">
-          <SectionHeading eyebrow="Por que o LegalHub" title={<>Feito para a rotina real de quem <span className="text-[#1677FF]">advoga</span></>} />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {PAINS.map((p, i) => (
-              <Reveal key={p.title} delay={i * 90} className="rounded-2xl border border-[color:var(--lh-border)] bg-[color:var(--lh-card)] lh-card p-6 sm:p-7 flex flex-col">
-                <p.icon className="w-5 h-5 text-[color:var(--lh-muted)]" />
-                <p className="mt-4 text-sm text-[color:var(--lh-muted)] line-through decoration-[color:var(--lh-border-strong)]">{p.title}</p>
-                <p className="mt-3 text-base font-medium text-[color:var(--lh-fg)] leading-snug flex gap-2">
-                  <Zap className="w-4 h-4 text-[#1677FF] flex-shrink-0 mt-1" />{p.fix}
-                </p>
-              </Reveal>
-            ))}
-          </div>
-          <DeadlineTimeline />
-        </div>
-      </section>
-
-      {/* ══ DEMONSTRAÇÃO (tour em vídeo) ══ */}
-      <section id="demonstracao" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-[color:var(--lh-divider)]">
-        <div className="pointer-events-none absolute top-1/3 right-0 w-[30rem] h-[30rem] rounded-full blur-3xl opacity-[0.12]"
-          style={{ background: 'radial-gradient(circle, #0B5CFF, transparent 70%)' }} />
-        <div className="relative max-w-7xl mx-auto">
-          <SectionHeading
-            eyebrow="Veja funcionando"
-            title="Um tour pelo sistema, sem precisar agendar nada"
-            subtitle="Gravações reais da plataforma, narradas passo a passo. Escolha uma área e clique em “Ouvir narração”."
-          />
-          <Reveal><ProductTour /></Reveal>
-          <p className="mt-8 text-center text-[11px] text-[color:var(--lh-muted)] opacity-70">Vídeos gravados num escritório de demonstração com dados fictícios.</p>
-        </div>
-      </section>
+      {/* ══ COMO FUNCIONA (história rolada: intimação → prazo → tarefa) ══ */}
+      <StoryScroll />
 
       {/* ══ TOQUE VOCÊ MESMO (sandbox sem login) ══ */}
       <DemoSandbox />
 
-      {/* ══ TOUR POR PERFIL ══ */}
-      <ProfileTour />
-
-      {/* ══ RECURSOS ══ */}
-      <section id="recursos" className="lh-light relative py-20 sm:py-28 px-5 sm:px-8 border-t border-[color:var(--lh-divider)]">
-        <div className="max-w-6xl mx-auto">
-          <SectionHeading
-            eyebrow="Recursos"
-            title={<>Tudo que o escritório precisa, <span className="text-[#1677FF]">sem colar sistemas</span></>}
-            subtitle="Do primeiro atendimento ao recebimento dos honorários."
-          />
-          {/* Bento: passe o mouse (ou toque) para ver a gravação de cada área */}
-          <FeatureBento />
-        </div>
-      </section>
-
       {/* ══ IA JURÍDICA (Assistente em ação) ══ */}
       <AiShowcase onCta={() => goToLogin('signup')} />
-
-      {/* ══ RESPONSIVO ══ */}
-      <section className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-[color:var(--lh-divider)] overflow-hidden">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-14 items-center">
-          {/* Notebook (agenda) + celular sobreposto, nas molduras desenhadas em CSS */}
-          <Reveal className="order-2 lg:order-1 relative pr-[18%] sm:pr-[22%] pb-6">
-            <LaptopFrame>
-              <DemoVideo src={tourVideo('agenda').src} poster={tourVideo('agenda').poster} label="LegalHub no computador: agenda" />
-            </LaptopFrame>
-            <PhoneFrame small className="absolute right-0 bottom-0 w-[30%] sm:w-[31%] max-w-[210px]">
-              <DemoVideo src="/demo/mobile.mp4" poster="/demo/mobile.jpg" label="LegalHub no celular" aspect="390 / 844" compact />
-            </PhoneFrame>
-          </Reveal>
-          <Reveal delay={120} className="order-1 lg:order-2">
-            <Eyebrow>No escritório ou no fórum</Eyebrow>
-            <h2 className="mt-3 font-display text-3xl sm:text-4xl font-bold tracking-[-0.03em] text-[color:var(--lh-fg)]">
-              O mesmo sistema no <span className="text-[#1677FF]">computador e no celular</span>
-            </h2>
-            <p className="mt-4 text-[color:var(--lh-muted)] leading-relaxed">
-              Confira a pauta do dia na porta da audiência, consulte um processo no corredor do fórum ou registre um pagamento de casa.
-              Não precisa instalar nada: o LegalHub roda no navegador e se adapta à tela.
-            </p>
-            <ul className="mt-6 space-y-3">
-              {['Layout pensado para telas pequenas', 'Login seguro em qualquer dispositivo', 'Dados sempre atualizados entre a equipe'].map(item => (
-                <li key={item} className="flex items-center gap-2.5 text-sm text-[color:var(--lh-fg)]">
-                  <Smartphone className="w-4 h-4 text-[#1677FF] flex-shrink-0" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ══ COMO COMEÇAR ══ */}
-      <section className="lh-light lh-light-alt relative py-20 sm:py-28 px-5 sm:px-8 border-t border-[color:var(--lh-divider)]">
-        <div className="max-w-5xl mx-auto">
-          <SectionHeading eyebrow="Como começar" title="Do cadastro ao primeiro prazo controlado no mesmo dia" />
-          <div className="relative grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-5">
-            <div className="hidden md:block absolute top-6 left-[16%] right-[16%] h-px bg-gradient-to-r from-transparent via-[#1677FF]/40 to-transparent" aria-hidden />
-            {STEPS.map((s, i) => (
-              <Reveal key={s.title} delay={i * 100} className="relative text-center px-2">
-                <span className="relative mx-auto w-12 h-12 rounded-full bg-[color:var(--lh-card)] lh-card border border-[#1677FF]/40 flex items-center justify-center font-display text-lg font-bold text-[#1677FF]">
-                  <span className="sr-only">Passo </span>{i + 1}
-                </span>
-                <h3 className="mt-5 text-base font-semibold text-[color:var(--lh-fg)]">{s.title}</h3>
-                <p className="mt-2 text-sm text-[color:var(--lh-muted)] leading-relaxed max-w-xs mx-auto">{s.description}</p>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
 
       {/* ══ SEGURANÇA ══ */}
       <section id="seguranca" className="relative py-20 sm:py-28 px-5 sm:px-8 border-t border-[color:var(--lh-divider)]">
@@ -444,9 +321,6 @@ export function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* ══ FAIXA DE CONFIANÇA (isolamento · fim do teste · LGPD) ══ */}
-      <TrustStrip />
 
       {/* ══ PLANOS ══ */}
       <section id="planos" className="lh-light relative py-20 sm:py-28 px-5 sm:px-8 border-t border-[color:var(--lh-divider)]">
@@ -570,7 +444,7 @@ export function LandingPage() {
         <div className="max-w-3xl mx-auto">
           <SectionHeading eyebrow="Dúvidas frequentes" title="Antes de começar, tire suas dúvidas" />
           <div className="space-y-3">
-            {FAQS.map((item, i) => {
+            {FAQS.slice(0, 5).map((item, i) => {
               const open = faqOpen === i
               return (
                 <Reveal key={item.q} delay={Math.min(i, 4) * 50} className={cn('rounded-2xl border overflow-hidden transition-colors', open ? 'border-[#1677FF]/30 bg-[color:var(--lh-card)] lh-card' : 'border-[color:var(--lh-border)]')}>

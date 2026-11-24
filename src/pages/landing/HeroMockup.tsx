@@ -277,7 +277,7 @@ export function HeroMockup() {
       </div>
 
       {/* Espaço de rolagem enquanto a tela fica presa */}
-      {pinned && <div aria-hidden style={{ height: '150vh' }} />}
+      {pinned && <div aria-hidden style={{ height: '45vh' }} />}
     </div>
   )
 }
